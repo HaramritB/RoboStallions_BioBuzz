@@ -6,26 +6,22 @@ import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.util.Range;
 
 /**
- * Tests every mechanism one at a time. Nothing moves until you press something: motors start
- * with no power, and the gate servo stays unpowered where it is until you first command it.
+ * Tests every mechanism from gamepad1 alone. Nothing moves until you press something: motors
+ * start with no power, and the gate servo stays unpowered where it is until you first nudge it.
  *
- * Gamepad1: drivetrain, intake, transmission
+ * Gamepad1
  *   Left stick / right stick X   drive, strafe, turn
- *   Hold X / Y / A / B           spin ONE wheel forward: frontleft / frontright / backleft / backright
- *   Right trigger                intake in (harder press = faster)
- *   Left trigger                 intake out
+ *   Right trigger / left trigger intake in / out (harder press = faster)
  *   Right bumper / left bumper   transmission up / down
- *
- * Gamepad2: shooter, turret, gate
  *   A                            shooter on / off (starts at 1000 rpm)
  *   Dpad up / down               shooter target +/- 250 rpm
- *   Left bumper / right bumper   shooter target = POLLEN rpm / NECTAR rpm from Robot.java
- *   Right stick X                turret left / right (soft limits +/-150 deg from where it started)
- *   Back                         re-zero turret here
+ *   Right stick button           shooter target: POLLEN rpm <-> NECTAR rpm from Robot.java
+ *   Dpad right / left (hold)     turret right / left (soft limits +/-150 deg from where it started)
  *   Left stick button            turret auto-aim on / off (needs the Limelight)
- *   X / B                        gate to GATE_OPEN / GATE_CLOSED
- *   Dpad left / right            nudge gate -/+ 0.02, to find the open and closed numbers
- *   Hold right trigger           the real competition shot sequence (needs the Limelight + tag)
+ *   X / B                        nudge gate +0.02 / -0.02 (first press goes to 0.50, mid-travel)
+ *   Hold Y                       the real competition shot sequence (needs the Limelight + tag)
+ *   Back                         WHEEL TEST mode on / off. In it, hold X / Y / A / B to spin ONE
+ *                                wheel forward: frontleft / frontright / backleft / backright
  *
  * Motor directions come from Robot.java. If something runs backward, flip it there.
  */
@@ -33,10 +29,12 @@ import com.qualcomm.robotcore.util.Range;
 public class RobotTest extends LinearOpMode {
 
     static final double WHEEL_TEST_POWER = 0.3;
+    static final double TURRET_TEST_POWER = 0.3;
     static final double STICK_DEADBAND = 0.1;
     static final double RPM_STEP = 250;
     static final double MAX_RPM = 6000;
     static final double GATE_STEP = 0.02;
+    static final double GATE_FIRST_POSITION = 0.5;   // mid-travel, so the first move is never a full swing
 
     @Override
     public void runOpMode() {
@@ -44,15 +42,16 @@ public class RobotTest extends LinearOpMode {
         robot.init(hardwareMap, false);
         robot.zeroTurret();     // doesn't move it; wherever the turret is now becomes 0 deg
 
+        boolean wheelTestMode = false;
         boolean testShooterOn = false;
         double testRpm = 1000;  // start slow so you can check the spin direction safely
         double peakRpm = 0;
         boolean autoAim = false;
         boolean gateCommanded = false;
-        double gatePosition = Robot.GATE_CLOSED;
+        double gatePosition = GATE_FIRST_POSITION;
         boolean wasRunningSequence = false;
 
-        telemetry.addLine("Nothing moves until you press a button.");
+        telemetry.addLine("Nothing moves until you press a button. Everything is on gamepad1.");
         telemetry.addData("Limelight", robot.limelight != null ? "found" : "not in config, skipped");
         telemetry.addData("Color sensor", robot.colorSensor != null ? "found" : "not in config, skipped");
         telemetry.addData("LED", robot.led != null ? "found" : "not in config, skipped");
@@ -62,9 +61,18 @@ public class RobotTest extends LinearOpMode {
         while (opModeIsActive()) {
             robot.updateSensors();
 
-            // ---------------- Gamepad1: drivetrain ----------------
-            boolean singleWheel = gamepad1.x || gamepad1.y || gamepad1.a || gamepad1.b;
-            if (singleWheel) {
+            if (gamepad1.backWasPressed()) {
+                wheelTestMode = !wheelTestMode;
+                robot.drive(0, 0, 0);
+            }
+
+            // Read every edge once per loop, so a press isn't lost to the wrong mode.
+            boolean xPressed = gamepad1.xWasPressed();
+            boolean bPressed = gamepad1.bWasPressed();
+            boolean aPressed = gamepad1.aWasPressed();
+
+            // ---------------- Drivetrain ----------------
+            if (wheelTestMode) {
                 robot.frontLeft.setPower(gamepad1.x ? WHEEL_TEST_POWER : 0);
                 robot.frontRight.setPower(gamepad1.y ? WHEEL_TEST_POWER : 0);
                 robot.backLeft.setPower(gamepad1.a ? WHEEL_TEST_POWER : 0);
@@ -73,38 +81,28 @@ public class RobotTest extends LinearOpMode {
                 robot.drive(-gamepad1.left_stick_y, gamepad1.left_stick_x, gamepad1.right_stick_x);
             }
 
-            // ---------------- Gamepad2: turret ----------------
-            if (gamepad2.backWasPressed()) robot.zeroTurret();
-            if (gamepad2.leftStickButtonWasPressed()) autoAim = !autoAim;
-            double turretStick = gamepad2.right_stick_x;
-            if (Math.abs(turretStick) > STICK_DEADBAND) robot.aimTurret(false, turretStick);
+            // ---------------- Turret ----------------
+            if (gamepad1.leftStickButtonWasPressed()) autoAim = !autoAim;
+            if (gamepad1.dpad_right) robot.aimTurret(false, TURRET_TEST_POWER);
+            else if (gamepad1.dpad_left) robot.aimTurret(false, -TURRET_TEST_POWER);
             else robot.aimTurret(autoAim, 0);
 
-            // ---------------- Gamepad2: shooter settings ----------------
-            if (gamepad2.aWasPressed()) {
+            // ---------------- Shooter settings ----------------
+            if (aPressed && !wheelTestMode) {
                 testShooterOn = !testShooterOn;
                 peakRpm = 0;
             }
-            if (gamepad2.dpadUpWasPressed()) testRpm = Math.min(MAX_RPM, testRpm + RPM_STEP);
-            if (gamepad2.dpadDownWasPressed()) testRpm = Math.max(0, testRpm - RPM_STEP);
-            if (gamepad2.leftBumperWasPressed()) testRpm = Robot.RPM_YELLOW;
-            if (gamepad2.rightBumperWasPressed()) testRpm = Robot.RPM_RED;
+            if (gamepad1.dpadUpWasPressed()) testRpm = Math.min(MAX_RPM, testRpm + RPM_STEP);
+            if (gamepad1.dpadDownWasPressed()) testRpm = Math.max(0, testRpm - RPM_STEP);
+            if (gamepad1.rightStickButtonWasPressed()) {
+                testRpm = testRpm == Robot.RPM_YELLOW ? Robot.RPM_RED : Robot.RPM_YELLOW;
+            }
 
-            // ---------------- Gamepad2: gate settings ----------------
-            if (gamepad2.xWasPressed()) {
-                gatePosition = Robot.GATE_OPEN;
-                gateCommanded = true;
-            }
-            if (gamepad2.bWasPressed()) {
-                gatePosition = Robot.GATE_CLOSED;
-                gateCommanded = true;
-            }
-            if (gamepad2.dpadRightWasPressed()) {
-                gatePosition = Range.clip(gatePosition + GATE_STEP, 0, 1);
-                gateCommanded = true;
-            }
-            if (gamepad2.dpadLeftWasPressed()) {
-                gatePosition = Range.clip(gatePosition - GATE_STEP, 0, 1);
+            // ---------------- Gate settings ----------------
+            if (!wheelTestMode && (xPressed || bPressed)) {
+                if (gateCommanded) {
+                    gatePosition = Range.clip(gatePosition + (xPressed ? GATE_STEP : -GATE_STEP), 0, 1);
+                }
                 gateCommanded = true;
             }
 
@@ -112,7 +110,7 @@ public class RobotTest extends LinearOpMode {
             if (gamepad1.right_trigger > STICK_DEADBAND) intakePower = gamepad1.right_trigger * Robot.INTAKE_POWER;
             else if (gamepad1.left_trigger > STICK_DEADBAND) intakePower = -gamepad1.left_trigger * Robot.INTAKE_POWER;
 
-            boolean runSequence = gamepad2.right_trigger > 0.5;
+            boolean runSequence = !wheelTestMode && gamepad1.y;
             if (runSequence) {
                 // Competition logic: shooter speed by ball color, gate only opens on our HIVE tag.
                 robot.shooterOn = true;
@@ -145,6 +143,10 @@ public class RobotTest extends LinearOpMode {
             peakRpm = Math.max(peakRpm, rpm);
 
             // ---------------- Telemetry ----------------
+            telemetry.addData("MODE", wheelTestMode
+                    ? "WHEEL TEST: hold X=FL  Y=FR  A=BL  B=BR   (Back to exit)"
+                    : "normal   (Back = wheel test)");
+
             telemetry.addLine("--- Drivetrain (power / encoder) ---");
             addMotor("frontleft", robot.frontLeft);
             addMotor("frontright", robot.frontRight);

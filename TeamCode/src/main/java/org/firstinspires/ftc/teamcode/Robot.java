@@ -215,7 +215,7 @@ public class Robot {
         intake.setDirection(DcMotorSimple.Direction.FORWARD);
         intake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
         intake.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        transmission.setDirection(DcMotorSimple.Direction.FORWARD);
+        transmission.setDirection(DcMotorSimple.Direction.REVERSE);
         transmission.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         transmission.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
 

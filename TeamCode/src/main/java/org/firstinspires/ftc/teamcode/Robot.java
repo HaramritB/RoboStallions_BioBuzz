@@ -320,9 +320,9 @@ public class Robot {
     /** Robot-centric mecanum drive. All inputs are -1 to 1; + is forward, right, and clockwise. */
     public void drive(double forward, double strafe, double turn) {
         strafe *= STRAFE_MULTIPLIER;
-        double fl = forward + strafe + turn;
+        double fl = -1.0*(forward + strafe + turn);
         double fr = forward - strafe - turn;
-        double bl = forward - strafe + turn;
+        double bl = -1.0*(forward - strafe + turn);
         double br = forward + strafe - turn;
         double max = Math.max(1.0, Math.max(Math.max(Math.abs(fl), Math.abs(fr)),
                                             Math.max(Math.abs(bl), Math.abs(br))));

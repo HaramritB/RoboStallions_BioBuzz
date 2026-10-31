@@ -96,7 +96,8 @@ public class Robot {
     // Gate, intake, transmission
     // ---------------------------------------------------------------------------------------------
     public static final double GATE_CLOSED = 0.0;              // tune: find it with the Robot Test OpMode
-    public static final double GATE_OPEN = 0.5;                // tune: find it with the Robot Test OpMode
+    public static final double GATE_OPEN = 0.14;
+    // tune: find it with the Robot Test OpMode
     public static final long FEED_TIME_MS = 300;               // tune: gate open time for one ball
     public static final double INTAKE_POWER = 1.0;
     public static final double TRANSMISSION_INDEX_POWER = 0.6; // moving balls up to the gate
@@ -452,8 +453,19 @@ public class Robot {
         }
         gate.setPosition(gateOpen ? GATE_OPEN : GATE_CLOSED);
 
+        updateFeederMotors(gateOpen, wantShoot, intakePower);
+    }
+
+    /** Manual TeleOp gate toggle; no vision, readiness check, or automatic closing timer. */
+    public void updateManualFeeder(boolean toggleGate, double intakePower) {
+        if (toggleGate) gateOpen = !gateOpen;
+        gate.setPosition(gateOpen ? GATE_OPEN : GATE_CLOSED);
+        updateFeederMotors(false, false, intakePower);
+    }
+
+    private void updateFeederMotors(boolean feedThroughGate, boolean wantShoot, double intakePower) {
         double transmissionPower;
-        if (gateOpen) {
+        if (feedThroughGate) {
             transmissionPower = TRANSMISSION_FEED_POWER;
         } else if (intakePower < 0) {
             transmissionPower = -TRANSMISSION_INDEX_POWER;

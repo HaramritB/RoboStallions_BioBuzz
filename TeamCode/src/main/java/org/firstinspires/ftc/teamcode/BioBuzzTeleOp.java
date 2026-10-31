@@ -12,9 +12,8 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
  *   Left trigger        outtake (intake + transmission in reverse)
  *
  * Driver 2 (gamepad2)
- *   Right trigger (hold) shoot. Turns the flywheel on; balls feed one at a time, only while our
- *                        HIVE tag is visible, the turret is aimed, and the flywheel is at speed
- *                        for that ball's color
+ *   Right trigger (hold) turns the flywheel on
+ *   X                    gate open / closed toggle (no target required)
  *   A                    flywheel on / off (spin it up early so the first shot is fast)
  *   Y                    turret auto-aim on / off
  *   Right stick X        manual turret (overrides auto-aim while held)
@@ -57,8 +56,8 @@ public class BioBuzzTeleOp extends LinearOpMode {
                         gamepad1.right_stick_x * scale);
 
             double intakePower = 0;
-            if (gamepad1.right_trigger > 0.2) intakePower = Robot.INTAKE_POWER;
-            else if (gamepad1.left_trigger > 0.2) intakePower = -Robot.INTAKE_POWER;
+            if (gamepad1.right_trigger > 0.2) intakePower = -Robot.INTAKE_POWER;
+            else if (gamepad1.left_trigger > 0.2) intakePower = Robot.INTAKE_POWER;
 
             // ---------------- Driver 2: shooter + turret ----------------
             boolean wantShoot = gamepad2.right_trigger > 0.5;
@@ -78,7 +77,7 @@ public class BioBuzzTeleOp extends LinearOpMode {
             }
 
             robot.updateShooter();
-            robot.updateFeeder(wantShoot, intakePower);
+            robot.updateManualFeeder(gamepad2.xWasPressed(), intakePower);
             robot.updateLed();
 
             // ---------------- Telemetry ----------------
@@ -86,12 +85,13 @@ public class BioBuzzTeleOp extends LinearOpMode {
             telemetry.addData("HIVE tag", robot.targetVisible
                     ? String.format("ID %d   tx %.1f deg   %s", robot.targetId, robot.targetTx,
                                     robot.aimedAtTarget() ? "AIMED" : "aiming")
-                    : "not visible, gate locked");
+                    : "not visible");
             telemetry.addData("Turret", "%.1f deg   %s", robot.turretDegrees(), autoAim ? "AUTO" : "MANUAL");
             telemetry.addData("Shooter", "%s   %.0f / %.0f rpm   trim %+.0f   %s",
                     robot.shooterOn ? "ON" : "OFF", robot.shooterRpm(), robot.targetRpm + robot.rpmTrim,
                     robot.rpmTrim, robot.shooterAtSpeed() ? "AT SPEED" : "");            telemetry.addData("Ball", "%s   hue %.0f   %.1f cm", robot.ballColor, robot.ballHue, robot.ballDistanceCm);
-            telemetry.addData("Gate", robot.gateOpen ? "OPEN" : "closed");
+            telemetry.addData("Gate", "%s   commanded %.2f   (gamepad2 X toggles)",
+                    robot.gateOpen ? "OPEN" : "closed", robot.gate.getPosition());
             telemetry.addData("Shots", robot.shotsFired);
             telemetry.update();
         }

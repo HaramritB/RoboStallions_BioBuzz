@@ -130,7 +130,7 @@ public class Robot {
     // Limelight / BIOBUZZ AprilTags
     // ---------------------------------------------------------------------------------------------
     // Pipeline 0 must be an AprilTag pipeline (family 36h11), set up in the Limelight web UI.
-    public static final int LIMELIGHT_PIPELINE = 0;
+    public static final int LIMELIGHT_PIPELINE = 4;
     // Each HIVE has 2 CELLS, each with a cluster of 4 tags on its bottom, facing down at the field.
     // Only the CELL that's facing up shows its tags to the robots, so seeing one of our tags means
     // our HIVE has an open CELL above us.

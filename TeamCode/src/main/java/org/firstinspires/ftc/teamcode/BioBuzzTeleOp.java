@@ -1,28 +1,9 @@
+
 package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 
-/**
- * Driver 1 (gamepad1)
- *   Left stick          drive + strafe
- *   Right stick X       turn
- *   Left bumper (hold)  slow mode
- *   Right trigger       intake
- *   Left trigger        outtake (intake + transmission in reverse)
- *
- * Driver 2 (gamepad2)
- *   Right trigger (hold) turns the flywheel on
- *   X                    gate open / closed toggle (no target required)
- *   A                    flywheel on / off (spin it up early so the first shot is fast)
- *   Y                    turret tracking/search on / off (returns across range at an end)
- *   Right stick X        manual turret (overrides auto-aim while held)
- *   B (hold)             turret back to center
- *   Dpad up / down       shooter rpm trim, +/- 50 rpm on every color
- *   Back                 re-zero the turret (only with the turret pointing straight forward)
- *
- * During INIT: X = blue alliance, B = red alliance (defaults to whatever Auto last ran).
- */
 @TeleOp(name = "BioBuzz TeleOp", group = "Competition")
 public class BioBuzzTeleOp extends LinearOpMode {
 
@@ -31,79 +12,421 @@ public class BioBuzzTeleOp extends LinearOpMode {
 
     @Override
     public void runOpMode() {
+
         Robot robot = new Robot();
         robot.init(hardwareMap, false);
+
         boolean autoAim = true;
 
+        double minBurstRpm = Double.NaN;
+
+        // =========================================
+        // INIT
+        // =========================================
+
         while (opModeInInit()) {
-            if (gamepad1.xWasPressed() || gamepad2.xWasPressed()) robot.alliance = Robot.Alliance.BLUE;
-            if (gamepad1.bWasPressed() || gamepad2.bWasPressed()) robot.alliance = Robot.Alliance.RED;
-            Robot.lastAlliance = robot.alliance;
-            if (gamepad2.backWasPressed()) robot.zeroTurret();
 
-            robot.updateSensors();
-            robot.addVisionTelemetry(telemetry);
-            telemetry.addData("Alliance", "%s   (X = blue, B = red)", robot.alliance);
-            telemetry.addData("HIVE aim", robot.targetVisible ? robot.aimTargetLabel() : "not visible");
-            telemetry.addData("Turret", "%.1f deg", robot.turretDegrees());
-            telemetry.addData("Turret limits", "%.0f to %.0f deg; Back re-zeros when forward",
-                    Robot.TURRET_MIN_DEG, Robot.TURRET_MAX_DEG);
-            telemetry.update();
-        }
+            if (gamepad1.xWasPressed()
+                    || gamepad2.xWasPressed()) {
 
-        while (opModeIsActive()) {
-            robot.updateSensors();
-
-            // ---------------- Driver 1: drive + intake ----------------
-            double scale = gamepad1.left_bumper ? SLOW_MODE_SCALE : 1.0;
-            robot.drive(-gamepad1.left_stick_y * scale,
-                        gamepad1.left_stick_x * scale,
-                        gamepad1.right_stick_x * scale);
-
-            double intakePower = 0;
-            if (gamepad1.right_trigger > 0.2) intakePower = -Robot.INTAKE_POWER;
-            else if (gamepad1.left_trigger > 0.2) intakePower = Robot.INTAKE_POWER;
-
-            // ---------------- Driver 2: shooter + turret ----------------
-            boolean wantShoot = gamepad2.right_trigger > 0.5;
-            if (gamepad2.aWasPressed()) robot.shooterOn = !robot.shooterOn;
-            if (wantShoot) robot.shooterOn = true;
-            if (gamepad2.yWasPressed()) autoAim = !autoAim;
-            if (gamepad2.dpadUpWasPressed()) robot.rpmTrim += Robot.RPM_TRIM_STEP;
-            if (gamepad2.dpadDownWasPressed()) robot.rpmTrim -= Robot.RPM_TRIM_STEP;
-            if (gamepad2.backWasPressed()) robot.zeroTurret();
-
-            double manualTurret = gamepad2.right_stick_x;
-            if (gamepad2.b) {
-                robot.turretToAngle(0);
-            } else if (Math.abs(manualTurret) > STICK_DEADBAND) {
-                robot.aimTurret(false, manualTurret);
-            } else {
-                robot.aimTurret(autoAim, 0);
+                robot.alliance = Robot.Alliance.BLUE;
             }
 
-            robot.updateShooter();
-            robot.updateManualFeeder(gamepad2.xWasPressed(), intakePower);
-            robot.updateLed();
+            if (gamepad1.bWasPressed()
+                    || gamepad2.bWasPressed()) {
 
-            // ---------------- Telemetry ----------------
-            robot.addVisionTelemetry(telemetry);
+                robot.alliance = Robot.Alliance.RED;
+            }
+
+            Robot.lastAlliance = robot.alliance;
+
+            if (gamepad2.backWasPressed()) {
+                robot.zeroTurret();
+            }
+
+            robot.updateSensors();
+
+            telemetry.addLine("===== BIOBUZZ INIT =====");
+
             telemetry.addData("Alliance", robot.alliance);
-            telemetry.addData("HIVE aim", robot.targetVisible
-                    ? String.format("%s   tx %.1f deg   %s", robot.aimTargetLabel(), robot.targetTx,
-                                    robot.aimedAtTarget() ? "AIMED" : "aiming")
-                    : "not visible");
-            telemetry.addData("Turret", "%.1f deg   %s", robot.turretDegrees(), robot.turretAimState());
-            telemetry.addData("Turret limits", "%.0f to %.0f deg", Robot.TURRET_MIN_DEG, Robot.TURRET_MAX_DEG);
-            telemetry.addData("Shooter", "%s   %.0f / %.0f rpm   trim %+.0f   %s",
-                    robot.shooterOn ? "ON" : "OFF", robot.shooterRpm(), robot.targetRpm + robot.rpmTrim,
-                    robot.rpmTrim, robot.shooterAtSpeed() ? "AT SPEED" : "");            telemetry.addData("Ball", "%s   hue %.0f   %.1f cm", robot.ballColor, robot.ballHue, robot.ballDistanceCm);
-            telemetry.addData("Gate", "%s   commanded %.2f   (gamepad2 X toggles)",
-                    robot.gateOpen ? "OPEN" : "closed", robot.gate.getPosition());
-            telemetry.addData("Shots", robot.shotsFired);
+
+            telemetry.addData(
+                    "HIVE Tag",
+                    robot.targetVisible
+                            ? "ID " + robot.targetId
+                            : "NOT VISIBLE"
+            );
+
+            telemetry.addData(
+                    "Turret Angle",
+                    "%.2f deg",
+                    robot.turretDegrees()
+            );
+
+            telemetry.addData(
+                    "Shooter Target",
+                    "%.0f RPM",
+                    Robot.RPM_YELLOW
+            );
+
+            telemetry.addData(
+                    "PIDF",
+                    "P=%.0f I=%.0f D=%.0f F=%.2f",
+                    Robot.SHOOTER_P,
+                    Robot.SHOOTER_I,
+                    Robot.SHOOTER_D,
+                    Robot.SHOOTER_F
+            );
+
+            robot.addVisionTelemetry(telemetry);
+
             telemetry.update();
         }
 
-        robot.stop();
+        // =========================================
+        // MAIN TELEOP
+        // =========================================
+
+        try {
+
+            while (opModeIsActive()) {
+
+                robot.updateSensors();
+
+                // =====================================
+                // DRIVER 1: DRIVING
+                // =====================================
+
+                double scale = gamepad1.left_bumper
+                        ? SLOW_MODE_SCALE
+                        : 1.0;
+
+                robot.drive(
+                        -gamepad1.left_stick_y * scale,
+                        gamepad1.left_stick_x * scale,
+                        gamepad1.right_stick_x * scale
+                );
+
+                // =====================================
+                // DRIVER 1: INTAKE
+                // =====================================
+
+                double intakePower = 0;
+
+                if (gamepad1.right_trigger > 0.2) {
+
+                    intakePower = -Robot.INTAKE_POWER;
+
+                } else if (gamepad1.left_trigger > 0.2) {
+
+                    intakePower = Robot.INTAKE_POWER;
+                }
+
+                // =====================================
+                // DRIVER 2: SHOOTER
+                // =====================================
+
+                boolean wantShoot =
+                        gamepad2.right_trigger > 0.5;
+
+                // A toggles shooter ON/OFF
+                if (gamepad2.aWasPressed()) {
+                    robot.shooterOn = !robot.shooterOn;
+                }
+
+                // Right trigger switches shooter ON
+                if (wantShoot) {
+                    robot.shooterOn = true;
+                }
+
+                // RPM trim
+                if (gamepad2.dpadUpWasPressed()) {
+                    robot.rpmTrim += Robot.RPM_TRIM_STEP;
+                }
+
+                if (gamepad2.dpadDownWasPressed()) {
+                    robot.rpmTrim -= Robot.RPM_TRIM_STEP;
+                }
+
+                // =====================================
+                // DRIVER 2: TURRET
+                // =====================================
+
+                if (gamepad2.yWasPressed()) {
+                    autoAim = !autoAim;
+                }
+
+                // Only re-zero while pointing forward
+                if (gamepad2.backWasPressed()) {
+                    robot.zeroTurret();
+                }
+
+                double manualTurret =
+                        gamepad2.right_stick_x;
+
+                if (gamepad2.b) {
+
+                    robot.turretToAngle(0);
+
+                } else if (
+                        Math.abs(manualTurret) > STICK_DEADBAND
+                ) {
+
+                    robot.aimTurret(false, manualTurret);
+
+                } else {
+
+                    robot.aimTurret(autoAim, 0);
+                }
+
+                // =====================================
+                // UPDATE SHOOTER
+                // =====================================
+
+                robot.updateShooter();
+
+                // =====================================
+                // GATE / FEEDER
+                // =====================================
+
+                boolean toggleGate =
+                        gamepad2.xWasPressed();
+
+                boolean gateWasOpen = robot.gateOpen;
+
+                robot.updateManualFeeder(
+                        toggleGate,
+                        intakePower
+                );
+
+                // =====================================
+                // BURST RPM TRACKING
+                // =====================================
+
+                double currentRpm =
+                        robot.shooterRpm();
+
+                if (!gateWasOpen && robot.gateOpen) {
+                    minBurstRpm = currentRpm;
+                }
+
+                if (robot.gateOpen) {
+
+                    if (Double.isNaN(minBurstRpm)) {
+
+                        minBurstRpm = currentRpm;
+
+                    } else {
+
+                        minBurstRpm = Math.min(
+                                minBurstRpm,
+                                currentRpm
+                        );
+                    }
+                }
+
+                robot.updateLed();
+
+                // =====================================
+                // TURRET TELEMETRY
+                // =====================================
+
+                telemetry.addLine(
+                        "========== TURRET =========="
+                );
+
+                telemetry.addData(
+                        "Auto Aim",
+                        autoAim ? "ENABLED" : "DISABLED"
+                );
+
+                telemetry.addData(
+                        "Tag Visible",
+                        robot.targetVisible
+                );
+
+                telemetry.addData(
+                        "Tag Fresh",
+                        robot.targetFresh
+                );
+
+                telemetry.addData(
+                        "Tag ID",
+                        robot.targetId
+                );
+
+                telemetry.addData(
+                        "Target TX",
+                        "%.2f deg",
+                        robot.targetTx
+                );
+
+                telemetry.addData(
+                        "Aim State",
+                        robot.turretAimState()
+                );
+
+                telemetry.addData(
+                        "Turret Angle",
+                        "%.2f deg",
+                        robot.turretDegrees()
+                );
+
+                telemetry.addData(
+                        "Turret Power",
+                        "%.3f",
+                        robot.turret.getPower()
+                );
+
+                telemetry.addData(
+                        "Manual Stick",
+                        "%.3f",
+                        manualTurret
+                );
+
+                // Show latest Limelight debug information
+                robot.addVisionTelemetry(telemetry);
+
+                // =====================================
+                // SHOOTER TELEMETRY
+                // =====================================
+
+                double targetRpm =
+                        robot.targetRpm + robot.rpmTrim;
+
+                double rpmError =
+                        targetRpm - currentRpm;
+
+                telemetry.addLine(
+                        "========== SHOOTER =========="
+                );
+
+                telemetry.addData(
+                        "Shooter",
+                        robot.shooterOn ? "ON" : "OFF"
+                );
+
+                telemetry.addData(
+                        "Target RPM",
+                        "%.0f",
+                        targetRpm
+                );
+
+                telemetry.addData(
+                        "Current RPM",
+                        "%.0f",
+                        currentRpm
+                );
+
+                telemetry.addData(
+                        "RPM Error",
+                        "%.0f",
+                        rpmError
+                );
+
+                telemetry.addData(
+                        "RPM Trim",
+                        "%+.0f",
+                        robot.rpmTrim
+                );
+
+                telemetry.addData(
+                        "Shooter Ready",
+                        robot.shooterAtSpeed()
+                                ? "AT SPEED"
+                                : "NOT AT SPEED"
+                );
+
+                telemetry.addData(
+                        "PIDF",
+                        "P=%.0f I=%.0f D=%.0f F=%.2f",
+                        Robot.SHOOTER_P,
+                        Robot.SHOOTER_I,
+                        Robot.SHOOTER_D,
+                        Robot.SHOOTER_F
+                );
+
+                // =====================================
+                // BURST TELEMETRY
+                // =====================================
+
+                telemetry.addLine(
+                        "========== BURST RPM =========="
+                );
+
+                telemetry.addData(
+                        "Gate",
+                        robot.gateOpen ? "OPEN" : "CLOSED"
+                );
+
+                telemetry.addData(
+                        "Minimum Burst RPM",
+                        Double.isNaN(minBurstRpm)
+                                ? "NO BURST YET"
+                                : String.format(
+                                "%.0f RPM",
+                                minBurstRpm
+                        )
+                );
+
+                telemetry.addData(
+                        "Maximum Observed RPM Drop",
+                        Double.isNaN(minBurstRpm)
+                                ? "NO DATA"
+                                : String.format(
+                                "%.0f RPM",
+                                Math.max(
+                                        0,
+                                        targetRpm - minBurstRpm
+                                )
+                        )
+                );
+
+                telemetry.addData(
+                        "Current Velocity",
+                        "%.1f ticks/sec",
+                        robot.shooter.getVelocity()
+                );
+
+                // =====================================
+                // OTHER TELEMETRY
+                // =====================================
+
+                telemetry.addLine(
+                        "========== OTHER =========="
+                );
+
+                telemetry.addData(
+                        "Alliance",
+                        robot.alliance
+                );
+
+                telemetry.addData(
+                        "Ball",
+                        "%s hue %.0f distance %.1f cm",
+                        robot.ballColor,
+                        robot.ballHue,
+                        robot.ballDistanceCm
+                );
+
+                telemetry.addData(
+                        "Gate",
+                        robot.gateOpen
+                                ? "OPEN"
+                                : "CLOSED"
+                );
+
+                telemetry.addData(
+                        "Shots",
+                        robot.shotsFired
+                );
+
+                telemetry.update();
+            }
+
+        } finally {
+
+            robot.stop();
+        }
     }
 }

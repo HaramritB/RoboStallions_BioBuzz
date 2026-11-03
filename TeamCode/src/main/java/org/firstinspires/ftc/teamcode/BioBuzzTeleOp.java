@@ -15,10 +15,11 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
  *   Right trigger (hold) turns the flywheel on
  *   X                    gate open / closed toggle (no target required)
  *   A                    flywheel on / off (spin it up early so the first shot is fast)
- *   Y                    turret auto-aim on / off
+ *   Y                    turret tracking/search on / off (returns across range at an end)
  *   Right stick X        manual turret (overrides auto-aim while held)
  *   B (hold)             turret back to center
- *   Dpad up / down       shooter rpm trim, +/- 50 rpm on every color *   Back                 re-zero the turret (only with the turret pointing straight forward)
+ *   Dpad up / down       shooter rpm trim, +/- 50 rpm on every color
+ *   Back                 re-zero the turret (only with the turret pointing straight forward)
  *
  * During INIT: X = blue alliance, B = red alliance (defaults to whatever Auto last ran).
  */
@@ -38,11 +39,15 @@ public class BioBuzzTeleOp extends LinearOpMode {
             if (gamepad1.xWasPressed() || gamepad2.xWasPressed()) robot.alliance = Robot.Alliance.BLUE;
             if (gamepad1.bWasPressed() || gamepad2.bWasPressed()) robot.alliance = Robot.Alliance.RED;
             Robot.lastAlliance = robot.alliance;
+            if (gamepad2.backWasPressed()) robot.zeroTurret();
 
             robot.updateSensors();
+            robot.addVisionTelemetry(telemetry);
             telemetry.addData("Alliance", "%s   (X = blue, B = red)", robot.alliance);
-            telemetry.addData("HIVE tag", robot.targetVisible ? "ID " + robot.targetId : "not visible");
+            telemetry.addData("HIVE aim", robot.targetVisible ? robot.aimTargetLabel() : "not visible");
             telemetry.addData("Turret", "%.1f deg", robot.turretDegrees());
+            telemetry.addData("Turret limits", "%.0f to %.0f deg; Back re-zeros when forward",
+                    Robot.TURRET_MIN_DEG, Robot.TURRET_MAX_DEG);
             telemetry.update();
         }
 
@@ -65,7 +70,8 @@ public class BioBuzzTeleOp extends LinearOpMode {
             if (wantShoot) robot.shooterOn = true;
             if (gamepad2.yWasPressed()) autoAim = !autoAim;
             if (gamepad2.dpadUpWasPressed()) robot.rpmTrim += Robot.RPM_TRIM_STEP;
-            if (gamepad2.dpadDownWasPressed()) robot.rpmTrim -= Robot.RPM_TRIM_STEP;            if (gamepad2.backWasPressed()) robot.zeroTurret();
+            if (gamepad2.dpadDownWasPressed()) robot.rpmTrim -= Robot.RPM_TRIM_STEP;
+            if (gamepad2.backWasPressed()) robot.zeroTurret();
 
             double manualTurret = gamepad2.right_stick_x;
             if (gamepad2.b) {
@@ -81,12 +87,14 @@ public class BioBuzzTeleOp extends LinearOpMode {
             robot.updateLed();
 
             // ---------------- Telemetry ----------------
+            robot.addVisionTelemetry(telemetry);
             telemetry.addData("Alliance", robot.alliance);
-            telemetry.addData("HIVE tag", robot.targetVisible
-                    ? String.format("ID %d   tx %.1f deg   %s", robot.targetId, robot.targetTx,
+            telemetry.addData("HIVE aim", robot.targetVisible
+                    ? String.format("%s   tx %.1f deg   %s", robot.aimTargetLabel(), robot.targetTx,
                                     robot.aimedAtTarget() ? "AIMED" : "aiming")
                     : "not visible");
-            telemetry.addData("Turret", "%.1f deg   %s", robot.turretDegrees(), autoAim ? "AUTO" : "MANUAL");
+            telemetry.addData("Turret", "%.1f deg   %s", robot.turretDegrees(), robot.turretAimState());
+            telemetry.addData("Turret limits", "%.0f to %.0f deg", Robot.TURRET_MIN_DEG, Robot.TURRET_MAX_DEG);
             telemetry.addData("Shooter", "%s   %.0f / %.0f rpm   trim %+.0f   %s",
                     robot.shooterOn ? "ON" : "OFF", robot.shooterRpm(), robot.targetRpm + robot.rpmTrim,
                     robot.rpmTrim, robot.shooterAtSpeed() ? "AT SPEED" : "");            telemetry.addData("Ball", "%s   hue %.0f   %.1f cm", robot.ballColor, robot.ballHue, robot.ballDistanceCm);

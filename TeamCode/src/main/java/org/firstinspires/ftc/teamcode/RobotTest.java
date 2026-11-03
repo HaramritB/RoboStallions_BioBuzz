@@ -52,7 +52,7 @@ public class RobotTest extends LinearOpMode {
         boolean wasRunningSequence = false;
 
         telemetry.addLine("Nothing moves until you press a button. Everything is on gamepad1.");
-        telemetry.addData("Limelight", robot.limelight != null ? "found" : "not in config, skipped");
+        telemetry.addData("Limelight", robot.Limelight != null ? "found" : "not in config, skipped");
         telemetry.addData("Color sensor", robot.colorSensor != null ? "found" : "not in config, skipped");
         telemetry.addData("LED", robot.led != null ? "found" : "not in config, skipped");
         telemetry.update();
@@ -181,7 +181,7 @@ public class RobotTest extends LinearOpMode {
             }
 
             telemetry.addLine("--- Sensors ---");
-            telemetry.addData("Limelight", robot.limelight == null ? "not in config"
+            telemetry.addData("Limelight", robot.Limelight == null ? "not in config"
                     : robot.targetVisible ? String.format("tag %d   tx %.1f deg", robot.targetId, robot.targetTx)
                     : "no HIVE tag for " + robot.alliance);
             telemetry.addData("Color sensor", robot.colorSensor == null ? "not in config"

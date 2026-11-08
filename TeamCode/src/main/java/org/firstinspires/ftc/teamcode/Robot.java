@@ -19,6 +19,8 @@ import com.qualcomm.robotcore.util.Range;
 
 import org.firstinspires.ftc.robotcore.external.Telemetry;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
+import org.firstinspires.ftc.robotcore.external.navigation.Position;
 
 public class Robot {
 
@@ -176,6 +178,11 @@ public class Robot {
     public boolean targetVisible;
     public boolean targetFresh;
     public double targetTx;
+    // Straight-line camera-to-tag range; NaN means no fresh valid pose.
+    public double targetDistanceMeters = Double.NaN;
+    public int targetDistanceTagId = -1;
+    // Camera position relative to the tag's outward normal, in the tag's X/Z plane.
+    public double targetFaceAngleDegrees = Double.NaN;
     public int targetId = -1;
 
     private boolean tagEverSeen;
@@ -414,6 +421,12 @@ public class Robot {
 
         StringBuilder tags = new StringBuilder();
 
+        targetDistanceMeters = Double.NaN;
+        targetDistanceTagId = -1;
+        targetFaceAngleDegrees = Double.NaN;
+        double nearestFaceAngleDegrees = Double.NaN;
+        double nearestDistanceMeters = Double.POSITIVE_INFINITY;
+        int nearestDistanceTagId = -1;
         double txSum = 0;
         int firstMatchingId = -1;
 
@@ -448,6 +461,25 @@ public class Robot {
                             tag.getTargetXDegrees())) {
 
                         txSum += tag.getTargetXDegrees();
+
+                        Pose3D cameraPose = tag.getTargetPoseCameraSpace();
+                        if (cameraPose != null) {
+                            Position position = cameraPose.getPosition().toUnit(DistanceUnit.METER);
+                            double distance = cameraToTagDistanceMeters(
+                                    position.x, position.y, position.z);
+                            if (Double.isFinite(distance) && distance < nearestDistanceMeters) {
+                                nearestDistanceMeters = distance;
+                                nearestDistanceTagId = tag.getFiducialId();
+                                nearestFaceAngleDegrees = Double.NaN;
+                                Pose3D cameraInTagSpace = tag.getCameraPoseTargetSpace();
+                                if (cameraInTagSpace != null) {
+                                    Position tagPosition = cameraInTagSpace.getPosition()
+                                            .toUnit(DistanceUnit.METER);
+                                    nearestFaceAngleDegrees = tagFaceAngleDegrees(
+                                            tagPosition.x, tagPosition.z);
+                                }
+                            }
+                        }
 
                         visionUsableMatches++;
 
@@ -487,6 +519,11 @@ public class Robot {
 
             targetTx = txSum / visionUsableMatches;
             targetId = firstMatchingId;
+            if (nearestDistanceTagId >= 0) {
+                targetDistanceMeters = nearestDistanceMeters;
+                targetDistanceTagId = nearestDistanceTagId;
+                targetFaceAngleDegrees = nearestFaceAngleDegrees;
+            }
 
             tagEverSeen = true;
             sinceTagSeen.reset();
@@ -561,7 +598,41 @@ public class Robot {
         return "MATCHING TAG VISIBLE";
     }
 
+    static double cameraToTagDistanceMeters(double x, double y, double z) {
+        if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) {
+            return Double.NaN;
+        }
+        double distance = Math.hypot(Math.hypot(x, y), z);
+        // The SDK returns an all-zero pose when the pipeline has no pose data.
+        return Double.isFinite(distance) && distance > 0 ? distance : Double.NaN;
+    }
+
+    static double tagFaceAngleDegrees(double sideMeters, double tagSpaceZ) {
+        // This camera's t6c_ts reports a camera in front of a visible tag at negative Z.
+        // Use -Z as front-face depth; do not reject valid negative-Z camera poses.
+        double frontDepthMeters = -tagSpaceZ;
+        if (!Double.isFinite(sideMeters) || !Double.isFinite(frontDepthMeters)
+                || frontDepthMeters <= 0) {
+            return Double.NaN;
+        }
+        return Math.toDegrees(Math.atan2(sideMeters, frontDepthMeters));
+    }
+
     public void addVisionTelemetry(Telemetry telemetry) {
+        if (Double.isFinite(targetFaceAngleDegrees)) {
+            telemetry.addData("LL tag face angle", "ID %d: %+.1f deg (0=straight on, +=right, -=left)",
+                    targetDistanceTagId, targetFaceAngleDegrees);
+        } else {
+            telemetry.addData("LL tag face angle", "unavailable (no fresh front-face pose)");
+        }
+
+        if (Double.isFinite(targetDistanceMeters)) {
+            telemetry.addData("LL tag distance", "ID %d: %.2f m / %.1f in (nearest matching tag)",
+                    targetDistanceTagId, targetDistanceMeters, targetDistanceMeters / 0.0254);
+        } else {
+            telemetry.addData("LL tag distance", "unavailable (no fresh matching tag pose)");
+        }
+
 
         telemetry.addData("Robot code", CODE_VERSION);
 

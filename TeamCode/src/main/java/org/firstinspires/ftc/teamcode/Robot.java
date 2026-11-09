@@ -50,11 +50,20 @@ public class Robot {
     // TURRET
     // =========================================
 
-    public static final double TURRET_TICKS_PER_DEG =
-            1425.1 / 360.0;
+    public static final double TURRET_MOTOR_TICKS_PER_REV = 1425.1;
+    public static final int TURRET_MOTOR_GEAR_TEETH = 12;
+    public static final int TURRET_GEAR_TEETH = 84;
+    public static final double TURRET_MOTOR_REVS_PER_TURRET_REV =
+            (double) TURRET_GEAR_TEETH / TURRET_MOTOR_GEAR_TEETH;
+    public static final double TURRET_TICKS_PER_TURRET_REV =
+            TURRET_MOTOR_TICKS_PER_REV * TURRET_MOTOR_REVS_PER_TURRET_REV;
+    public static final double TURRET_TICKS_PER_DEG = TURRET_TICKS_PER_TURRET_REV / 360.0;
 
-    public static final double TURRET_MIN_DEG = -150;
-    public static final double TURRET_MAX_DEG = 150;
+    // Measured encoder limits relative to the forward zero.
+    public static final int TURRET_MIN_TICKS = -740;
+    public static final int TURRET_MAX_TICKS = 570;
+    public static final double TURRET_MIN_DEG = TURRET_MIN_TICKS / TURRET_TICKS_PER_DEG;
+    public static final double TURRET_MAX_DEG = TURRET_MAX_TICKS / TURRET_TICKS_PER_DEG;
 
     public static final double TURRET_KP = 0.02;
     public static final double TURRET_KS = 0.04;
@@ -62,6 +71,8 @@ public class Robot {
 
     public static final double TURRET_MAX_POWER = 0.6;
     public static final double TURRET_SEARCH_POWER = 0.15;
+    public static final double TURRET_TRACK_MAX_POWER = 0.22;
+    public static final long TURRET_REACQUIRE_MS = 400;
     public static final double TURRET_RETURN_MAX_POWER = 0.35;
     public static final double TURRET_RETURN_MARGIN_DEG = 5;
     public static final double TURRET_RETURN_TOLERANCE_DEG = 1;
@@ -178,6 +189,7 @@ public class Robot {
     public boolean targetVisible;
     public boolean targetFresh;
     public double targetTx;
+    private double targetFrameTimestamp;
     // Straight-line camera-to-tag range; NaN means no fresh valid pose.
     public double targetDistanceMeters = Double.NaN;
     public int targetDistanceTagId = -1;
@@ -518,6 +530,10 @@ public class Robot {
         if (seenNow) {
 
             targetTx = txSum / visionUsableMatches;
+            targetFrameTimestamp = result.getTimestamp();
+            if (targetFrameTimestamp == 0) {
+                targetFrameTimestamp = result.getControlHubTimeStamp();
+            }
             targetId = firstMatchingId;
             if (nearestDistanceTagId >= 0) {
                 targetDistanceMeters = nearestDistanceMeters;
@@ -814,27 +830,15 @@ public class Robot {
 
         if (autoAim && Limelight != null) {
 
-            if (!targetFresh
-                    && targetVisible
-                    && !turretAim.returning) {
-
-                power = 0;
-                turretAimState = "WAIT FOR FRESH TAG";
-
-            } else {
-
-                power = turretAim.update(
-                        turretDegrees(),
-                        targetFresh,
-                        (targetTx - TURRET_AIM_OFFSET_DEG)
-                                * TURRET_VISION_POWER_SIGN
-                );
-
-                turretAimState = turretAim.state;
-            }
-
+            power = turretAim.update(
+                    turretDegrees(),
+                    targetFresh,
+                    (targetTx - TURRET_AIM_OFFSET_DEG) * TURRET_VISION_POWER_SIGN,
+                    targetFrameTimestamp,
+                    visionConnected && visionRunning && visionPipelineIndex == LIMELIGHT_PIPELINE
+            );
+            turretAimState = turretAim.state;
         } else {
-
             turretAim.cancelReturn();
 
             turretAimState = autoAim
@@ -882,17 +886,17 @@ public class Robot {
                 TURRET_MAX_POWER
         );
 
-        double degrees = turretDegrees();
+        int ticks = turret.getCurrentPosition();
 
         turretPowerLimit = "none";
 
-        if (degrees >= TURRET_MAX_DEG && power > 0) {
+        if (ticks >= TURRET_MAX_TICKS && power > 0) {
 
             power = 0;
             turretPowerLimit = "RIGHT ENCODER LIMIT";
 
         } else if (
-                degrees <= TURRET_MIN_DEG && power < 0
+                ticks <= TURRET_MIN_TICKS && power < 0
         ) {
 
             power = 0;
@@ -949,6 +953,9 @@ public class Robot {
 
         private boolean returning = false;
         private double returnGoal;
+        private double lastFrameTimestamp = Double.NaN;
+        private double lastTargetAngle = Double.NaN;
+        private final ElapsedTime sinceAimFrame = new ElapsedTime();
 
         private String state = "SEARCH RIGHT";
 
@@ -981,7 +988,9 @@ public class Robot {
         double update(
                 double angle,
                 boolean visible,
-                double error
+                double error,
+                double frameTimestamp,
+                boolean canReacquire
         ) {
 
             if (!Double.isFinite(angle)
@@ -993,15 +1002,21 @@ public class Robot {
                 return 0;
             }
 
-            double targetAngle = angle + error;
+            // Anchor each camera frame to one encoder angle so repeated reads do not move the goal.
+            if (visible && frameTimestamp != lastFrameTimestamp) {
+                lastFrameTimestamp = frameTimestamp;
+                lastTargetAngle = angle + error;
+                sinceAimFrame.reset();
+                if (Math.abs(error) >= TURRET_DEADBAND_DEG) {
+                    searchDirection = error > 0 ? 1 : -1;
+                }
+            }
 
-            boolean reachable =
-                    visible
-                            && angle >= minDeg
-                            && angle <= maxDeg
-                            && targetAngle >= minDeg
-                            && targetAngle <= maxDeg;
-
+            boolean targetInRange = lastTargetAngle >= minDeg && lastTargetAngle <= maxDeg;
+            boolean reacquiring = !visible && canReacquire && targetInRange
+                    && sinceAimFrame.milliseconds() < TURRET_REACQUIRE_MS;
+            boolean reachable = (visible || reacquiring) && targetInRange
+                    && angle >= minDeg && angle <= maxDeg;
             if (returning && reachable) {
                 returning = false;
             }
@@ -1025,19 +1040,9 @@ public class Robot {
 
             double power;
 
-            if (visible) {
-
-                if (Math.abs(error) >= TURRET_DEADBAND_DEG) {
-                    searchDirection = error > 0 ? 1 : -1;
-                }
-
-                power = positionPower(
-                        error,
-                        TURRET_MAX_POWER
-                );
-
-                state = "TRACK";
-
+            if (visible || reacquiring) {
+                power = positionPower(lastTargetAngle - angle, TURRET_TRACK_MAX_POWER);
+                state = visible ? "TRACK" : "REACQUIRE LAST TAG";
             } else {
 
                 power =
@@ -1050,7 +1055,7 @@ public class Robot {
 
             if (angle > maxDeg
                     || (!reachable && power > 0
-                    && angle >= maxDeg - TURRET_RETURN_MARGIN_DEG)) {
+                    && angle >= maxDeg)) {
 
                 returnGoal =
                         minDeg + TURRET_RETURN_MARGIN_DEG;
@@ -1061,7 +1066,7 @@ public class Robot {
             } else if (
                     angle < minDeg
                             || (!reachable && power < 0
-                            && angle <= minDeg + TURRET_RETURN_MARGIN_DEG)
+                            && angle <= minDeg)
             ) {
 
                 returnGoal =
@@ -1084,6 +1089,8 @@ public class Robot {
 
         void cancelReturn() {
             returning = false;
+            lastFrameTimestamp = Double.NaN;
+            lastTargetAngle = Double.NaN;
         }
 
         private double positionPower(

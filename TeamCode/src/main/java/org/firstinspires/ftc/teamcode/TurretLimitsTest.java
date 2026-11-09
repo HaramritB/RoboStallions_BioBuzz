@@ -9,7 +9,7 @@ import com.qualcomm.robotcore.util.Range;
 import com.qualcomm.robotcore.util.RobotLog;
 
 /**
- * Manual calibration only: bypasses Robot.java's placeholder turret limits. No vision, shooter,
+ * Manual calibration only: bypasses Robot.java's software turret limits. No vision, shooter,
  * drive, intake or servo control. Release the right bumper to stop. Do not drive into hard stops.
  *
  * Gamepad 1:
@@ -19,17 +19,18 @@ import com.qualcomm.robotcore.util.RobotLog;
  *   B (bumper released)          record maximum encoder position
  *   Y (bumper released)          clear marks/observed range without changing encoder zero
  *
- * Copy the displayed suggested limits into Robot.java after measuring. Nothing changes them
+ * Copy the measured endpoints into Robot.TURRET_MEASURED_MIN_TICKS/MAX_TICKS. Nothing changes them
  * automatically. Degrees assume Robot.TURRET_TICKS_PER_DEG is calibrated for the actual gearing.
  */
 @TeleOp(name = "Turret Limits (calibration)", group = "Test")
 public class TurretLimitsTest extends LinearOpMode {
     static final double MAX_JOG_POWER = 0.12;
     static final double STICK_DEADBAND = 0.10;
-    static final double LIMIT_CLEARANCE_DEG = 5.0;
-    // Use the configured measured span if it exceeds the old one-revolution assumption.
+    static final double LIMIT_CLEARANCE_DEG = Robot.TURRET_LIMIT_CLEARANCE_DEG;
+    // Include both physical endpoints, not just the narrower software range.
     static final double MAX_OBSERVED_TRAVEL_DEG =
-            Math.max(360.0, Robot.TURRET_MAX_DEG - Robot.TURRET_MIN_DEG);
+            Math.max(360.0, (Robot.TURRET_MEASURED_MAX_TICKS - Robot.TURRET_MEASURED_MIN_TICKS)
+                    / Robot.TURRET_TICKS_PER_DEG + 2 * LIMIT_CLEARANCE_DEG);
 
     private DcMotorEx turret;
     private Integer minMark, maxMark;
@@ -128,7 +129,7 @@ public class TurretLimitsTest extends LinearOpMode {
 
     private void showTelemetry(boolean active) {
         int ticks = turret.getCurrentPosition();
-        telemetry.addLine("TURRET CALIBRATION - placeholder limits BYPASSED in this OpMode only");
+        telemetry.addLine("TURRET CALIBRATION - software limits BYPASSED in this OpMode only");
         telemetry.addData("State", active ? command : "INIT: no movement; point forward and press Back");
         telemetry.addData("Forward zero set", zeroSet ? "YES" : "NO - Back required before motion");
         telemetry.addData("Raw encoder", "%d ticks", ticks);
@@ -162,8 +163,10 @@ public class TurretLimitsTest extends LinearOpMode {
                     && suggestedMin <= 0 && suggestedMax >= 0
                     && suggestedMax - suggestedMin > 2 * (Robot.TURRET_RETURN_MARGIN_DEG
                             + Robot.TURRET_RETURN_TOLERANCE_DEG)) {
-                telemetry.addData("Copy TURRET_MIN_TICKS", suggestedMinTicks);
-                telemetry.addData("Copy TURRET_MAX_TICKS", suggestedMaxTicks);
+                telemetry.addData("Copy TURRET_MEASURED_MIN_TICKS", minMark);
+                telemetry.addData("Copy TURRET_MEASURED_MAX_TICKS", maxMark);
+                telemetry.addData("Suggested software limits", "%d / %d ticks",
+                        suggestedMinTicks, suggestedMaxTicks);
                 telemetry.addData("Clearance", "%.1f deg inside each recorded endpoint", LIMIT_CLEARANCE_DEG);
             } else {
                 telemetry.addLine("Check marks: MIN negative, MAX positive; span within displayed calibration cap");

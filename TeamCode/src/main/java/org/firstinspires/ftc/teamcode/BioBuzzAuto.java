@@ -15,7 +15,7 @@ import com.qualcomm.robotcore.util.ElapsedTime;
  *
  * The distances below are placeholders. Measure them from your start spot on the field.
  */
-@Autonomous(name = "BioBuzz Auto", group = "Competition", preselectTeleOp = "BioBuzz TeleOp")
+@Autonomous(name = "BioBuzz Auto", group = "Competition")
 public class BioBuzzAuto extends LinearOpMode {
 
     static final double DRIVE_POWER = 0.5;
@@ -46,6 +46,7 @@ public class BioBuzzAuto extends LinearOpMode {
             telemetry.addData("Start delay", "%.0f s   (dpad up / down)", startDelayS);
             telemetry.addData("HIVE tag", robot.targetVisible ? "ID " + robot.targetId : "not visible");
             telemetry.addData("Ball at gate", robot.ballColor);
+            robot.addGateTelemetry(telemetry);
             telemetry.update();
         }
 

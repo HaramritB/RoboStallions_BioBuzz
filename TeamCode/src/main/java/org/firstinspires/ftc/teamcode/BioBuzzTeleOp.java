@@ -2,19 +2,23 @@
 package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
-import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 
-@TeleOp(name = "BioBuzz TeleOp", group = "Competition")
-public class BioBuzzTeleOp extends LinearOpMode {
+/** Shared competition controls for the separately registered Blue and Red TeleOps. */
+public abstract class BioBuzzTeleOp extends LinearOpMode {
 
     static final double SLOW_MODE_SCALE = 0.4;
     static final double STICK_DEADBAND = 0.1;
 
+    protected abstract Robot.Alliance teleOpAlliance();
+
     @Override
-    public void runOpMode() {
+    public final void runOpMode() {
 
         Robot robot = new Robot();
         robot.init(hardwareMap, false);
+        // Override any alliance inherited from Auto or a previously run OpMode.
+        robot.alliance = teleOpAlliance();
+        Robot.lastAlliance = robot.alliance;
 
         boolean autoAim = true;
 
@@ -26,20 +30,6 @@ public class BioBuzzTeleOp extends LinearOpMode {
 
         while (opModeInInit()) {
 
-            if (gamepad1.xWasPressed()
-                    || gamepad2.xWasPressed()) {
-
-                robot.alliance = Robot.Alliance.BLUE;
-            }
-
-            if (gamepad1.bWasPressed()
-                    || gamepad2.bWasPressed()) {
-
-                robot.alliance = Robot.Alliance.RED;
-            }
-
-            Robot.lastAlliance = robot.alliance;
-
             if (gamepad2.backWasPressed()) {
                 robot.zeroTurret();
             }
@@ -48,7 +38,7 @@ public class BioBuzzTeleOp extends LinearOpMode {
 
             telemetry.addLine("===== BIOBUZZ INIT =====");
 
-            telemetry.addData("Alliance", robot.alliance);
+            telemetry.addData("Alliance", "%s (fixed by selected TeleOp)", robot.alliance);
 
             telemetry.addData(
                     "HIVE Tag",
@@ -79,6 +69,7 @@ public class BioBuzzTeleOp extends LinearOpMode {
             );
 
             robot.addVisionTelemetry(telemetry);
+            robot.addGateTelemetry(telemetry);
 
             telemetry.update();
         }
@@ -198,6 +189,7 @@ public class BioBuzzTeleOp extends LinearOpMode {
                         toggleGate,
                         intakePower
                 );
+                robot.addGateTelemetry(telemetry);
 
                 // =====================================
                 // BURST RPM TRACKING
@@ -255,11 +247,11 @@ public class BioBuzzTeleOp extends LinearOpMode {
                         robot.targetId
                 );
 
-                telemetry.addData(
-                        "Target TX",
-                        "%.2f deg",
-                        robot.targetTx
-                );
+                if (robot.targetFresh) {
+                    telemetry.addData("Target TX", "%.2f deg", robot.targetTx);
+                } else {
+                    telemetry.addData("Target TX", "unavailable (no matching tag)");
+                }
 
                 telemetry.addData(
                         "Aim State",

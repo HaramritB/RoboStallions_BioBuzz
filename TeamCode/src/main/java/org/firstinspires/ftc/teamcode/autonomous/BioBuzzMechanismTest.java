@@ -104,7 +104,7 @@ public class BioBuzzMechanismTest extends OpMode {
         telemetry.addData("Failure", failure.isEmpty() ? "none" : failure);
         telemetry.addData("Mechanisms", mechanisms==null ? "unavailable" : mechanisms.state());
         telemetry.addData("Controller diagnostics", mechanisms==null ? "unavailable" : mechanisms.diagnostics());
-        telemetry.addData("Inventory", mechanisms==null ? "unavailable" : mechanisms.inventoryStatus());
+        telemetry.addData("Intake policy", mechanisms==null ? "unavailable" : mechanisms.intakePolicy());
         telemetry.addData("Route / FLOWER lever", "Never controlled by this OpMode");
         telemetry.update();
     }

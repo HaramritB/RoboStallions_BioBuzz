@@ -196,10 +196,6 @@ public class BioBuzzAuto extends OpMode {
                 mechanisms = BioBuzzAutoMechanisms.initialize(hardwareMap, alliance,
                         () -> -Math.toDegrees(follower.pose().heading()),
                         () -> -Math.toDegrees(follower.velocity().omega));
-                if (!mechanisms.supportsCountedCollection()) {
-                    mechanisms.stop();
-                    throw new IllegalStateException("Four-ball stored inventory/indexing remains unverified");
-                }
                 mechanismsInitialized = true;
             } catch (RuntimeException error) {
                 mechanismInitFailed = true;
@@ -259,9 +255,9 @@ public class BioBuzzAuto extends OpMode {
         telemetry.addData("Alliance for mechanisms", "%s (A blue, B red); route is not mirrored", alliance);
         telemetry.addData("Mechanisms", mechanisms.state());
         telemetry.addData("Mechanism diagnostics", mechanisms.diagnostics());
-        telemetry.addData("Collection verification", mechanisms.inventoryStatus());
+        telemetry.addData("Intake policy", mechanisms.intakePolicy());
         telemetry.addData("Scoring plan", "Shoot 4 preloads; intake 4 during path 1; shoot @2; intake 4 FLOWER @4; shoot @5");
-        telemetry.addData("Ball counts", "%d preload / %d staged / %d FLOWER",
+        telemetry.addData("Requested shots (not inventory)", "%d preload / %d staged / %d FLOWER",
                 BioBuzzAutoConfig.PRELOAD_BALL_COUNT, BioBuzzAutoConfig.STAGED_BALL_COUNT, BioBuzzAutoConfig.FLOWER_BALL_COUNT);
         telemetry.addData("Mechanism failure", mechanisms.failure().isEmpty() ? "none" : mechanisms.failure());
         telemetry.addData("Route source SHA", BioBuzzAutoPaths.SOURCE_SHA256);

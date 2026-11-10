@@ -52,15 +52,13 @@ public final class BioBuzzAutoRegression {
     }
     static final class Mech implements BioBuzzAutoMechanisms.Hardware {
         boolean ball;
-        int shots,controls,stops,closes,collected;
-        boolean countedCollection;
+        int shots,controls,stops,closes;
         double angle;
         boolean sensorsReady=true;
         BioBuzzAutoMechanisms.Kind request=BioBuzzAutoMechanisms.Kind.NONE;
         @Override public BioBuzzAutoMechanisms.Observation observe() {
-            return new BioBuzzAutoMechanisms.Observation(ball,shots,angle,sensorsReady,countedCollection ? collected : -1);
+            return new BioBuzzAutoMechanisms.Observation(ball,shots,angle,sensorsReady);
         }
-        @Override public boolean supportsCountedCollection() { return countedCollection; }
         @Override public void control(BioBuzzAutoMechanisms.Kind kind) { request=kind; controls++; }
         @Override public void stopOutputs() { request=BioBuzzAutoMechanisms.Kind.NONE; stops++; }
         @Override public void close() { closes++; stopOutputs(); }
@@ -85,7 +83,7 @@ public final class BioBuzzAutoRegression {
             routine=new BioBuzzAutoRoutine(follower,paths,count,mechanisms,actions,()->now[0]);
         }
         Fixture(BioBuzzAutoConfig.Plan plan) {
-            Scheduler.reset(); hardware.countedCollection=true; hardware.ball=true; mechanisms.observe();
+            Scheduler.reset(); hardware.ball=true; mechanisms.observe();
             routine=new BioBuzzAutoRoutine(follower,paths,5,mechanisms,plan,()->now[0]);
         }
         void start() { routine.start(); }
@@ -101,7 +99,7 @@ public final class BioBuzzAutoRegression {
         check(!BioBuzzAutoConfig.blockers(1,false).isEmpty(),"Review gates remain closed");
         check(BioBuzzAutoConfig.blockers(5,true).contains("FLOWER"),"Flag unresolved full route conflict");
         check(BioBuzzAutoConfig.hasMechanismActions(),"Full route includes user-confirmed mechanism mapping");
-        check(BioBuzzAutoConfig.blockers(5,true).contains("Four-ball inventory"),"Full route blocks unverified four-ball inventory");
+        check(!BioBuzzAutoConfig.blockers(5,true).toLowerCase().contains("inventory"),"No stored-ball inventory approval blocks full route");
         check(BioBuzzAutoConfig.PRELOAD_BALL_COUNT==4 && BioBuzzAutoConfig.STAGED_BALL_COUNT==4
                 && BioBuzzAutoConfig.FLOWER_BALL_COUNT==4,"User confirmed four balls in each of three volleys");
         for (BioBuzzAutoMechanisms.Action action:BioBuzzAutoConfig.actions(false)) {
@@ -205,14 +203,18 @@ public final class BioBuzzAutoRegression {
         check(failShot.routine.failed() && failShot.follower.followed==1 && failShot.hardware.closes>0,"Failed shot blocks later drive and cleans up");
         Fixture cancelShot=new Fixture(2,actions); cancelShot.start(); cancelShot.arrive(cancelShot.paths.end(1)); Scheduler.cancel(cancelShot.routine.command());
         check(cancelShot.routine.failed() && cancelShot.hardware.closes>0,"Interrupted mechanism cleans up");
-        actions=none(); actions[0]=BioBuzzAutoMechanisms.Action.collectUntilBall(4);
+        actions=none(); actions[0]=BioBuzzAutoMechanisms.Action.intakeFor(1,4);
         Fixture collect=new Fixture(2,actions); collect.start(); collect.arrive(collect.paths.end(1)); collect.tick(); collect.advance(.5);
-        check(collect.follower.followed==1,"Collection must not succeed just because time passed");
+        check(collect.follower.followed==1,"Timed intake continues for the configured window");
         collect.hardware.ball=true; collect.tick(); collect.advance(.21);
-        check(collect.follower.followed==2 && collect.hardware.stops>0,"Collection uses sustained ball sensor completion"); collect.routine.stop();
+        check(collect.follower.followed==1,"Presence does not finish intake early");
+        int outputs=collect.hardware.controls; collect.advance(.3);
+        check(collect.follower.followed==2 && collect.hardware.controls==outputs && collect.hardware.stops>0,
+                "Time window ends without a stored count; no extra output after duration"); collect.routine.stop();
         Fixture occupied=new Fixture(2,actions); occupied.hardware.ball=true; occupied.mechanisms.observe();
-        occupied.start(); occupied.arrive(occupied.paths.end(1));
-        check(occupied.routine.failed() && occupied.hardware.controls==0,"Existing feeder occupancy cannot count as a new pickup");
+        occupied.start(); occupied.arrive(occupied.paths.end(1)); occupied.tick();
+        check(!occupied.routine.failed() && occupied.hardware.request==BioBuzzAutoMechanisms.Kind.COLLECT,
+                "An occupied feeder does not prevent an open-loop intake attempt"); occupied.routine.stop();
         Fixture drift=new Fixture(2,actions); drift.start(); drift.arrive(drift.paths.end(1));
         int before=drift.hardware.controls; drift.nav.pose=P.of(0,0,0); drift.tick();
         check(drift.routine.failed() && drift.hardware.controls==before && drift.hardware.closes>0,"Lost waypoint blocks mechanism output before control");
@@ -239,18 +241,21 @@ public final class BioBuzzAutoRegression {
         BioBuzzAutoConfig.Plan plan=BioBuzzAutoConfig.scoringPlan();
         check(plan.beforeFirstPath.kind==BioBuzzAutoMechanisms.Kind.SHOOT && plan.beforeFirstPath.count==4,
                 "Four preloads before path 1");
-        check(plan.duringPath[0].kind==BioBuzzAutoMechanisms.Kind.COLLECT && plan.duringPath[0].count==4
-                && plan.afterPath[0].kind==BioBuzzAutoMechanisms.Kind.NONE,"Collect during path 1, not after it");
+        check(plan.duringPath[0].kind==BioBuzzAutoMechanisms.Kind.COLLECT && plan.duringPath[0].count==0
+                && plan.duringPath[0].durationSeconds==0 && plan.afterPath[0].kind==BioBuzzAutoMechanisms.Kind.NONE,
+                "Path-1 intake has no inventory target or separate after-path pickup");
         Fixture run=new Fixture(plan); run.start(); run.tick();
         check(run.follower.followed==0 && run.follower.holding() && run.hardware.request==BioBuzzAutoMechanisms.Kind.SHOOT,
                 "Shoot preloads while holding start, before any path movement");
         volley(run); run.tick();
         check(run.follower.followed==1 && run.hardware.request==BioBuzzAutoMechanisms.Kind.COLLECT
                 && run.routine.stage()==BioBuzzAutoRoutine.Stage.DRIVING_AND_COLLECTING,"Intake alongside path 1 after all preloads clear");
-        run.hardware.collected=3; run.arrive(run.paths.end(1));
-        check(run.follower.followed==1,"Path 2 cannot start after only three pickups, even after arrival");
-        run.hardware.collected=4; run.tick(); run.advance(.21);
-        check(run.follower.followed==2 && run.hardware.request==BioBuzzAutoMechanisms.Kind.NONE,"Verified four pickups AND arrival permit path 2");
+        run.hardware.ball=false; run.advance(.5);
+        check(run.follower.followed==1 && run.hardware.request==BioBuzzAutoMechanisms.Kind.COLLECT,
+                "Intake remains active until path-1 arrival even without a ball detection");
+        run.arrive(run.paths.end(1));
+        check(run.follower.followed==2 && run.hardware.request==BioBuzzAutoMechanisms.Kind.NONE,
+                "Path-1 arrival ends intake and starts path 2 without waiting for stored-ball feedback");
         run.arrive(run.paths.end(2)); run.tick();
         check(run.hardware.request==BioBuzzAutoMechanisms.Kind.SHOOT && run.follower.followed==2,"Second volley follows path 2");
         volley(run);
@@ -259,10 +264,11 @@ public final class BioBuzzAutoRegression {
         check(run.follower.followed==4 && run.hardware.request==BioBuzzAutoMechanisms.Kind.NONE,"No invented action at path 3");
         run.arrive(run.paths.end(4)); run.tick();
         check(run.hardware.request==BioBuzzAutoMechanisms.Kind.COLLECT,"Intake-only FLOWER pickup after path 4");
-        run.hardware.collected=7; run.tick(); run.advance(.21);
-        check(run.follower.followed==4,"Three new FLOWER balls do not satisfy four-ball pickup");
-        run.hardware.collected=8; run.tick(); run.advance(.21);
-        check(run.follower.followed==5,"Four new FLOWER balls permit path 5");
+        run.hardware.ball=false; run.advance(BioBuzzAutoConfig.FLOWER_INTAKE_SECONDS-.1);
+        check(run.follower.followed==4 && run.hardware.request==BioBuzzAutoMechanisms.Kind.COLLECT,"FLOWER intake waits for its duration");
+        run.advance(.11);
+        check(run.follower.followed==5 && run.hardware.request==BioBuzzAutoMechanisms.Kind.NONE,
+                "FLOWER window ends and starts path 5 without claiming four stored balls");
         run.arrive(run.paths.end(5)); run.tick();
         check(run.hardware.request==BioBuzzAutoMechanisms.Kind.SHOOT,"Final volley follows path 5");
         volley(run); run.drain();
@@ -272,23 +278,18 @@ public final class BioBuzzAutoRegression {
         run.routine.stop();
 
         Fixture early=new Fixture(plan); early.start(); volley(early);
-        early.hardware.collected=4; early.tick(); early.advance(.21);
-        check(early.follower.followed==1,"Four pickups alone cannot substitute for path-1 arrival");
+        early.hardware.ball=true; early.tick(); early.advance(.21);
+        check(early.follower.followed==1 && early.hardware.request==BioBuzzAutoMechanisms.Kind.COLLECT,
+                "Feeder presence cannot substitute for path arrival or stop travel intake");
         early.routine.stop();
         check(early.hardware.closes>0 && early.drive.stops>0,"Stop during concurrent path/intake cleans both");
-
-        Fixture timeout=new Fixture(plan); timeout.start(); volley(timeout); timeout.advance(10.1);
-        check(timeout.routine.failed() && timeout.follower.followed==1,"Collection timeout during drive blocks path 2");
-        Fixture reset=new Fixture(plan); reset.start(); volley(reset); reset.hardware.collected=3; reset.tick();
-        reset.hardware.collected=0; reset.tick();
-        check(reset.routine.failed() && reset.follower.followed==1,"Pickup counter reset aborts concurrent collection");
+        Fixture timeout=new Fixture(plan); timeout.start(); volley(timeout); timeout.advance(16);
+        check(timeout.routine.failed() && timeout.follower.followed==1,"Stalled path/intake timeout blocks path 2");
         Fixture cancelled=new Fixture(plan); cancelled.start(); volley(cancelled); Scheduler.cancel(cancelled.routine.command());
         check(cancelled.routine.failed() && cancelled.hardware.closes>0 && cancelled.drive.stops>0,
-                "Cancelling concurrent pickup stops mechanisms and drivetrain");
-        BioBuzzAutoMechanisms.Action[] actions=none(); actions[0]=BioBuzzAutoMechanisms.Action.collect(4,4);
-        Fixture unsupported=new Fixture(2,actions); unsupported.start(); unsupported.arrive(unsupported.paths.end(1));
-        check(unsupported.routine.failed() && unsupported.hardware.controls==0,"Presence-only hardware cannot execute a four-ball pickup");
-
+                "Cancelling concurrent intake stops mechanisms and drivetrain");
+        Fixture interrupted=new Fixture(plan); interrupted.start(); volley(interrupted); interrupted.follower.stop(); interrupted.tick();
+        check(interrupted.routine.failed() && interrupted.hardware.closes>0,"Path interruption stops concurrent intake");
         Fixture preloads=new Fixture(plan); preloads.start(); preloads.advance(7.1);
         check(preloads.routine.failed() && preloads.follower.followed==0,"Failed preload volley prevents path 1");
         Fixture unverified=new Fixture(plan); unverified.start(); unverified.tick();
@@ -297,5 +298,9 @@ public final class BioBuzzAutoRegression {
                 && unverified.hardware.request==BioBuzzAutoMechanisms.Kind.NONE,
                 "Four timed counts alone cannot finish or keep feeding while missing clear events");
         unverified.routine.stop();
+        try { BioBuzzAutoMechanisms.Action.intakeFor(Double.NaN,4); throw new AssertionError("NaN window"); }
+        catch (IllegalArgumentException expected) { check(true,"Reject nonfinite intake duration"); }
+        try { BioBuzzAutoMechanisms.Action.intakeFor(5,4); throw new AssertionError("Window exceeds deadline"); }
+        catch (IllegalArgumentException expected) { check(true,"Reject intake window beyond timeout"); }
     }
 }

@@ -14,20 +14,28 @@ public final class BioBuzzAutoMechanisms {
     public enum Kind { NONE, SHOOT, COLLECT, CENTER_TURRET }
     public static final class Action {
         public final Kind kind;
-        public final int count;
+        public final int count; // Requested shot count only. Intake never counts stored balls.
         public final double timeoutSeconds;
-        private Action(Kind kind, int count, double timeoutSeconds) {
+        public final double durationSeconds; // Zero for path-owned intake.
+        private Action(Kind kind, int count, double timeoutSeconds, double durationSeconds) {
             if (kind != Kind.NONE && (!Double.isFinite(timeoutSeconds) || timeoutSeconds <= 0)) {
                 throw new IllegalArgumentException("Mechanism action needs a positive finite deadline");
             }
-            if ((kind == Kind.SHOOT || kind == Kind.COLLECT) && count < 1) throw new IllegalArgumentException("Ball count must be positive");
-            this.kind=kind; this.count=count; this.timeoutSeconds=timeoutSeconds;
+            if (kind == Kind.SHOOT && count < 1) throw new IllegalArgumentException("Shot count must be positive");
+            if (!Double.isFinite(durationSeconds) || durationSeconds<0
+                    || (kind==Kind.COLLECT && durationSeconds>=timeoutSeconds)) {
+                throw new IllegalArgumentException("Intake duration must be finite and shorter than its timeout");
+            }
+            this.kind=kind; this.count=count; this.timeoutSeconds=timeoutSeconds; this.durationSeconds=durationSeconds;
         }
-        public static Action none() { return new Action(Kind.NONE,0,0); }
-        public static Action shoot(int balls, double timeout) { return new Action(Kind.SHOOT,balls,timeout); }
-        public static Action collectUntilBall(double timeout) { return new Action(Kind.COLLECT,1,timeout); }
-        public static Action collect(int balls, double timeout) { return new Action(Kind.COLLECT,balls,timeout); }
-        public static Action centerTurret(double timeout) { return new Action(Kind.CENTER_TURRET,0,timeout); }
+        public static Action none() { return new Action(Kind.NONE,0,0,0); }
+        public static Action shoot(int balls, double timeout) { return new Action(Kind.SHOOT,balls,timeout,0); }
+        public static Action intakeDuringPath(double timeout) { return new Action(Kind.COLLECT,0,timeout,0); }
+        public static Action intakeFor(double seconds, double timeout) {
+            if (seconds<=0) throw new IllegalArgumentException("Stationary intake needs a positive duration");
+            return new Action(Kind.COLLECT,0,timeout,seconds);
+        }
+        public static Action centerTurret(double timeout) { return new Action(Kind.CENTER_TURRET,0,timeout,0); }
     }
 
     /** Sampled sensors, not inferred completion based on elapsed feed time alone. */
@@ -36,22 +44,15 @@ public final class BioBuzzAutoMechanisms {
         public final int shotsFired;
         public final double turretDegrees;
         public final boolean sensorsReady;
-        /** Monotonic count of physically verified new stored balls; -1 means unsupported. */
-        public final int collectedBalls;
         public Observation(boolean ballPresent, int shotsFired, double turretDegrees) {
             this(ballPresent,shotsFired,turretDegrees,true);
         }
         public Observation(boolean ballPresent, int shotsFired, double turretDegrees, boolean sensorsReady) {
-            this(ballPresent,shotsFired,turretDegrees,sensorsReady,-1);
-        }
-        public Observation(boolean ballPresent, int shotsFired, double turretDegrees, boolean sensorsReady, int collectedBalls) {
             this.ballPresent=ballPresent; this.shotsFired=shotsFired; this.turretDegrees=turretDegrees;
             this.sensorsReady=sensorsReady;
-            this.collectedBalls=collectedBalls;
         }
     }
     public interface Hardware {
-        default boolean supportsCountedCollection() { return false; }
         default String diagnostics() { return "No controller diagnostics"; }
         Observation observe();
         void control(Kind request);
@@ -67,6 +68,7 @@ public final class BioBuzzAutoMechanisms {
     private LongSupplier activeClock;
     private long activeStart;
     private double activeTimeout;
+    private double activeIntakeDuration;
     private String failure="";
 
     public BioBuzzAutoMechanisms() { this(null); }
@@ -77,7 +79,7 @@ public final class BioBuzzAutoMechanisms {
         try {
             hardware.robot.initMechanismsOnly(map, false); // Never re-zero turret without a verified physical reference.
             hardware.robot.alliance=alliance;
-            if (hardware.robot.ballDistanceSensor == null) throw new IllegalStateException("Ball distance sensor required for verified collection/shooting");
+            if (hardware.robot.ballDistanceSensor == null) throw new IllegalStateException("Ball distance sensor required by the existing shooting/feeder interface");
             if (hardware.robot.colorSensor == null) throw new IllegalStateException("Color sensor required by Robot.updateSensors ball detection");
             if (hardware.robot.Limelight == null) throw new IllegalStateException("Limelight required for the existing shot sequence");
             if (!hardware.robot.gateCalibrated()) throw new IllegalStateException("Run Gate Calibration: saved gate endpoints are invalid");
@@ -96,8 +98,6 @@ public final class BioBuzzAutoMechanisms {
         return result;
     }
 
-    public boolean supportsCountedCollection() { return hardware!=null && hardware.supportsCountedCollection(); }
-
     /** Stationary operator-held test only; mutually exclusive with any command. */
     public void manualIntake(boolean running) {
         if (closed || commandActive || !failure.isEmpty()) throw new IllegalStateException("Mechanism port is unavailable or command-owned");
@@ -114,6 +114,12 @@ public final class BioBuzzAutoMechanisms {
     }
     /** Call exactly once per active FTC loop, after navigation and before Scheduler.execute(). */
     public void update() {
+        if (closed) return;
+        if (commandActive && activeIntakeDuration>0 && (activeClock.getAsLong()-activeStart)/1e9>=activeIntakeDuration
+                && request==Kind.COLLECT) {
+            request=Kind.NONE;
+            hardware.stopOutputs(); // End timed intake before another actuator write.
+        }
         if (commandActive && (activeClock.getAsLong()-activeStart)/1e9>=activeTimeout) {
             request=Kind.NONE;
             hardware.stopOutputs();
@@ -130,19 +136,13 @@ public final class BioBuzzAutoMechanisms {
         return observation != null && observation.sensorsReady && Double.isFinite(observation.turretDegrees);
     }
 
-    public String inventoryStatus() {
-        return hardware != null && hardware.supportsCountedCollection()
-                ? "Verified pickup counter: " + (observation==null ? "unavailable" : observation.collectedBalls)
-                : "UNAVAILABLE - feeder presence does not count four stored balls";
-    }
+    public String intakePolicy() { return "Open-loop: path duration / configured FLOWER window; no stored-ball count"; }
 
     public Command command(Action action, LongSupplier clock, Consumer<String> onFailure) {
         final boolean[] active={false};
         final boolean[] previousBall={false};
         final int[] clearTransitions={0};
         final int[] baseline={0};
-        final int[] collectionBaseline={-1};
-        final int[] previousCollection={-1};
         final long[] began={0};
         final long[] stableSince={-1};
         return Command.build().requiring(this)
@@ -152,26 +152,14 @@ public final class BioBuzzAutoMechanisms {
                         onFailure.accept(failure);
                         return;
                     }
-                    if (action.kind==Kind.COLLECT && action.count>1
-                            && (!hardware.supportsCountedCollection() || observation.collectedBalls<0)) {
-                        failure="Four-ball collection requires a verified inventory/indexing controller";
-                        onFailure.accept(failure);
-                        return;
-                    }
-                    if (action.kind==Kind.COLLECT && action.count==1 && observation.ballPresent) {
-                        failure="Collection started with an occupied feeder; inventory is unknown";
-                        onFailure.accept(failure);
-                        return;
-                    }
                     if (commandActive) throw new IllegalStateException("Competing mechanism commands");
                     active[0]=true; commandActive=true;
                     began[0]=clock.getAsLong();
                     activeClock=clock; activeStart=began[0]; activeTimeout=action.timeoutSeconds;
+                    activeIntakeDuration=action.kind==Kind.COLLECT ? action.durationSeconds : 0;
                     stableSince[0]=-1;
                     clearTransitions[0]=0;
                     baseline[0]=observation.shotsFired;
-                    collectionBaseline[0]=observation.collectedBalls;
-                    previousCollection[0]=observation.collectedBalls;
                     previousBall[0]=observation.ballPresent;
                     request=action.kind;
                 })
@@ -205,20 +193,8 @@ public final class BioBuzzAutoMechanisms {
                             done=observation.shotsFired-baseline[0]>=action.count && clearTransitions[0]>=action.count;
                             break;
                         case COLLECT:
-                            if (action.count>1 && observation.collectedBalls<previousCollection[0]) {
-                                failure="Pickup counter reset during collection";
-                                onFailure.accept(failure);
-                                return true;
-                            }
-                            previousCollection[0]=observation.collectedBalls;
-                            if (action.count>1 && observation.collectedBalls-collectionBaseline[0]>action.count) {
-                                failure="Pickup counter exceeded requested count";
-                                onFailure.accept(failure);
-                                return true;
-                            }
-                            done=action.count==1 ? observation.ballPresent
-                                    : observation.collectedBalls-collectionBaseline[0]>=action.count;
-                            break;
+                            // This completes an intake attempt, never a measured inventory target.
+                            return action.durationSeconds>0 && (now-began[0])/1e9>=action.durationSeconds;
                         case CENTER_TURRET: done=Math.abs(observation.turretDegrees)<=Robot.TURRET_DEADBAND_DEG; break;
                         default: done=true;
                     }
@@ -245,6 +221,7 @@ public final class BioBuzzAutoMechanisms {
 
     public void stop() {
         closed=true;
+        commandActive=false;
         request=Kind.NONE;
         if (hardware != null) hardware.close();
     }

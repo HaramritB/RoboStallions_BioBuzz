@@ -170,7 +170,12 @@ public final class BioBuzzAutoRoutine {
                         stableSince[0]=-1; return false;
                     }
                     if (stableSince[0]<0) stableSince[0]=now;
-                    return (now-stableSince[0])/1e9>=BioBuzzAutoConfig.SETTLE_TIME_S && collectionEnded[0];
+                    boolean arrived=(now-stableSince[0])/1e9>=BioBuzzAutoConfig.SETTLE_TIME_S;
+                    if (arrived && collectionStarted[0] && !collectionEnded[0]) {
+                        collectionEnded[0]=true;
+                        collection.end(EndCondition.NATURALLY); // Path owns intake lifetime; no inventory prerequisite.
+                    }
+                    return arrived;
                 }).setEnd(reason -> {
                     if (collectionStarted[0] && !collectionEnded[0]) {
                         collectionEnded[0]=true;

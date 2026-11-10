@@ -21,8 +21,9 @@ public final class BioBuzzAutoConfig {
     public static final int PRELOAD_BALL_COUNT = 4;
     public static final int STAGED_BALL_COUNT = 4;
     public static final int FLOWER_BALL_COUNT = 4;
-    public static final boolean COUNTED_COLLECTION_VALIDATED = false;
     public static final double COLLECTION_TIMEOUT_S = 10.0;
+    // Initial test window, not a measured time to acquire four balls. Tune on the robot.
+    public static final double FLOWER_INTAKE_SECONDS = 2.0;
     public static final double SHOOT_TIMEOUT_S = 7.0;
 
     /** Commands before driving, alongside each path, and after each verified arrival. */
@@ -39,7 +40,13 @@ public final class BioBuzzAutoConfig {
                 if (duringPath[i]==null || afterPath[i]==null) throw new IllegalArgumentException("Null action");
                 if (duringPath[i].kind!=BioBuzzAutoMechanisms.Kind.NONE
                         && duringPath[i].kind!=BioBuzzAutoMechanisms.Kind.COLLECT) {
-                    throw new IllegalArgumentException("Only collection is permitted during travel");
+                    throw new IllegalArgumentException("Only intake is permitted during travel");
+                }
+                if (duringPath[i].kind==BioBuzzAutoMechanisms.Kind.COLLECT && duringPath[i].durationSeconds!=0) {
+                    throw new IllegalArgumentException("Travel intake must be owned by path completion");
+                }
+                if (afterPath[i].kind==BioBuzzAutoMechanisms.Kind.COLLECT && afterPath[i].durationSeconds<=0) {
+                    throw new IllegalArgumentException("Stationary intake needs a configured duration");
                 }
             }
         }
@@ -54,9 +61,9 @@ public final class BioBuzzAutoConfig {
 
     public static Plan scoringPlan() {
         BioBuzzAutoMechanisms.Action[] during=actions(false), after=actions(false);
-        during[0]=BioBuzzAutoMechanisms.Action.collect(STAGED_BALL_COUNT, COLLECTION_TIMEOUT_S);
+        during[0]=BioBuzzAutoMechanisms.Action.intakeDuringPath(SEGMENT_TIMEOUT_S);
         after[1]=BioBuzzAutoMechanisms.Action.shoot(STAGED_BALL_COUNT, SHOOT_TIMEOUT_S);
-        after[3]=BioBuzzAutoMechanisms.Action.collect(FLOWER_BALL_COUNT, COLLECTION_TIMEOUT_S);
+        after[3]=BioBuzzAutoMechanisms.Action.intakeFor(FLOWER_INTAKE_SECONDS, COLLECTION_TIMEOUT_S);
         after[4]=BioBuzzAutoMechanisms.Action.shoot(FLOWER_BALL_COUNT, SHOOT_TIMEOUT_S);
         // No flower lever is mapped or commanded. The user specified intake only.
         return new Plan(BioBuzzAutoMechanisms.Action.shoot(PRELOAD_BALL_COUNT, SHOOT_TIMEOUT_S), during, after);
@@ -92,9 +99,6 @@ public final class BioBuzzAutoConfig {
         if (pathCount >= 4 && !FLOWER_APPROACH_VALIDATED) result += "FLOWER intersection unresolved; ";
         if (fullRoute && !FULL_ROUTE_VALIDATED) result += "Full route not validated; ";
         if (fullRoute && !ROBOT_CONTROLLER_REVISION_VALIDATED) result += "New main mechanism API reconciliation pending; ";
-        if (fullRoute && !COUNTED_COLLECTION_VALIDATED) {
-            result += "Four-ball inventory/indexing verification unavailable; ";
-        }
         if (fullRoute && hasMechanismActions() && (!MECHANISMS_VALIDATED || !MECHANISM_SEQUENCE_VALIDATED)) {
             result += "Mechanism configuration/sequence unverified; ";
         }

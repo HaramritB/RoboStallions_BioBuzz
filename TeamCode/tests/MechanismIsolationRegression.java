@@ -128,6 +128,9 @@ public final class MechanismIsolationRegression {
         intakePort.control(BioBuzzAutoMechanisms.Kind.COLLECT);
         check(intakeMap.motors.get("intake").power==Robot.INTAKE_POWER,"Intake request runs the existing motor interface");
         check(intakeMap.motors.get("shooter").power==0 && intakeMap.motors.get("turret").power==0,"Collection cannot run shooter or turret");
+        intakePort.robot.ballPresent=true;
+        intakePort.control(BioBuzzAutoMechanisms.Kind.COLLECT);
+        check(intakeMap.motors.get("intake").power==Robot.INTAKE_POWER,"Feeder presence does not stop open-loop intake motor");
         check(!intakeMap.lookups.contains("flower"),"Autonomous mechanisms never map the flower lever");
         check(intakePort.robot.gateController.command==Robot.GATE_CLOSED,"Collection uses main's calibrated gate controller");
         intakePort.robot.gateController.closedPosition=.67;

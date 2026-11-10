@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--upstream-source', type=Path)
 args = parser.parse_args()
+subprocess.run([shutil.which('python3') or 'python3', str(ROOT / 'TeamCode/tools/sync_autonomous_route.py'), '--check'], check=True)
 cache = Path(os.environ.get('GRADLE_USER_HOME', Path.home() / '.gradle')) / 'caches/modules-2/files-2.1'
 sdk = os.environ.get('ANDROID_HOME') or os.environ.get('ANDROID_SDK_ROOT')
 if not sdk and (ROOT / 'local.properties').exists():
@@ -58,7 +59,13 @@ with tempfile.TemporaryDirectory(prefix='biobuzz-auto-') as temporary:
         dependency('org.firstinspires.ftc', module, '12.0.0', 'aar')
     sources = list((ROOT / 'TeamCode/src/main/java/org/firstinspires/ftc/teamcode/autonomous').glob('*.java'))
     sources += [ROOT / 'TeamCode/src/main/java/org/firstinspires/ftc/teamcode/Constants.java',
-                Path(__file__).with_name('BioBuzzAutoRegression.java')]
+                ROOT / 'TeamCode/src/main/java/org/firstinspires/ftc/teamcode/AutoPath.java',
+                ROOT / 'TeamCode/src/main/java/org/firstinspires/ftc/teamcode/Robot.java',
+                ROOT / 'TeamCode/src/main/java/org/firstinspires/ftc/teamcode/BioBuzzAuto.java',
+                Path(__file__).with_name('BioBuzzAutoRegression.java'),
+                Path(__file__).with_name('AutoPathRegression.java'),
+                Path(__file__).with_name('MechanismIsolationRegression.java'),
+                Path(__file__).with_name('AutoLifecycleRegression.java')]
     if args.upstream_source:
         sources += sorted(args.upstream_source.rglob('*.java'))
         print('Compiling against supplied upstream sources (not resolved Maven binaries).', flush=True)
@@ -72,3 +79,12 @@ with tempfile.TemporaryDirectory(prefix='biobuzz-auto-') as temporary:
                     '-cp', classpath, '-d', str(work)] + list(map(str, sources)), check=True)
     subprocess.run([java_tool('java'), '-cp', os.pathsep.join([str(work), classpath]),
                     'org.firstinspires.ftc.teamcode.autonomous.BioBuzzAutoRegression'], check=True)
+
+    subprocess.run([java_tool('java'), '-cp', os.pathsep.join([str(work), classpath]),
+                    'org.firstinspires.ftc.teamcode.AutoPathRegression'], check=True)
+
+    subprocess.run([java_tool('java'), '-cp', os.pathsep.join([str(work), classpath]),
+                    'org.firstinspires.ftc.teamcode.autonomous.MechanismIsolationRegression'], check=True)
+
+    subprocess.run([java_tool('java'), '-cp', os.pathsep.join([str(work), classpath]),
+                    'org.firstinspires.ftc.teamcode.autonomous.AutoLifecycleRegression'], check=True)

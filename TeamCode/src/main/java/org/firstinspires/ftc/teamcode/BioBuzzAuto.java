@@ -1,6 +1,7 @@
 package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
@@ -15,7 +16,8 @@ import com.qualcomm.robotcore.util.ElapsedTime;
  *
  * The distances below are placeholders. Measure them from your start spot on the field.
  */
-@Autonomous(name = "BioBuzz Auto", group = "Competition", preselectTeleOp = "BioBuzz TeleOp")
+@Disabled // Legacy placeholder encoder route; use autonomous.BioBuzzAuto for Pedro navigation.
+@Autonomous(name = "BioBuzz Auto (Legacy Encoders)", group = "Legacy", preselectTeleOp = "BioBuzz TeleOp")
 public class BioBuzzAuto extends LinearOpMode {
 
     static final double DRIVE_POWER = 0.5;

@@ -1,221 +1,267 @@
-# BioBuzz Pedro autonomous foundation
+# BioBuzz autonomous integration
 
-## Status
+The integrated Java is in the editable checkout
+`/Users/pradhyun/Documents/ChatGPT/FTC/RoboStallions_BioBuzz1`, branch `PradhyunAuto`.
+The original `/Users/pradhyun/StudioProjects/RoboStallions_BioBuzz1` is clean at `e80d1e5`
+but outside this session's writable roots. A guarded incremental patch/installer is supplied
+beside this editable checkout. No branches were merged or force-pushed; no robot was deployed.
 
-Implemented on branch `PradhyunAuto`, based on clean commit `62189dd`.
-The editable checkout is `/Users/pradhyun/Documents/ChatGPT/FTC/RoboStallions_BioBuzz1`.
-The original checkout at `/Users/pradhyun/StudioProjects/RoboStallions_BioBuzz1` was read
-but cannot be edited under this session's filesystem permissions. No commit, merge,
-push, deployment, or physical robot execution was performed.
+**Android debug build: passed. Physical execution: intentionally disabled. This is a complete
+five-path driving implementation with reusable mechanism commands, not yet a verified scoring auto.**
 
-**The new OpMode is disabled. This is a movement-only software foundation with example
-coordinates, not a validated competition route.** The existing `BioBuzz Auto` is a separate,
-unchanged encoder-based OpMode; do not confuse it with the new Pedro OpMode.
+## Inputs and repository findings
 
-## Repository findings
+- The requested `BioBuzz_AutoPath.pp.json` is retained unchanged. Its SHA-256 is
+  `a61a3d550df9bbd607a2752377f7f146ff9c3287f79398649f6a459dd5936f3b`.
+  It matches the requested explicit headings and has an empty robot block. A separately
+  supplied `(1)` variant has a tangential first path and modeled 16-inch dimensions;
+  those differ from this request and do not establish physical measurements. It was not
+  substituted for the explicitly requested original route.
+- Read-only upstream inspection on 2026-11-10 found main at
+  `b41fb87d8ae5875d51bb5b3a497c32fb7e62c168` (tracking/TeleOp merge). This branch
+  remains based on its original controllers. No pull/merge was performed because the active
+  request prohibits merging. Main adds saved gate calibration (defaults OPEN .41/CLOSED .59,
+  versus this branch's .14/0), revised turret/vision controls, distance-based RPM, and a
+  TeleOp flower lever named `flower` (ON .38/OFF .03). Do not copy just these numbers into
+  the older adapter: reconcile the complete relevant controller interface and rerun its
+  regressions first. ROBOT_CONTROLLER_REVISION_VALIDATED remains false for this reason.
+- FTC SDK 12.0.0; Pedro `revhub`/`core` 3.0.2; Ivy `pedro`/`core` 1.1.1;
+  tuning 1.0.0. Gradle 9.1.0, AGP 8.13.2, Java 8 source/target. Versions are unchanged.
+- Four-wheel mecanum: `frontleft`, `frontright`, `backleft`, `backright`.
+  Pedro Constants sets all FORWARD. Robot's TeleOp mixer uses left REVERSE and explicit
+  negative left-wheel powers. Different mixers mean actual wheel behavior must be checked;
+  neither configuration was changed.
+- `Constants.create()` supplies the existing Pinpoint + Mecanum + Foresight objects.
+  Device `pinpoint`, goBILDA 4-bar pods, X encoder reversed and Y forward; offsets -3.5625
+  and -4.125 inches. Existing calibrated coefficients and units are unchanged. Recent tuning
+  commits support the presence of tuning work but do not independently verify current behavior.
+- No measured chassis length/width or verified multi-ball inventory interface was found.
+  The old encoder Auto labels its 24-inch distances as placeholders and shoots preloads
+  after that drive. This does not establish where to shoot or collect on this different route.
+- Existing mechanisms: `shooter`, `turret`, `intake`, `transmission`, gate `torqueservo1`,
+  optional `Limelight`, color/distance sensor and LED. Current Robot source is authoritative;
+  older CONTROLS.md and RobotControlsRegression reference removed gate-calibration methods.
 
-| Item | Evidence / configuration |
-| --- | --- |
-| FTC SDK | `build.dependencies.gradle`: FTC artifacts 12.0.0 |
-| Build tools | Gradle wrapper 9.1.0, Android Gradle Plugin 8.13.2; Java 8 source/target; compile SDK 30, target 28, min 24 |
-| Package | `org.firstinspires.ftc.teamcode`; existing tuner classes in `.procedures`; new code in `.autonomous` |
-| Pedro | Existing `com.pedropathing:revhub:3.0.2`, `com.pedropathing:tuning:1.0.0`; no upgrade |
-| Ivy | Previously absent; added `com.pedropathing.ivy:pedro:1.1.1` only to TeamCode. Upstream v1.1.1 integration compiles against Pedro core 3.0.0 and works with the used 3.0.2 APIs. Published binary resolution still requires Gradle sync outside this sandbox. |
-| Drivetrain | Four-wheel mecanum; names `frontleft`, `frontright`, `backleft`, `backright` in both Robot and Constants |
-| Directions | Pedro Constants: all FORWARD. Robot: left REVERSE, right FORWARD, plus explicit negative left wheel powers in `drive()`. Different mixers make a simple direction comparison insufficient; verify actual wheel response using Pedro. No directions were changed. |
-| Localizer | `PinpointLocalizer`, device `pinpoint`, goBILDA 4-bar pods; X reversed, Y forward |
-| Offsets/units | X pod -3.5625 in; Y pod -4.125 in; global and offset units INCH, preserved exactly |
-| Follower factory | `Constants.create(HardwareMap)` constructs Pinpoint + Mecanum + Foresight with existing coefficients |
-| Calibration evidence | Specific tuned coefficients in Constants, recent commits `7eb34dc` (new constants) and `67c574f` (pedropathing done), plus localizer/drivetrain/Foresight tuning procedures. Physical verification, logs and route approval are not present. |
-| Existing OpModes | BioBuzz Auto, BioBuzz TeleOp, Robot Test, Flywheel Tuning + Burst Logger, Turret Limits (calibration), Pedro tuning entry point |
-| Existing route | Old Auto explicitly labels its 24 in forward / 24 in strafe distances as placeholders. No verified field waypoints or field diagram found. Tuner test lines/curves are test geometry. |
+## Changed files
 
-The old controls documentation and gate regression harness describe calibration methods
-that the current `Robot.java` no longer contains. Current source is authoritative; that
-mismatch is unrelated to this integration and is left unchanged.
-
-## Files
+All Java paths below are relative to `TeamCode/src/main/java/org/firstinspires/ftc/teamcode/`.
 
 | File | Purpose |
 | --- | --- |
-| `TeamCode/build.gradle` | Adds the Ivy 1.1.1 Pedro integration dependency |
-| `TeamCode/src/main/java/org/firstinspires/ftc/teamcode/autonomous/BioBuzzAuto.java` | Disabled iterative FTC OpMode, lifecycle, hardware checks, localization guard, telemetry and cleanup |
-| `TeamCode/src/main/java/org/firstinspires/ftc/teamcode/autonomous/BioBuzzAutoConfig.java` | Three disabled review gates; timeout, waypoint and settling policies |
-| `TeamCode/src/main/java/org/firstinspires/ftc/teamcode/autonomous/BioBuzzAutoPaths.java` | Example poses and fresh line/Bezier path factories; explicit constant/linear heading |
-| `TeamCode/src/main/java/org/firstinspires/ftc/teamcode/autonomous/BioBuzzAutoRoutine.java` | Ivy sequence with verified arrival, failure latching and cancellation handling |
-| `TeamCode/tests/BioBuzzAutoRegression.java` | Hardware-free checks using real Ivy scheduler/Pedro paths and simulated localization/drivetrain |
-| `TeamCode/tests/run_autonomous.py` | Compiles/runs those checks against cached binaries or explicitly supplied tagged upstream sources |
-| `TeamCode/AUTONOMOUS.md` | Findings, route, validation, operating instructions and extension guidance |
+| `autonomous/BioBuzzAuto.java` | Single iterative Pedro OpMode; test/full selection, initialization, telemetry and safe cleanup |
+| `autonomous/BioBuzzAutoConfig.java` | Closed physical-review gates, route-hash approval, test policy and confirmed four-ball preload/pickup/shot plan |
+| `autonomous/BioBuzzAutoPaths.java` | Generated geometry with all original control points and explicit headings |
+| `autonomous/BioBuzzAutoRoutine.java` | Five guarded drives, explicit turn, optional guarded mechanism commands, timeouts and failure state |
+| `autonomous/BioBuzzAutoMechanisms.java` | Nonblocking shoot/collect/center commands plus mechanism-only Robot adapter; no drivetrain ownership |
+| `AutoPath.java` | Deprecated disabled compatibility shim; delegates to the single Pedro implementation |
+| `BioBuzzAuto.java` | Old encoder Auto retained and explicitly disabled/marked Legacy |
+| `Robot.java` | Extracts original mechanism initialization into a shared method and adds initMechanismsOnly; original initialization block preserved byte-for-byte |
 
-Constants, Robot, existing autonomous, TeleOp, and all tuning values remain unchanged.
+Other repository paths:
 
-## Exact routine
-
-1. INIT resets Ivy, checks approval gates, and (only after approval gates are true)
-   resolves drive hardware and initializes the existing factory. Set the start pose.
-2. INIT LOOP updates only localization. It never executes Ivy or follower drive control.
-3. START requires READY Pinpoint status and a finite, stationary starting pose. Schedule once.
-4. Follow start-to-score. Wait for tracking to finish and the robot to be within arrival
-   and velocity tolerances. There is no scoring mechanism action.
-5. Follow score-to-park under the same arrival checks.
-6. Complete and explicitly zero drivetrain output. No automatic retry.
-
-| Segment | Start (X in, Y in, heading deg) | End | Geometry | Heading | Validation |
-| --- | --- | --- | --- | --- | --- |
-| Start to score | (24, 24, 0) | (48, 48, 90) | Straight line | Linear 0 to 90 deg | EXAMPLE ONLY |
-| Score to park | (48, 48, 90) | (72, 48, 90) | Straight line | Constant 90 deg | EXAMPLE ONLY |
-
-These share the exact same `scorePose` endpoint. Origin is the lower-left corner on the
-chosen field drawing, +X right, +Y up, inches, positive rotation counterclockwise; zero
-heading faces +X. Pose refers to robot center as configured by Pinpoint offsets. At the
-example start, the robot's forward axis faces +X. No alliance, starting wall, obstacle
-clearance, robot footprint clearance, or physical starting location has been established.
-Measure and record those before accepting the route. There is no automatic alliance mirror.
-
-`straight(start, end, constantHeading)` supports constant or linear headings.
-`bezier(start, end, constantHeading, controlPoses...)` supports curves when measured geometry
-justifies them; control headings do not define interpolated robot headings. Constant heading
-rejects endpoints with inconsistent headings. Initial paths deliberately have no controls.
-
-## Safety and lifecycle details
-
-- Both `@Disabled` and three compile-time false review flags block this OpMode. Removing
-  only the annotation cannot enable movement; unapproved INIT does not initialize hardware.
-- Hardware names come directly from existing Constants. Missing/wrong hardware catches an
-  initialization exception. Partially resolved drive motors receive independent stop writes.
-- Existing encoder modes are not changed. Each drive motor must already be in
-  RUN_WITHOUT_ENCODER: Pedro's Mecanum constructor does not set that mode. Any other mode
-  blocks initialization; verify the robot setup rather than silently overriding it here.
-- The existing factory's localizer, drivetrain and algorithm are reused. A Localizer decorator
-  validates each *fresh* sample inside follower.update before control reaches motor output.
-  Pinpoint must be READY, with finite position, heading and velocity. INIT can wait through
-  calibration; START and running faults fail closed. Finite but frozen readings cannot be
-  universally identified from pose alone; segment/overall deadlines bound such a failure.
-- Ivy v1.1.1 source uses `atParametricEnd()` in its default `follow` command, despite the
-  current website's description of completion. This routine overrides completion and adds
-  a follower requirement: it waits for HOLD plus position <=2 in, heading <=5 deg,
-  linear speed <=2 in/s and angular speed <=10 deg/s. These are initial test policy values,
-  not measured tuning. Tracking loss, an unexpected path replacement, or cancellation fails.
-- A segment that cannot arrive/settle fails after 10 s. The whole routine fails after 27 s.
-  Failed prerequisites latch failure and no later path can start.
-- FTC Stop, completion and exceptions cancel active Ivy work, reset static scheduler state,
-  clear follower tracking and stop drivetrain output. In Pedro 3.0.2 `Follower.stop()` only
-  changes state, so `follower.drivetrain.stop()` and independent zero motor writes are also
-  necessary. Cleanup errors are reported without skipping remaining stop attempts.
-- No Robot.init or mechanism update runs here, avoiding a second drivetrain controller,
-  turret re-zero, gate command, or camera startup. No mechanism is activated by this Auto.
-- Telemetry transmission is limited to 100 ms: pose, targets and wrapped errors, distance,
-  segment/stage, follower mode/tracking, elapsed time, completion, readiness, failure and stop.
-- The pre-existing PinpointLocalizer constructor internally sleeps 500 ms during initialization.
-  This integration adds no sleeps or movement polling loops; runtime control is nonblocking.
-
-## Validation performed
-
-Commands below ran from the editable checkout. JDK for the direct Java checks was Android
-Studio's bundled JBR; cached FTC SDK 12.0.0 AARs and installed Android 36 android.jar supplied
-FTC/Android types. New production sources, existing Constants, and actual tagged upstream
-Pedro v3.0.2 / Ivy v1.1.1 sources were compiled together at Java 8 source/target level.
-Upstream source files were fetched through the GitHub connector into temporary storage;
-no replacement library, fake API stubs, or vendored dependency was added to the project.
-
-| Command | Result |
+| File | Purpose |
 | --- | --- |
-| `GRADLE_USER_HOME=/tmp/biobuzz-gradle-home JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradlew :TeamCode:assembleDebug --offline --no-daemon` | BLOCKED before project configuration/Java compilation: FileLockContentionHandler creation fails with `java.net.SocketException: Operation not permitted`. Same failure on the unmodified baseline. |
-| `GRADLE_USER_HOME=/tmp/biobuzz-gradle-home JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradlew :TeamCode:testDebugUnitTest --offline --no-daemon` | BLOCKED before test discovery by the same Gradle lock-socket restriction. |
-| `python3 TeamCode/tests/run_autonomous.py --upstream-source /tmp/biobuzz-upstream` | PASS: production Java/source API compilation and 34 autonomous regression checks; only Java 8 bootstrap/obsolete-option warnings |
-| `python3 TeamCode/tests/run_robot_controls.py` | PRE-EXISTING FAILURE: 21 javac errors for missing gate calibration members and turretLimitBlocked in unchanged Robot.java |
-| `git diff --check` | PASS |
+| `TeamCode/routes/BioBuzz_AutoPath.pp.json` | Unchanged authoritative available source input |
+| `TeamCode/routes/BioBuzz_route_audit.json` | Reproducible clearance findings, missing measurements and explicit turn |
+| `TeamCode/tools/sync_autonomous_route.py` | Source validation, Java generation, audit and stale-artifact check; no runtime parser |
+| `TeamCode/tests/BioBuzzAutoRegression.java` | Integrated real-Pedro/Ivy route and mechanism command checks |
+| `TeamCode/tests/AutoPathRegression.java` | Compatibility and unique autonomous registration checks |
+| `TeamCode/tests/MechanismIsolationRegression.java` | SDK hardware proxies verify initialization isolation, unchanged mechanism setup and cleanup after a failed write |
+| `TeamCode/tests/AutoLifecycleRegression.java` | Actual OpMode callbacks: INIT/START/Stop, gamepad selection, repeated initialization and scheduler reset |
+| `TeamCode/tests/test_route_source.py` | Source/audit consistency and malformed route rejection |
+| `TeamCode/tests/run_autonomous.py` | Runs all Java checks with cached actual binary dependencies; optional tagged-source mode retained |
+| `TeamCode/AUTONOMOUS.md` | This handoff |
+| `.gitignore` | Excludes Python utility/test bytecode caches |
 
-Autonomous checks cover endpoints and heading interpolation, fresh path creation, curves,
-invalid route rejection, wrapped angles, path ordering, settling, success cleanup, missed
-waypoints, timeouts, follower interruption, Ivy cancellation, explicit Stop, invalid start,
-and rejecting non-ready/nonfinite localization *before* drivetrain output.
+No TeleOp source, motor direction, encoder conversion, localizer offset, PID coefficient or
+library version was changed. Whole Robot.init() retains its previous sequence and mechanism
+configuration. The new mechanism-only initializer never maps a drivetrain motor or resets a
+turret reference unless explicitly requested (Auto passes false).
 
-**No successful Gradle/APK build is claimed.** The shell also cannot resolve Maven hosts,
-and Pedro/Ivy binaries are absent from its cache. Source compatibility checks cannot verify
-published transitive dependency resolution, Android packaging, or physical behavior.
-The supplied upstream source directory is temporary; normal reusable verification after
-Gradle sync is `python3 TeamCode/tests/run_autonomous.py`.
+## Exact sequence
 
-On the development machine with normal network and Gradle socket permissions, run:
+| Action | Start -> end (inches, degrees) | Heading/geometry |
+| --- | --- | --- |
+| Path 1 | (57.6323, 9.0657, 90) -> (9.5657, 9.2715, 179.7546) | Line, linear heading |
+| Path 2 | Previous endpoint -> (32.2934, 127.6559, -84.7123) | Quadratic Bezier, control (40.923, 34.4143), linear heading |
+| Turn before path 3 | Same XY, -84.7123 -> 0 deg | Explicit hold-position command; measured heading/velocity completion |
+| Path 3 | (32.2934, 127.6559, 0) -> (46.9373, 125.3042, 90) | Quadratic Bezier, control (40.2631, 108.1664), linear heading |
+| Path 4 | Previous endpoint -> (46.7883, 140.2305, 90.572) | Line, linear heading |
+| Path 5 | Previous endpoint -> (38.0943, 127.3583, -66.9637) | Quadratic Bezier, control (45.4429, 110.0765), linear heading |
+
+The user's corrected strategy is encoded by `BioBuzzAutoConfig.scoringPlan`:
+
+1. After START, hold the starting pose and shoot **4 preloaded balls before path 1**.
+2. Drive path 1 with intake active, collecting **4 staged balls during travel**.
+   Require both verified four-ball pickup and settled arrival before beginning path 2.
+   If collection finishes first, stop intake and finish the path. If arrival occurs first,
+   hold the endpoint until collection succeeds or its timeout fails the routine.
+3. Finish path 2; hold its pose and shoot **4 balls**.
+4. Hold the same XY and turn from -84.7123 to 0 degrees; verify settling.
+5. Finish path 3 (approach), then path 4; intake **4 balls at FLOWER**.
+   **Intake only: never initialize, deploy, or command the flower lever.**
+6. Finish path 5; hold its pose and shoot **4 balls**, then stop all outputs.
+
+All three counts are confirmed as 4. The simulated complete run verifies 12 shot events.
+The current Robot exposes presence at one feeder, and its indexing stops when that feeder
+is occupied. It does not expose a verified four-ball storage count or indexing controller.
+The mechanism port now supports a monotonic count of verified newly stored balls and explicitly
+advertises whether counted collection is supported. It must come from actual storage/indexing
+feedback; do not implement it by counting presence-sensor flicker or by elapsed intake time.
+The existing Robot adapter advertises unsupported and blocks full scoring hardware initialization,
+even if someone incorrectly sets COUNTED_COLLECTION_VALIDATED=true. A real compatible counted
+indexing adapter must be implemented and tested before full scoring can run.
+
+A first-N test stops after N drives with ALL mechanisms inactive, including no preload shots;
+N>=3 includes the turn. Selecting five paths with D-pad is a movement-only test. Y selects
+the separate full scoring plan, which requires all physical/controller approvals and a verified
+counted collection interface. No mechanism hardware is initialized in movement-test mode.
+
+Coordinates are robot-center inches: +X right, +Y up, positive heading CCW from +X. The actual
+start requires the configured robot center at (57.6323, 9.0657), physically forward along +Y
+(90 deg) in that same field frame. Setting a localization pose cannot verify physical placement.
+Selecting RED/BLUE changes only mechanism tag filtering; it never mirrors this geometry.
+
+The same follower persists through movement and mechanisms. Every waypoint requires <=2 in
+position error, <=3 deg heading error, <=2 in/s linear and <=8 deg/s angular speed, sustained
+for 0.20 s. Paths time out after 15 s, turns after 5 s, the entire run after 27 s. These are
+initial test policies, not measured precision or an assurance the full routine fits match time.
+The added three volleys and slow path speed require physical timing measurements; do not
+increase the whole-run limit to hide an overlong competition routine.
+Path-scoped settings request <=12 in/s and <=25% modeled max path speed, disable path skipping,
+and restore when a path is released/cancelled. These are velocity requests, not hard motor caps.
+
+The installed Ivy default follow command checks atParametricEnd. This implementation replaces
+that completion check with arrival/settling. A fresh localizer wrapper checks Pinpoint READY
+and finite pose/velocity inside follower.update(), before any controller output. Unexpected
+path replacement, interruption, cancellation, invalid starts or failed actions latch failure.
+Stop also explicitly stops drivetrain output because Pedro 3.0.2 Follower.stop() only clears
+navigation state. Independent raw zero writes remain as a cleanup fallback.
+
+## Clearance blockers
+
+The saved robot block is empty. No BioBuzz footprint was invented. The audit uses 1001
+samples per Bezier parameter per drive and can additionally check an explicitly supplied
+rectangular footprint. Sampling is not continuous collision proof and does not validate
+contact intentions, overhangs, mechanisms or actual field placement.
+
+- Path 4's endpoint is inside the supplied Scoring-Side FLOWER polygon.
+- Path 5 starts inside that polygon.
+- The inspected visualizer uses a 141.5-inch reference frame; point 4 is only **1.2695 in**
+  below its upper boundary. Earlier discussion of 3.7695 in assumed a 144-inch frame and
+  must not be used for this file's reference geometry. Verify the real field/frame physically.
+- The user confirmed FLOWER pickup is intended. That intent does not establish that the
+  robot center may enter the polygon or cross the wall. Actual footprint, intake/lever reach,
+  and allowed contact geometry are still unknown.
+
+Proposed resolution, pending measurement/approval: if FLOWER is solid and approached from
+below, place the robot center below the polygon's lower extent (137.7 in) by its projected
+half-length/half-width plus a measured margin. For heading h, vertical half-extent is
+`abs(sin(h))*length/2 + abs(cos(h))*width/2`. The wall constraint is center Y no greater than
+`141.5 - halfExtent - margin` in the reference frame. The robot may need a different approach
+if a mechanism, rather than its center, must reach FLOWER. Do not use an invented numeric target.
+The original file/coordinates remain unchanged until that intent and footprint are confirmed.
+
+## Driver Station procedure
+
+The single intended name is **BioBuzz Pedro Auto**, group Development. It is absent from the
+selection list while @Disabled remains. Both the compatibility shim and old Legacy Auto are disabled.
+
+Before enabling physical testing, confirm the actual hardware/directions, drive run modes,
+Pinpoint readiness, units/signs/offsets, current Foresight tuning and physical start pose. Measure
+ROBOT_LENGTH_IN and ROBOT_WIDTH_IN. Review clearance through the selected first N paths and set
+VALIDATED_PATH_COUNT accordingly. Set the appropriate approval flags in BioBuzzAutoConfig, and
+set REVIEWED_ROUTE_SHA256 to the exact generated source hash only for the route actually reviewed.
+Removing @Disabled by itself cannot bypass these gates. Auto does not change drive run modes:
+all four motors must already be RUN_WITHOUT_ENCODER, as expected by the existing Pedro setup.
+
+After those reviews, remove @Disabled from autonomous/BioBuzzAuto.java, build/install through
+the team's normal process, select BioBuzz Pedro Auto and INIT:
+
+- Default: controlled first-path-only test, movement only.
+- Gamepad 1 D-pad up/down: first N paths, 1..5; switches to controlled test mode.
+- Gamepad 1 Y: toggles full route (all five paths) vs first-path controlled test.
+- Gamepad 1 A/B: BLUE/RED tag filtering for mapped mechanism commands; no route mirroring.
+
+Check telemetry for the selected mode, route hash, approval blockers, Pinpoint READY and measured
+start orientation. START schedules once. FTC Stop cancels and zeros outputs. Exercise Stop during
+each movement/action before competition. Full operation additionally requires FULL_ROUTE_VALIDATED,
+review of the unresolved FLOWER approach, counted inventory/indexing, current controller reconciliation,
+and mechanism readiness/cleanup tests.
+
+## Mechanism integration
+
+`Action.shoot(ballCount, timeout)`, `Action.collect(ballCount, timeout)` and
+`Action.centerTurret(timeout)` are composed by the confirmed scoringPlan factory. Each
+command owns the mechanism port and runs controllers once per active FTC iteration. Read-only
+sensor updates are allowed in INIT; no shooter/turret/intake/gate control runs there.
+
+The adapter reuses updateSensors, aimTurret/turretToAngle, updateShooter and updateFeeder, preserving
+Robot's tuned velocity PIDF and feeder sequence. Stale/un-aimed targeting closes the gate; speed
+readiness before opening remains in the existing feeder. Its timed feed pulse may continue through
+normal flywheel RPM dip. Shooting completion requires both the existing shot counter AND observed
+ball-present -> absent transitions for the requested count, so feed time alone cannot prove success.
+The legacy single-ball collection command rejects an already occupied feeder and requires
+sustained new detection. Four-ball commands instead require a supported monotonic stored-ball
+counter delta of exactly 4, plus settling; a reset or over-count aborts. Four timed shot counts
+without corresponding sensor-clear events cannot advance, and feeding stops once the requested
+counter limit is reached to prevent an additional ball while verification is pending.
+Invalid/unavailable distance data fails before mechanism output. Turret centering requires its
+encoder tolerance. Once a provisional result is detected, outputs stop immediately during the
+settling check to prevent additional feeding/collection. Loss of the held waypoint or motion
+settling aborts before the next mechanism controller output.
+
+Mechanisms require separately verified gate travel/endpoints, turret reference, sensors, flywheel
+behavior and deadlines, plus MECHANISMS_VALIDATED and MECHANISM_SEQUENCE_VALIDATED. Gate cleanup is
+issued only after a mechanism action has actually used the hardware; INIT and unused cleanup never
+move it. Independent zero writes ensure one failed actuator write cannot skip the others. The
+Limelight remains available between commands and is closed on overall completion/failure/Stop.
+
+Counts and action locations are confirmed by the user: four preloads, two four-ball pickups,
+three four-ball volleys, intake-only FLOWER. No remaining ball-count or lever clarification is
+needed. Confirm actual aiming visibility at the starting pose and points 2/5, turret
+reference, RPM selection and sensor behavior at points 2 and 5. No software test proves that
+a ball scored in the goal. The result is not yet a physically verified scoring autonomous.
+
+## Verification
+
+All final checks ran from the editable checkout. Direct Java checks used actual cached Maven
+binaries for FTC SDK 12.0.0, Pedro 3.0.2 and Ivy 1.1.1; SDK hardware interfaces were simulated with
+recording proxies. Tagged upstream sources remain an optional independent API check.
 
 ```sh
-./gradlew :TeamCode:assembleDebug
-./gradlew :TeamCode:testDebugUnitTest
+python3 TeamCode/tools/sync_autonomous_route.py --check
+python3 -m unittest discover -s TeamCode/tests -p test_route_source.py -v
 python3 TeamCode/tests/run_autonomous.py
+GRADLE_USER_HOME=/tmp/biobuzz-gradle-home \
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' \
+./gradlew :TeamCode:assembleDebug :TeamCode:testDebugUnitTest --offline --no-daemon
+python3 TeamCode/tests/run_robot_controls.py
 ```
 
-The custom hardware-free harness is the autonomous test suite; the repository previously
-had no Gradle unit tests under src/test. Reconcile the older RobotControlsRegression/source
-mismatch separately before treating all repository tests as green.
-
-## Driver Station and competition readiness
-
-The new **BioBuzz Pedro Auto (UNVALIDATED)** is intentionally absent from Driver Station
-selection while annotated `@Disabled`. The old **BioBuzz Auto** is not this implementation.
-Before changing the annotation or flags:
-
-1. Verify four motor names, Pedro wheel directions and axis/rotation behavior. The existing
-   Robot mixer differs from Pedro; do not copy TeleOp's direction values without wheel tests.
-   Confirm drive run modes are correct and no controller is competing for the drivetrain.
-2. Verify Pinpoint device/pod type, encoder signs, pod installation/offsets, units, startup
-   READY status and actual measured forward/strafe/rotation localization. Confirm the existing
-   Foresight tuning on the current weight, battery, wheel and mechanism configuration.
-3. Measure the selected alliance/start pose, robot forward orientation, scoring and parking
-   poses, path clearance for the robot's footprint, and field obstacles. Replace all example
-   poses; verify adjacent endpoints and headings and record the measurements.
-4. Validate the arrival/settling tolerances and deadlines during controlled tests. Existing
-   Foresight velocity settings are preserved; they are NOT a newly imposed slow-speed cap.
-   Use verified Pedro route constraints for initial reduced-speed tests before full-speed runs.
-5. Only after those checks, set the three corresponding flags in BioBuzzAutoConfig true,
-   remove @Disabled, rename the OpMode to remove UNVALIDATED, and rebuild/install using the
-   team's normal process. Select that exact Pedro OpMode, INIT, check telemetry says READY,
-   place the robot at the measured pose and orientation, then press START in a clear test area.
-   Exercise Stop during each segment before competition use. No automatic deployment is provided.
-
-## Shooter/intake integration and later cycles
-
-Current Robot.java supplies:
-
-| Mechanism | Real interface / readiness |
+| Check | Result |
 | --- | --- |
-| Flywheel `shooter` | shooterOn, updateShooter(), setShooterRpm(), shooterRpm(), shooterAtSpeed(); velocity PIDF already set by Robot.init |
-| Turret `turret` | aimTurret(), turretToAngle(), zeroTurret(), aimedAtTarget(); Limelight/alliance tag filtering |
-| Feeder `transmission` and gate `torqueservo1` | updateFeeder(wantShoot, intakePower), readyToShoot(), shotsFired, ballPresent; timed feed progression requires update calls |
-| Intake `intake` | Power passed through updateFeeder() / existing feeder motor logic |
-| Sensors | updateSensors(); Limelight target freshness/aim, optional color/distance sensor |
-| Cleanup | Robot.stop() zeros drivetrain and mechanism motors and stops Limelight |
+| Source/generation/audit synchronization | PASS |
+| Python route-source suite | 8 tests PASS |
+| Integrated route/action regression | 136 checks PASS |
+| SDK mechanism initialization/isolation/cleanup regression | 17 checks PASS |
+| Iterative FTC OpMode lifecycle regression | 8 checks PASS |
+| Compatibility and autonomous registration | PASS |
+| Android assembleDebug | BUILD SUCCESSFUL; real TeamCode Java compilation, dex and APK packaging completed |
+| Gradle testDebugUnitTest | Successful task graph, NO-SOURCE; the repository's actual autonomous tests are the custom harness above |
+| Existing RobotControlsRegression | Pre-existing failure: 21 javac missing-member errors for gatePosition, gate calibration methods and turretLimitBlocked absent from current Robot.java |
+| Original mechanism init block / TeleOp preservation | Original mechanism block byte-identical after extraction; TeleOp and Constants unchanged; simulated whole vs mechanism-only init agrees |
+| Physical robot test | NOT PERFORMED |
 
-The source is sufficient to identify these methods but not to approve their complete
-physical sequence. Gate source and documentation disagree; verify travel/endpoints, feeding,
-ball sensing, flywheel readiness, turret zero/limits, tag freshness and timeout behavior first.
-Do not assume the older documented gate calibration API is available.
+The initial normal-network build failed resolving Maven hosts; after refreshing the isolated
+Gradle cache from the machine's installed dependencies, the offline build passed. Java 8/JDK 21,
+Gradle deprecation, native symbol stripping and blocked Android analytics/FSEvents messages were
+non-fatal. No plugin/dependency upgrade or Android project build-setting change was needed.
 
-Insert a verified Ivy command at the marked point between movement commands. Require the
-specific mechanism objects so parallel commands cannot own the same actuator. Run each
-mechanism controller exactly once per FTC loop while its command is active. Its completion
-must verify success (not just a timer); on a failure call routine.fail(reason), then clean up
-mechanisms on interruption, failure and FTC Stop. Avoid raw waitMs as proof that scoring worked.
-Do not call Robot.init after creating Pedro: it changes the same drivetrain directions/modes.
-Before reusing Robot wholesale, introduce an explicit mechanism-only initialization boundary
-or deliberately order initialization and verify sole drivetrain ownership.
+APK: `TeamCode/build/outputs/apk/debug/TeamCode-debug.apk`. It contains a disabled autonomous
+and has not been installed or deployed. Keep the disabled state until the physical reviews pass.
 
-To extend to start -> launch -> pickup -> launch -> park, add measured poses/path methods,
-reuse the same follower/OpMode, and append guarded movement commands plus verified scoring
-and intake commands to the sequence. The private movement helper can be reused inside
-BioBuzzAutoRoutine; it accepts path, expected start, target, and stage. Add corresponding
-stage names and update the overall time budget. Use sequential for dependent actions and
-parallel/deadline groups only for mechanisms with distinct ownership and explicit cleanup.
-
-## Primary API references
-
-- https://pedropathing.com/docs/pathing/guide/setting-up-auto
-- https://pedropathing.com/docs/pathing/tuning/constants
-- https://pedropathing.com/docs/pathing/guide/pose-creation
-- https://pedropathing.com/docs/pathing/guide/path-creation
-- https://pedropathing.com/docs/pathing/guide/path-following
-- https://pedropathing.com/docs/pathing/guide/auto-usage
-- https://pedropathing.com/docs/ivy
-- https://github.com/Pedro-Pathing/PedroPathing/blob/v3.0.2/core/src/main/java/com/pedropathing/follower/Follower.java
-- https://github.com/Pedro-Pathing/Ivy/blob/v1.1.1/pedro/src/main/java/com/pedropathing/ivy/pedro/PedroCommands.java
-- https://github.com/Pedro-Pathing/Ivy/blob/v1.1.1/core/src/main/java/com/pedropathing/ivy/Scheduler.java
+Edit geometry only in TeamCode/routes/BioBuzz_AutoPath.pp.json, then run the generator without
+--check. Its source hash changes; previous route approval must be revisited. The original
+JSON is not parsed on the robot. New cycles can reuse the same guarded drive/turn and action
+interfaces; extend the reviewed source and regenerate rather than duplicating follower control.

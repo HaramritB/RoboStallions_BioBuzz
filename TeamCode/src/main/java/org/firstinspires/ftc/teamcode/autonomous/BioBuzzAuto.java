@@ -13,21 +13,28 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 
 import org.firstinspires.ftc.teamcode.Constants;
+import org.firstinspires.ftc.teamcode.Robot;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 
-/** Movement-only Pedro autonomous. See TeamCode/AUTONOMOUS.md before enabling. */
+/** Guarded Pedro route tests and optional reviewed mechanism actions. See TeamCode/AUTONOMOUS.md. */
 @Disabled
-@Autonomous(name = "BioBuzz Pedro Auto (UNVALIDATED)", group = "Development",
+@Autonomous(name = "BioBuzz Pedro Auto", group = "Development",
         preselectTeleOp = "BioBuzz TeleOp")
-public final class BioBuzzAuto extends OpMode {
+public class BioBuzzAuto extends OpMode {
     private final BioBuzzAutoPaths paths = new BioBuzzAutoPaths();
     private final List<DcMotorEx> driveMotors = new ArrayList<>();
     private Follower follower;
     private GoBildaPinpointDriver pinpoint;
     private BioBuzzAutoRoutine routine;
+    private BioBuzzAutoMechanisms mechanisms = new BioBuzzAutoMechanisms();
+    private boolean mechanismsInitialized;
+    private boolean mechanismInitFailed;
+    private int selectedPaths = 1;
+    private boolean fullRoute;
+    private Robot.Alliance alliance = Robot.lastAlliance;
     private Pose currentPose;
     private boolean started;
     private boolean safeStopRequested;
@@ -40,11 +47,17 @@ public final class BioBuzzAuto extends OpMode {
     @Override
     public void init() {
         // Also supports repeated INIT on the same instance without stale command state.
-        if (routine != null) shutdown();
+        if (routine != null || follower != null || mechanismsInitialized) shutdown();
         Scheduler.reset();
         follower = null;
         pinpoint = null;
         routine = null;
+        mechanisms = new BioBuzzAutoMechanisms();
+        mechanismsInitialized = false;
+        mechanismInitFailed = false;
+        selectedPaths = 1;
+        fullRoute = false;
+        alliance = Robot.lastAlliance;
         driveMotors.clear();
         currentPose = null;
         started = false;
@@ -54,8 +67,8 @@ public final class BioBuzzAuto extends OpMode {
         cleanupFailure = "";
         failureReason = "";
         telemetry.setMsTransmissionInterval(BioBuzzAutoConfig.TELEMETRY_INTERVAL_MS);
-        diagnostic = BioBuzzAutoConfig.blockers();
-        // Removing @Disabled alone must never bypass unverified hardware or example poses.
+        diagnostic = BioBuzzAutoConfig.blockers(selectedPaths, fullRoute);
+        // Removing @Disabled alone must never bypass unverified hardware or route geometry.
         if (!diagnostic.isEmpty()) {
             publishTelemetry();
             return;
@@ -85,7 +98,6 @@ public final class BioBuzzAuto extends OpMode {
                 throw new IllegalStateException("Validated waypoint completion requires holdEnd=true");
             }
             follower.setPose(paths.startPose);
-            routine = new BioBuzzAutoRoutine(follower, paths);
             diagnostic = "Waiting for Pinpoint READY and a valid starting pose";
         } catch (RuntimeException error) {
             fail("INIT: " + describe(error));
@@ -95,12 +107,21 @@ public final class BioBuzzAuto extends OpMode {
 
     @Override
     public void init_loop() {
-        if (follower != null && !safeStopRequested) {
+        if (gamepad1.yWasPressed()) { fullRoute = !fullRoute; selectedPaths = fullRoute ? BioBuzzAutoPaths.PATH_COUNT : 1; }
+        if (gamepad1.dpadUpWasPressed()) { fullRoute = false; selectedPaths = Math.min(BioBuzzAutoPaths.PATH_COUNT, selectedPaths + 1); }
+        if (gamepad1.dpadDownWasPressed()) { fullRoute = false; selectedPaths = Math.max(1, selectedPaths - 1); }
+        if (gamepad1.aWasPressed()) alliance = Robot.Alliance.BLUE;
+        if (gamepad1.bWasPressed()) alliance = Robot.Alliance.RED;
+        String blockers = BioBuzzAutoConfig.blockers(selectedPaths, fullRoute);
+        if (!blockers.isEmpty()) { diagnostic = blockers; localizationReady = false; }
+        if (follower != null && !safeStopRequested && blockers.isEmpty()) {
             try {
                 // Localizer only: no follower controller or scheduler runs before START.
                 refreshLocalization();
-                localizationReady = BioBuzzAutoConfig.atPose(currentPose, paths.startPose);
-                diagnostic = localizationReady ? "READY - movement only"
+                localizationReady = BioBuzzAutoConfig.atPose(currentPose, paths.startPose) && BioBuzzAutoConfig.settled(follower.velocity());
+                prepareMechanisms();
+                mechanisms.observe();
+                diagnostic = localizationReady ? "READY - " + (fullRoute && BioBuzzAutoConfig.hasMechanismActions() ? "mapped actions" : "movement only")
                         : "Place robot at the configured start pose; heading must match";
             } catch (RuntimeException error) {
                 localizationReady = false;
@@ -117,8 +138,8 @@ public final class BioBuzzAuto extends OpMode {
         started = true;
         autoStart = System.nanoTime();
         try {
-            if (!BioBuzzAutoConfig.blockers().isEmpty() || routine == null || follower == null) {
-                throw new IllegalStateException("Configuration blocked: " + BioBuzzAutoConfig.blockers());
+            if (!BioBuzzAutoConfig.blockers(selectedPaths, fullRoute).isEmpty() || follower == null) {
+                throw new IllegalStateException("Configuration blocked: " + BioBuzzAutoConfig.blockers(selectedPaths, fullRoute));
             }
             refreshLocalization();
             if (!BioBuzzAutoConfig.atPose(currentPose, paths.startPose)
@@ -126,8 +147,13 @@ public final class BioBuzzAuto extends OpMode {
                 throw new IllegalStateException("Robot must be stationary at the configured start pose");
             }
             localizationReady = true;
-            Scheduler.schedule(routine.command());
-            diagnostic = "Running movement-only route";
+            Robot.lastAlliance = alliance;
+            prepareMechanisms();
+            mechanisms.observe();
+            BioBuzzAutoConfig.Plan plan = BioBuzzAutoConfig.plan(fullRoute);
+            routine = new BioBuzzAutoRoutine(follower, paths, selectedPaths, mechanisms, plan);
+            routine.start();
+            diagnostic = "Running " + (fullRoute ? "full route" : "controlled route test") + ": " + selectedPaths + " paths";
         } catch (RuntimeException error) {
             fail("START: " + describe(error));
         }
@@ -138,20 +164,13 @@ public final class BioBuzzAuto extends OpMode {
     public void loop() {
         if (started && !safeStopRequested && routine != null && !routine.finished()) {
             try {
-                if (elapsedSeconds() >= BioBuzzAutoConfig.AUTO_TIMEOUT_S) {
-                    fail("Autonomous timeout");
-                } else if (!Scheduler.isScheduled(routine.command())) {
-                    fail("Ivy routine was cancelled or interrupted");
-                } else {
-                    follower.update();
-                    currentPose = follower.pose();
-                    Scheduler.execute();
-                    if (routine.failed()) {
-                        fail(routine.failure());
-                    } else if (routine.finished()) {
-                        diagnostic = "COMPLETE - drivetrain stopped";
-                        shutdown();
-                    }
+                routine.update();
+                currentPose = follower.pose();
+                if (routine.failed()) {
+                    fail(routine.failure());
+                } else if (routine.finished()) {
+                    diagnostic = "COMPLETE - selected paths/actions finished";
+                    shutdown();
                 }
             } catch (RuntimeException error) {
                 currentPose = null;
@@ -166,6 +185,23 @@ public final class BioBuzzAuto extends OpMode {
     public void stop() {
         if (diagnostic.startsWith("Running")) diagnostic = "FTC Stop requested";
         shutdown();
+    }
+
+    private void prepareMechanisms() {
+        if (fullRoute && BioBuzzAutoConfig.hasMechanismActions() && !mechanismsInitialized) {
+            if (!BioBuzzAutoConfig.MECHANISMS_VALIDATED || !BioBuzzAutoConfig.MECHANISM_SEQUENCE_VALIDATED) {
+                throw new IllegalStateException("Mechanisms/sequence not verified");
+            }
+            if (mechanismInitFailed) throw new IllegalStateException("Mechanism initialization failed; re-INIT after correcting hardware");
+            try {
+                mechanisms = BioBuzzAutoMechanisms.initialize(hardwareMap, alliance);
+                mechanismsInitialized = true;
+            } catch (RuntimeException error) {
+                mechanismInitFailed = true;
+                throw error;
+            }
+        }
+        if (mechanismsInitialized) mechanisms.setAlliance(alliance);
     }
 
     private void refreshLocalization() {
@@ -184,12 +220,13 @@ public final class BioBuzzAuto extends OpMode {
         safeStopRequested = true;
         // Each cleanup step is independent: one failed device write must not skip the others.
         cleanup(() -> { if (routine != null) routine.stop(); });
+        cleanup(() -> mechanisms.stop());
         cleanup(() -> { if (routine != null) Scheduler.cancel(routine.command()); });
         cleanup(Scheduler::reset); // reset alone doesn't run Ivy end callbacks
         cleanup(() -> { if (follower != null) follower.stop(); });
         cleanup(() -> { if (follower != null) follower.drivetrain.stop(); });
         for (DcMotorEx motor : driveMotors) cleanup(() -> motor.setPower(0));
-        // No Robot.init(), mechanism commands or mechanism motors are activated by this OpMode.
+        // Never call Robot.init()/drive()/stop(): Pedro is the sole drivetrain owner.
     }
 
     private void cleanup(Runnable action) {
@@ -209,9 +246,19 @@ public final class BioBuzzAuto extends OpMode {
     }
 
     private void publishTelemetry() {
-        telemetry.addData("Configuration", BioBuzzAutoConfig.blockers().isEmpty()
-                ? "Review gates confirmed" : BioBuzzAutoConfig.blockers());
+        telemetry.addData("Configuration", BioBuzzAutoConfig.blockers(selectedPaths, fullRoute).isEmpty()
+                ? "Review gates confirmed" : BioBuzzAutoConfig.blockers(selectedPaths, fullRoute));
         telemetry.addData("Status", diagnostic);
+        telemetry.addData("Mode", fullRoute ? "FULL ROUTE" : "CONTROLLED TEST (movement only)");
+        telemetry.addData("Selected paths", "%d/%d (D-pad +/-; Y toggles full)", selectedPaths, BioBuzzAutoPaths.PATH_COUNT);
+        telemetry.addData("Alliance for mechanisms", "%s (A blue, B red); route is not mirrored", alliance);
+        telemetry.addData("Mechanisms", mechanisms.state());
+        telemetry.addData("Collection verification", mechanisms.inventoryStatus());
+        telemetry.addData("Scoring plan", "Shoot 4 preloads; intake 4 during path 1; shoot @2; intake 4 FLOWER @4; shoot @5");
+        telemetry.addData("Ball counts", "%d preload / %d staged / %d FLOWER",
+                BioBuzzAutoConfig.PRELOAD_BALL_COUNT, BioBuzzAutoConfig.STAGED_BALL_COUNT, BioBuzzAutoConfig.FLOWER_BALL_COUNT);
+        telemetry.addData("Mechanism failure", mechanisms.failure().isEmpty() ? "none" : mechanisms.failure());
+        telemetry.addData("Route source SHA", BioBuzzAutoPaths.SOURCE_SHA256);
         telemetry.addData("Stage", routine == null ? "BLOCKED" : routine.stage());
         telemetry.addData("Route segment", routine == null ? "none" : routine.segment());
         telemetry.addData("Routine finished", routine != null && routine.finished());

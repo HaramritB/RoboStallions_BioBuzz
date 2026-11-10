@@ -288,6 +288,20 @@ public class Robot {
             m.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         }
 
+        configureMechanisms(hw, resetEncoders);
+    }
+
+    /** Initializes mechanisms without mapping or configuring any drivetrain motor. */
+    public void initMechanismsOnly(HardwareMap hw, boolean resetTurretEncoder) {
+        intake = hw.get(DcMotorEx.class, "intake");
+        transmission = hw.get(DcMotorEx.class, "transmission");
+        turret = hw.get(DcMotorEx.class, "turret");
+        shooter = hw.get(DcMotorEx.class, "shooter");
+        configureMechanisms(hw, resetTurretEncoder);
+    }
+
+    // Shared unchanged initialization, also used by the existing whole-robot init().
+    private void configureMechanisms(HardwareMap hw, boolean resetEncoders) {
         // Intake
 
         intake.setDirection(DcMotorSimple.Direction.FORWARD);

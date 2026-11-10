@@ -127,7 +127,6 @@ public class RobotTest extends LinearOpMode {
                 else if (gamepad1.left_bumper) transmissionPower = -Robot.TRANSMISSION_FEED_POWER;
                 robot.transmission.setPower(transmissionPower);
             }
-            robot.updateLed();
 
             double rpm = robot.shooterRpm();
             peakRpm = Math.max(peakRpm, rpm);
@@ -177,6 +176,8 @@ public class RobotTest extends LinearOpMode {
                     : "no HIVE tag for " + robot.alliance);
             telemetry.addData("Color sensor", robot.colorSensor == null ? "not in config"
                     : String.format("%s   hue %.0f   %.1f cm", robot.ballColor, robot.ballHue, robot.ballDistanceCm));
+            telemetry.addData("Pollen LED", robot.led == null ? "not in config"
+                    : robot.ballPresent ? "GREEN: pollen detected" : "RED: no pollen detected");
             telemetry.update();
         }
 

@@ -8,7 +8,7 @@ import java.lang.reflect.Proxy;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Runs production gate/feeder methods with recording hardware and in-memory settings. */
+/** Runs production gate/feeder/indicator methods with recording hardware and in-memory settings. */
 public final class RobotControlsRegression {
     private static int checks;
     private static void check(boolean condition, String message) {
@@ -81,6 +81,7 @@ public final class RobotControlsRegression {
                 new Class<?>[]{DcMotorEx.class}, (proxy, method, args) -> {
                     switch (method.getName()) {
                         case "setPower": power = (double) args[0]; return null;
+                        case "setVelocity": velocity = (double) args[0]; return null;
                         case "getPower": return power;
                         case "getVelocity": return velocity;
                         case "getCurrentPosition": return ticks;
@@ -220,6 +221,74 @@ public final class RobotControlsRegression {
         turret.ticks = Robot.TURRET_MIN_TICKS;
         robot.aimTurret(false, -0.3);
         near(turret.power, 0, "Negative turret soft limit remains enforced");
+
+        Robot indicatorRobot = new Robot();
+        Gate indicator = new Gate();
+        indicatorRobot.led = indicator.servo;
+        indicatorRobot.gateOpen = true;
+        indicatorRobot.targetVisible = true;
+        indicatorRobot.ballColor = Robot.BallColor.YELLOW;
+        indicatorRobot.updateLed();
+        near(indicator.position, Robot.LED_RED,
+                "No pollen stays red even with an open gate, a tag, and a stale color");
+        for (Robot.BallColor color : Robot.BallColor.values()) {
+            indicatorRobot.ballColor = color;
+            indicatorRobot.ballPresent = true;
+            indicatorRobot.gateOpen = false;
+            indicatorRobot.updateLed();
+            near(indicator.position, Robot.LED_GREEN,
+                    "Pollen of any color (including unclassified) is green without shooter hardware");
+        }
+        indicatorRobot.ballPresent = false;
+        indicatorRobot.updateLed();
+        near(indicator.position, Robot.LED_RED, "Removing pollen immediately restores red");
+        double redPulseUs = 600 + 1800 * Robot.LED_RED;
+        check(redPulseUs >= 1100 && redPulseUs < 1110,
+                "Red must stay above the manufacturer's OFF boundary");
+        indicatorRobot.led = null;
+        indicatorRobot.updateLed();
+        for (double[] point : new double[][]{{1.41, 3150}, {1.60, 3150}, {1.76, 3200}, {1.90, 3250},
+                {1.50, 3150}, {1.68, 3175}, {1.83, 3225}, {0.5, 3150}, {3.0, 3250}}) {
+            near(Robot.rpmForDistance(point[0]), point[1], "Distance calibration/interpolation/clamp");
+        }
+        for (double invalid : new double[]{Double.NaN, Double.POSITIVE_INFINITY,
+                Double.NEGATIVE_INFINITY, 0, -1}) {
+            near(Robot.rpmForDistance(invalid), 3150, "Invalid distance defaults to 3150");
+        }
+        Robot distanceRobot = new Robot();
+        Motor distanceShooter = new Motor();
+        distanceRobot.shooter = distanceShooter.servo;
+        distanceRobot.shooterOn = true;
+        distanceRobot.gateOpen = true;
+        distanceRobot.ballColor = Robot.BallColor.BLUE;
+        distanceRobot.targetFresh = true;
+        distanceRobot.targetDistanceMeters = 1.9;
+        distanceRobot.updateShooter(distanceRobot.distanceBasedShooterRpm());
+        near(distanceRobot.targetRpm, 3250, "TeleOp uses distance even with an open gate and colored ball");
+        near(distanceShooter.velocity, 3250 * Robot.SHOOTER_TICKS_PER_REV / 60,
+                "Distance target reaches the motor velocity command");
+        check(distanceRobot.shooterAtSpeed(), "Readiness uses the same distance target as the motor");
+        distanceRobot.targetFresh = false;
+        distanceRobot.targetVisible = true;
+        distanceRobot.updateShooter(distanceRobot.distanceBasedShooterRpm());
+        near(distanceRobot.targetRpm, 3150, "Tag loss defaults immediately despite held visibility/stale distance");
+        near(distanceShooter.velocity, 3150 * Robot.SHOOTER_TICKS_PER_REV / 60,
+                "Fallback RPM reaches the motor");
+        distanceRobot.targetFresh = true;
+        distanceRobot.targetDistanceMeters = Double.NaN;
+        near(distanceRobot.distanceBasedShooterRpm(), 3150, "Visible tag without a pose uses fallback");
+        distanceRobot.targetDistanceMeters = 1.76;
+        distanceRobot.rpmTrim = 50;
+        distanceRobot.updateShooter(distanceRobot.distanceBasedShooterRpm());
+        near(distanceShooter.velocity, 3250 * Robot.SHOOTER_TICKS_PER_REV / 60,
+                "Manual trim remains an offset to distance RPM");
+        distanceRobot.shooterOn = false;
+        distanceShooter.power = 1;
+        distanceRobot.updateShooter(distanceRobot.distanceBasedShooterRpm());
+        near(distanceShooter.power, 0, "Automatic distance targets do not turn the shooter on");
+        distanceRobot.updateShooter();
+        near(distanceRobot.targetRpm, Robot.rpmFor(distanceRobot.shotColor),
+                "Existing Auto/color-based shooter path remains available");
         System.out.println("Passed " + checks + " gate/robot control regression checks.");
     }
 }

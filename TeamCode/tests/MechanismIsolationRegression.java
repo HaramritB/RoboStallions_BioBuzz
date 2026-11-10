@@ -1,6 +1,7 @@
 package org.firstinspires.ftc.teamcode.autonomous;
 
 import com.qualcomm.robotcore.hardware.DcMotorEx;
+import android.content.SharedPreferences;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.Servo;
 import org.firstinspires.ftc.teamcode.Robot;
@@ -63,19 +64,37 @@ public final class MechanismIsolationRegression {
         @Override public <T> T tryGet(Class<? extends T> type,String name) { lookups.add(name); return null; }
         @Override public <T> List<T> getAll(Class<? extends T> type) { return Collections.emptyList(); }
     }
+    static final SharedPreferences PREFS=(SharedPreferences)Proxy.newProxyInstance(
+            SharedPreferences.class.getClassLoader(),new Class<?>[]{SharedPreferences.class},(proxy,method,args)-> {
+                if (method.getName().equals("contains")) return false;
+                if (method.getName().equals("getFloat") || method.getName().equals("getBoolean")) return args[1];
+                throw new AssertionError("Unexpected preferences call "+method.getName());
+            });
+    static final class TestRobot extends Robot {
+        @Override protected SharedPreferences gatePreferences(HardwareMap map) { return PREFS; }
+    }
+    static final class SensorRobot extends Robot {
+        int wholeSensorReads, mechanismSensorReads;
+        double heading, rate;
+        @Override public void updateSensors() { wholeSensorReads++; }
+        @Override public void updateMechanismSensors(double heading,double rate) {
+            mechanismSensorReads++; this.heading=heading; this.rate=rate;
+            ballDistanceCm=10;
+        }
+    }
     public static void main(String[] args) throws Exception {
-        MapFixture only=new MapFixture(); Robot mechanisms=new Robot(); mechanisms.initMechanismsOnly(only,false);
+        MapFixture only=new MapFixture(); Robot mechanisms=new TestRobot(); mechanisms.initMechanismsOnly(only,false);
         for (String name:new String[]{"frontleft","frontright","backleft","backright"}) {
             check(!only.lookups.contains(name) && only.motors.get(name).trace.isEmpty(),"Mechanism init cannot touch " + name);
         }
         check(only.servoWrites==0,"INIT cannot move the gate");
         check(!only.motors.get("turret").trace.toString().contains("STOP_AND_RESET"),"Mechanism-only init preserves turret zero");
-        MapFixture whole=new MapFixture(); Robot robot=new Robot(); robot.init(whole,false);
+        MapFixture whole=new MapFixture(); Robot robot=new TestRobot(); robot.init(whole,false);
         for (String name:new String[]{"intake","transmission","turret","shooter"}) {
             check(only.motors.get(name).trace.equals(whole.motors.get(name).trace),"TeleOp and Auto retain identical initialization for " + name);
         }
         check(whole.motors.get("frontleft").trace.toString().contains("REVERSE"),"Whole Robot init retains old drivetrain direction");
-        BioBuzzAutoMechanisms.RobotHardware adapter=new BioBuzzAutoMechanisms.RobotHardware();
+        BioBuzzAutoMechanisms.RobotHardware adapter=new BioBuzzAutoMechanisms.RobotHardware(new TestRobot());
         adapter.robot.intake=only.motors.get("intake").device;
         adapter.robot.transmission=only.motors.get("transmission").device;
         adapter.robot.turret=only.motors.get("turret").device;
@@ -90,9 +109,9 @@ public final class MechanismIsolationRegression {
         }
         check(only.servoWrites==0,"Unused mechanisms must not create an INIT/cleanup gate command");
         MapFixture burst=new MapFixture();
-        BioBuzzAutoMechanisms.RobotHardware firing=new BioBuzzAutoMechanisms.RobotHardware();
+        BioBuzzAutoMechanisms.RobotHardware firing=new BioBuzzAutoMechanisms.RobotHardware(new TestRobot());
         firing.robot.initMechanismsOnly(burst,false);
-        firing.robot.targetFresh=true; firing.robot.targetVisible=true; firing.robot.targetTx=0;
+        firing.robot.targetFresh=true; firing.robot.targetVisible=true; firing.robot.targetTx=0; firing.robot.targetDistanceMeters=1.6;
         firing.robot.ballPresent=true; firing.robot.gateOpen=true;
         java.lang.reflect.Field timer=Robot.class.getDeclaredField("feedTimer"); timer.setAccessible(true);
         ((com.qualcomm.robotcore.util.ElapsedTime)timer.get(firing.robot)).reset();
@@ -103,6 +122,29 @@ public final class MechanismIsolationRegression {
         check(!firing.robot.gateOpen && burst.motors.get("transmission").power==0
                 && burst.motors.get("intake").power==0,"Stale aiming data closes gate and stops feeding");
         firing.close();
+        MapFixture intakeMap=new MapFixture();
+        BioBuzzAutoMechanisms.RobotHardware intakePort=new BioBuzzAutoMechanisms.RobotHardware(new TestRobot());
+        intakePort.robot.initMechanismsOnly(intakeMap,false);
+        intakePort.control(BioBuzzAutoMechanisms.Kind.COLLECT);
+        check(intakeMap.motors.get("intake").power==Robot.INTAKE_POWER,"Intake request runs the existing motor interface");
+        check(intakeMap.motors.get("shooter").power==0 && intakeMap.motors.get("turret").power==0,"Collection cannot run shooter or turret");
+        check(!intakeMap.lookups.contains("flower"),"Autonomous mechanisms never map the flower lever");
+        check(intakePort.robot.gateController.command==Robot.GATE_CLOSED,"Collection uses main's calibrated gate controller");
+        intakePort.robot.gateController.closedPosition=.67;
+        intakePort.close();
+        check(intakePort.robot.gateController.command==.67,"Stop honors saved closed endpoint, not a hardcoded default");
+        for (String name:new String[]{"intake","transmission","shooter","turret"}) {
+            check(intakeMap.motors.get(name).power==0,"Completion stops "+name);
+        }
+        SensorRobot sensorRobot=new SensorRobot();
+        sensorRobot.shooter=intakeMap.motors.get("shooter").device;
+        sensorRobot.turret=intakeMap.motors.get("turret").device;
+        BioBuzzAutoMechanisms.RobotHardware sensorPort=new BioBuzzAutoMechanisms.RobotHardware(sensorRobot);
+        sensorPort.headingCw=()->-90; sensorPort.turnRateCw=()->-5;
+        sensorPort.observe();
+        check(sensorRobot.wholeSensorReads==0 && sensorRobot.mechanismSensorReads==1,
+                "Pedro mode cannot update Pinpoint again through Robot.updateSensors");
+        check(sensorRobot.heading==-90 && sensorRobot.rate==-5,"Preserve main turret clockwise heading convention");
         System.out.println("Passed " + checks + " mechanism initialization/isolation/cleanup checks.");
     }
 }

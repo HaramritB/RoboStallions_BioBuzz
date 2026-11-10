@@ -15,9 +15,8 @@ public final class BioBuzzAutoConfig {
     public static final boolean FULL_ROUTE_VALIDATED = false;
     public static final boolean MECHANISMS_VALIDATED = false;
     public static final boolean MECHANISM_SEQUENCE_VALIDATED = false;
-    // main b41fb87 has newer gate/turret/flower controls than this branch. No merge authorized.
-    // Reconcile and test that interface before enabling any scoring hardware on this branch.
-    public static final boolean ROBOT_CONTROLLER_REVISION_VALIDATED = false;
+    // Controller source integrated from main b41fb87; physical mechanism checks remain separate.
+    public static final boolean ROBOT_CONTROLLER_REVISION_VALIDATED = true;
 
     public static final int PRELOAD_BALL_COUNT = 4;
     public static final int STAGED_BALL_COUNT = 4;

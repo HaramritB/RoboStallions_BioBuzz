@@ -66,6 +66,9 @@ with tempfile.TemporaryDirectory(prefix='biobuzz-auto-') as temporary:
                 Path(__file__).with_name('AutoPathRegression.java'),
                 Path(__file__).with_name('MechanismIsolationRegression.java'),
                 Path(__file__).with_name('AutoLifecycleRegression.java')]
+    sources += [p for p in (ROOT / 'TeamCode/src/main/java/org/firstinspires/ftc/teamcode').glob('*.java')
+                if p not in sources and p.name != 'Tuning.java']
+    sources += [Path(__file__).with_name('MechanismTestRegression.java')]
     if args.upstream_source:
         sources += sorted(args.upstream_source.rglob('*.java'))
         print('Compiling against supplied upstream sources (not resolved Maven binaries).', flush=True)
@@ -88,3 +91,6 @@ with tempfile.TemporaryDirectory(prefix='biobuzz-auto-') as temporary:
 
     subprocess.run([java_tool('java'), '-cp', os.pathsep.join([str(work), classpath]),
                     'org.firstinspires.ftc.teamcode.autonomous.AutoLifecycleRegression'], check=True)
+
+    subprocess.run([java_tool('java'), '-cp', os.pathsep.join([str(work), classpath]),
+                    'org.firstinspires.ftc.teamcode.autonomous.MechanismTestRegression'], check=True)

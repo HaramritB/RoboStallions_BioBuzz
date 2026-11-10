@@ -7,6 +7,7 @@ import org.firstinspires.ftc.teamcode.Robot;
 
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
+import java.util.function.DoubleSupplier;
 
 /** Mechanism-only boundary. Movement tests stay NONE and never initialize hardware. */
 public final class BioBuzzAutoMechanisms {
@@ -51,6 +52,7 @@ public final class BioBuzzAutoMechanisms {
     }
     public interface Hardware {
         default boolean supportsCountedCollection() { return false; }
+        default String diagnostics() { return "No controller diagnostics"; }
         Observation observe();
         void control(Kind request);
         void stopOutputs();
@@ -61,6 +63,10 @@ public final class BioBuzzAutoMechanisms {
     private Kind request=Kind.NONE;
     private Observation observation;
     private boolean closed;
+    private boolean commandActive;
+    private LongSupplier activeClock;
+    private long activeStart;
+    private double activeTimeout;
     private String failure="";
 
     public BioBuzzAutoMechanisms() { this(null); }
@@ -74,13 +80,29 @@ public final class BioBuzzAutoMechanisms {
             if (hardware.robot.ballDistanceSensor == null) throw new IllegalStateException("Ball distance sensor required for verified collection/shooting");
             if (hardware.robot.colorSensor == null) throw new IllegalStateException("Color sensor required by Robot.updateSensors ball detection");
             if (hardware.robot.Limelight == null) throw new IllegalStateException("Limelight required for the existing shot sequence");
-            if (!hardware.supportsCountedCollection()) throw new IllegalStateException(
-                    "Robot has no verified four-ball inventory/indexing API; full scoring hardware initialization blocked");
+            if (!hardware.robot.gateCalibrated()) throw new IllegalStateException("Run Gate Calibration: saved gate endpoints are invalid");
             return new BioBuzzAutoMechanisms(hardware);
         } catch (RuntimeException error) {
             try { hardware.close(); } catch (RuntimeException cleanup) { error.addSuppressed(cleanup); }
             throw error;
         }
+    }
+
+    public static BioBuzzAutoMechanisms initialize(HardwareMap map, Robot.Alliance alliance,
+                                                  DoubleSupplier headingCw, DoubleSupplier turnRateCw) {
+        BioBuzzAutoMechanisms result=initialize(map,alliance);
+        RobotHardware port=(RobotHardware)result.hardware;
+        port.headingCw=headingCw; port.turnRateCw=turnRateCw;
+        return result;
+    }
+
+    public boolean supportsCountedCollection() { return hardware!=null && hardware.supportsCountedCollection(); }
+
+    /** Stationary operator-held test only; mutually exclusive with any command. */
+    public void manualIntake(boolean running) {
+        if (closed || commandActive || !failure.isEmpty()) throw new IllegalStateException("Mechanism port is unavailable or command-owned");
+        request=running ? Kind.COLLECT : Kind.NONE;
+        if (!running && hardware!=null) hardware.stopOutputs();
     }
 
     /** Reads only. Safe to call in INIT; never runs a controller or commands a gate/motor. */
@@ -92,6 +114,11 @@ public final class BioBuzzAutoMechanisms {
     }
     /** Call exactly once per active FTC loop, after navigation and before Scheduler.execute(). */
     public void update() {
+        if (commandActive && (activeClock.getAsLong()-activeStart)/1e9>=activeTimeout) {
+            request=Kind.NONE;
+            hardware.stopOutputs();
+            throw new IllegalStateException("Mechanism timeout before actuator output");
+        }
         observe();
         if (hardware != null && !closed && request != Kind.NONE) {
             if (!validObservation()) throw new IllegalStateException("Mechanism sensor sample unavailable/nonfinite");
@@ -136,8 +163,10 @@ public final class BioBuzzAutoMechanisms {
                         onFailure.accept(failure);
                         return;
                     }
-                    active[0]=true;
+                    if (commandActive) throw new IllegalStateException("Competing mechanism commands");
+                    active[0]=true; commandActive=true;
                     began[0]=clock.getAsLong();
+                    activeClock=clock; activeStart=began[0]; activeTimeout=action.timeoutSeconds;
                     stableSince[0]=-1;
                     clearTransitions[0]=0;
                     baseline[0]=observation.shotsFired;
@@ -203,7 +232,7 @@ public final class BioBuzzAutoMechanisms {
                 })
                 .setEnd(reason -> {
                     if (!active[0]) return; // Ivy may end children which have never started.
-                    request=Kind.NONE;
+                    request=Kind.NONE; commandActive=false;
                     try { hardware.stopOutputs(); }
                     finally {
                         if (reason != EndCondition.NATURALLY && !closed) {
@@ -222,15 +251,26 @@ public final class BioBuzzAutoMechanisms {
     public void setAlliance(Robot.Alliance alliance) {
         if (hardware instanceof RobotHardware) ((RobotHardware) hardware).robot.alliance = alliance;
     }
+    public String diagnostics() { return hardware==null ? "inactive" : hardware.diagnostics(); }
     public String state() { return hardware == null ? "DISABLED - no mapped actions" : closed ? "STOPPED" : request.name(); }
     public String failure() { return failure; }
 
     /** Reuses existing Robot controllers. This adapter never calls Robot.drive(), init() or stop(). */
     static final class RobotHardware implements Hardware {
-        final Robot robot=new Robot();
+        final Robot robot;
+        DoubleSupplier headingCw, turnRateCw;
+        private long readySince=-1;
+        private String detail="Not sampled";
+        @Override public String diagnostics() { return detail; }
         private boolean used;
+        RobotHardware() { this(new Robot()); }
+        RobotHardware(Robot robot) { this.robot=robot; }
         @Override public Observation observe() {
-            robot.updateSensors();
+            if (headingCw==null) robot.updateSensors();
+            else robot.updateMechanismSensors(headingCw.getAsDouble(),turnRateCw.getAsDouble());
+            detail=String.format(java.util.Locale.US,"RPM %.0f/%.0f; target fresh=%s aimed=%s; gate calibrated=%s; ball=%s; feed cycles=%d",
+                    robot.shooterRpm(),robot.targetRpm+robot.rpmTrim,robot.targetFresh,robot.aimedAtTarget(),
+                    robot.gateCalibrated(),robot.ballPresent,robot.shotsFired);
             return new Observation(robot.ballPresent,robot.shotsFired,robot.turretDegrees(),
                     Double.isFinite(robot.ballDistanceCm) && robot.ballDistanceCm > 0);
         }
@@ -240,11 +280,17 @@ public final class BioBuzzAutoMechanisms {
             if (request==Kind.SHOOT) robot.aimTurret(true,0);
             else if (request==Kind.CENTER_TURRET) robot.turretToAngle(0);
             else robot.turret.setPower(0);
-            robot.updateShooter();
+            robot.updateShooter(robot.distanceBasedShooterRpm());
             // A stale target cannot keep a gate open through the old feeder's timed branch.
             // Existing updateFeeder() checks flywheel speed before OPENING. Keep its timed
             // feed branch running through the expected RPM dip after a ball enters the wheel.
-            boolean shoot=request==Kind.SHOOT && robot.targetFresh && robot.aimedAtTarget();
+            boolean targetOk=request==Kind.SHOOT && robot.targetFresh && robot.aimedAtTarget()
+                    && Double.isFinite(robot.targetDistanceMeters) && robot.targetDistanceMeters>0;
+            long now=System.nanoTime();
+            if (!targetOk || !robot.readyToShoot()) readySince=-1;
+            else if (readySince<0) readySince=now;
+            boolean shoot=targetOk && (robot.gateOpen || (readySince>=0
+                    && (now-readySince)/1e9>=BioBuzzAutoConfig.SETTLE_TIME_S));
             if (!shoot) robot.gateOpen=false;
             robot.updateFeeder(shoot,(request==Kind.COLLECT || shoot) ? Robot.INTAKE_POWER : 0);
             robot.updateLed();
@@ -252,13 +298,14 @@ public final class BioBuzzAutoMechanisms {
         @Override public void stopOutputs() {
             robot.shooterOn=false;
             robot.gateOpen=false;
+            readySince=-1;
             RuntimeException[] first={null};
             attempt(() -> { if (robot.turret!=null) robot.turret.setPower(0); },first);
             attempt(() -> { if (robot.shooter!=null) robot.shooter.setPower(0); },first);
             attempt(() -> { if (robot.intake!=null) robot.intake.setPower(0); },first);
             attempt(() -> { if (robot.transmission!=null) robot.transmission.setPower(0); },first);
             // No INIT gate write. Commands require separately verified gate hardware/sequence.
-            attempt(() -> { if (used && robot.gate!=null) robot.gate.setPosition(Robot.GATE_CLOSED); },first);
+            attempt(() -> { if (used && robot.gateController!=null) robot.gateController.commandSaved(false); },first);
             if (first[0]!=null) throw first[0];
         }
         @Override public void close() {

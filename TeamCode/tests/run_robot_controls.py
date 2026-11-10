@@ -44,6 +44,9 @@ with tempfile.TemporaryDirectory(prefix="biobuzz-controls-") as temp:
     classpath = os.pathsep.join(jars)
     subprocess.run([java_tool("javac"), "-proc:none", "-cp", classpath, "-d", str(work),
                     str(ROOT / "TeamCode/src/main/java/org/firstinspires/ftc/teamcode/Robot.java"),
+                    str(ROOT / "TeamCode/src/main/java/org/firstinspires/ftc/teamcode/BioBuzzTeleOp.java"),
+                    str(ROOT / "TeamCode/src/main/java/org/firstinspires/ftc/teamcode/BioBuzzBlueTeleOp.java"),
+                    str(ROOT / "TeamCode/src/main/java/org/firstinspires/ftc/teamcode/BioBuzzRedTeleOp.java"),
                     str(Path(__file__).with_name("RobotControlsRegression.java"))], check=True)
     subprocess.run([java_tool("java"), "-cp", os.pathsep.join([str(work), classpath]),
                     "org.firstinspires.ftc.teamcode.RobotControlsRegression"], check=True)

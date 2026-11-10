@@ -1,8 +1,11 @@
 
 package org.firstinspires.ftc.teamcode;
 
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 
+import com.qualcomm.hardware.gobilda.GoBildaPinpointDriver;
 import com.qualcomm.hardware.limelightvision.LLResult;
 import com.qualcomm.hardware.limelightvision.LLResultTypes;
 import com.qualcomm.hardware.limelightvision.Limelight3A;
@@ -13,6 +16,7 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.DistanceSensor;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.NormalizedColorSensor;
+import com.qualcomm.robotcore.hardware.PwmControl;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import com.qualcomm.robotcore.util.Range;
@@ -21,11 +25,14 @@ import org.firstinspires.ftc.robotcore.external.Telemetry;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
 import org.firstinspires.ftc.robotcore.external.navigation.Position;
+import org.firstinspires.ftc.robotcore.external.navigation.UnnormalizedAngleUnit;
+
+import java.util.function.DoubleSupplier;
 
 public class Robot {
 
     public static final String CODE_VERSION =
-            "BIOBUZZ-4000RPM-PIDF-2026-11-02";
+            "BIOBUZZ-GATE-CALIBRATION-2026-11-08";
 
     public enum Alliance { RED, BLUE }
     public enum BallColor { NONE, YELLOW, RED, BLUE }
@@ -50,18 +57,39 @@ public class Robot {
     // TURRET
     // =========================================
 
-    public static final double TURRET_TICKS_PER_DEG =
-            1425.1 / 360.0;
+    // 1150 RPM Yellow Jacket: 28 encoder counts times its exact internal gearbox ratio.
+    public static final double TURRET_MOTOR_TICKS_PER_REV = 28.0 * (1.0 + 46.0 / 11.0);
+    public static final int TURRET_MOTOR_GEAR_TEETH = 12;
+    public static final int TURRET_GEAR_TEETH = 84;
+    public static final double TURRET_MOTOR_REVS_PER_TURRET_REV =
+            (double) TURRET_GEAR_TEETH / TURRET_MOTOR_GEAR_TEETH;
+    public static final double TURRET_TICKS_PER_TURRET_REV =
+            TURRET_MOTOR_TICKS_PER_REV * TURRET_MOTOR_REVS_PER_TURRET_REV;
+    public static final double TURRET_TICKS_PER_DEG = TURRET_TICKS_PER_TURRET_REV / 360.0;
 
-    public static final double TURRET_MIN_DEG = -150;
-    public static final double TURRET_MAX_DEG = 150;
+    // Measured physical endpoints, clockwise-positive from the forward zero.
+    public static final int TURRET_MEASURED_MIN_TICKS = -724;
+    public static final int TURRET_MEASURED_MAX_TICKS = 563;
+    public static final double TURRET_LIMIT_CLEARANCE_DEG = 5.0;
+    public static final int TURRET_LIMIT_CLEARANCE_TICKS =
+            (int) Math.ceil(TURRET_LIMIT_CLEARANCE_DEG * TURRET_TICKS_PER_DEG);
+    public static final int TURRET_MIN_TICKS = TURRET_MEASURED_MIN_TICKS + TURRET_LIMIT_CLEARANCE_TICKS;
+    public static final int TURRET_MAX_TICKS = TURRET_MEASURED_MAX_TICKS - TURRET_LIMIT_CLEARANCE_TICKS;
+    public static final double TURRET_MIN_DEG = TURRET_MIN_TICKS / TURRET_TICKS_PER_DEG;
+    public static final double TURRET_MAX_DEG = TURRET_MAX_TICKS / TURRET_TICKS_PER_DEG;
 
     public static final double TURRET_KP = 0.02;
+    public static final double TURRET_KD = 0.0;
     public static final double TURRET_KS = 0.04;
     public static final double TURRET_DEADBAND_DEG = 1.0;
 
     public static final double TURRET_MAX_POWER = 0.6;
     public static final double TURRET_SEARCH_POWER = 0.15;
+    public static final double TURRET_TRACK_MAX_POWER = 0.22;
+    // Initial velocity feedforward from nominal no-load turret speed; tune on the robot.
+    public static final double TURRET_KV = 1.0 / (1150.0 * 6.0 / TURRET_MOTOR_REVS_PER_TURRET_REV);
+    public static final double TURRET_ROTATION_DEADBAND_DEG_S = 2.0;
+    public static final long TURRET_REACQUIRE_MS = 400;
     public static final double TURRET_RETURN_MAX_POWER = 0.35;
     public static final double TURRET_RETURN_MARGIN_DEG = 5;
     public static final double TURRET_RETURN_TOLERANCE_DEG = 1;
@@ -71,8 +99,9 @@ public class Robot {
     // Preserve your latest camera/motor sign correction.
     public static final double TURRET_VISION_POWER_SIGN = -1.0;
 
-    // -1 means aim using the mean of matching tags.
+    // -1 automatically locks one matching tag; it does not average a changing tag group.
     public static final int TURRET_AIM_TAG_ID = -1;
+    public static final long TURRET_TAG_SWITCH_DELAY_MS = 250;
 
     public static final double AIM_TOLERANCE_DEG = 3.0;
 
@@ -89,6 +118,10 @@ public class Robot {
     public static final double RPM_RED = 4000.0;
     public static final double RPM_BLUE = 4000.0;
 
+    public static final double TELEOP_DEFAULT_RPM = 3150.0;
+    private static final double[] SHOOTER_DISTANCE_METERS = {1.41, 1.60, 1.76, 1.90};
+    private static final double[] SHOOTER_DISTANCE_RPM = {3150, 3150, 3200, 3250};
+
     public static final double SHOOTER_RPM_TOLERANCE = 100.0;
     public static final double RPM_TRIM_STEP = 50.0;
 
@@ -101,8 +134,12 @@ public class Robot {
     // GATE / INTAKE / TRANSMISSION
     // =========================================
 
-    public static final double GATE_CLOSED = 0.0;
-    public static final double GATE_OPEN = 0.14;
+    // Measured on the redesigned gate. Saved recalibration may override this pair.
+    public static final double GATE_OPEN = 0.41;
+    public static final double GATE_CLOSED = 0.59;
+    public static final String GATE_PREFERENCES = "biobuzz_gate_model_v2";
+    public static final double GATE_JOG_STEP = 0.002;
+    public static final double GATE_CALIBRATION_STEP = 0.01;
 
     public static final long FEED_TIME_MS = 300;
 
@@ -116,6 +153,7 @@ public class Robot {
 
     public static final float COLOR_GAIN = 4;
 
+    // Starting threshold: verify with pollen at the installed sensor position.
     public static final double BALL_PRESENT_CM = 4.0;
 
     public static final double RED_HUE_ABOVE = 330;
@@ -131,8 +169,10 @@ public class Robot {
     // LED
     // =========================================
 
+    // goBILDA RGB Indicator 3118-0808-0002, standard FTC Servo PWM range.
     public static final double LED_OFF = 0.0;
-    public static final double LED_RED = 0.277;
+    // 1104 us: just above the light's 1100 us minimum for red (below it is OFF).
+    public static final double LED_RED = 0.28;
     public static final double LED_YELLOW = 0.388;
     public static final double LED_GREEN = 0.500;
     public static final double LED_BLUE = 0.611;
@@ -162,12 +202,18 @@ public class Robot {
     public DcMotorEx intake, transmission, turret, shooter;
 
     public Servo gate, led;
+    public GateController gateController;
 
     public NormalizedColorSensor colorSensor;
     public DistanceSensor ballDistanceSensor;
 
     // Capital L matches your latest hardware config.
     public Limelight3A Limelight;
+    private GoBildaPinpointDriver pinpoint;
+    // Pinpoint is CCW-positive; turret encoders and controller angles are CW-positive.
+    private double chassisHeadingDegrees = Double.NaN;
+    private double chassisTurnRateDegrees = Double.NaN;
+    private String headingStatus = "MISSING: configure Pinpoint as pinpoint";
 
     // =========================================
     // ROBOT STATE
@@ -177,7 +223,9 @@ public class Robot {
 
     public boolean targetVisible;
     public boolean targetFresh;
-    public double targetTx;
+    public double targetTx = Double.NaN;
+    private double targetFrameTimestamp;
+    private double targetFrameAgeMs;
     // Straight-line camera-to-tag range; NaN means no fresh valid pose.
     public double targetDistanceMeters = Double.NaN;
     public int targetDistanceTagId = -1;
@@ -188,11 +236,16 @@ public class Robot {
     private boolean tagEverSeen;
 
     private final ElapsedTime sinceTagSeen = new ElapsedTime();
+    private final AimTagLock aimTagLock = new AimTagLock();
+    private Alliance visionAlliance;
+
+    public final TurretGains turretGains = new TurretGains();
 
     private final TurretAimController turretAim =
             new TurretAimController(
                     TURRET_MIN_DEG,
-                    TURRET_MAX_DEG
+                    TURRET_MAX_DEG,
+                    turretGains
             );
 
     private String turretAimState = "MANUAL";
@@ -223,7 +276,7 @@ public class Robot {
     public BallColor ballColor = BallColor.NONE;
 
     public double ballHue;
-    public double ballDistanceCm;
+    public double ballDistanceCm = Double.NaN;
 
     private final float[] hsv = new float[3];
 
@@ -291,7 +344,7 @@ public class Robot {
         configureMechanisms(hw, resetEncoders);
     }
 
-    /** Initializes mechanisms without mapping or configuring any drivetrain motor. */
+    /** Maps only mechanisms; Pedro remains the sole drivetrain controller. */
     public void initMechanismsOnly(HardwareMap hw, boolean resetTurretEncoder) {
         intake = hw.get(DcMotorEx.class, "intake");
         transmission = hw.get(DcMotorEx.class, "transmission");
@@ -300,7 +353,10 @@ public class Robot {
         configureMechanisms(hw, resetTurretEncoder);
     }
 
-    // Shared unchanged initialization, also used by the existing whole-robot init().
+    protected SharedPreferences gatePreferences(HardwareMap hw) {
+        return hw.appContext.getSharedPreferences(GATE_PREFERENCES, Context.MODE_PRIVATE);
+    }
+
     private void configureMechanisms(HardwareMap hw, boolean resetEncoders) {
         // Intake
 
@@ -326,6 +382,9 @@ public class Robot {
         }
 
         turret.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+
+        // Read the existing localizer without resetting the Auto-to-TeleOp heading/pose.
+        pinpoint = hw.tryGet(GoBildaPinpointDriver.class, "pinpoint");
 
         // =====================================
         // SHOOTER: APPLY TUNED PIDF
@@ -355,12 +414,29 @@ public class Robot {
         // =====================================
 
         gate = hw.get(Servo.class, "torqueservo1");
+        gateController = new GateController(gate,
+                gatePreferences(hw));
+        if (!gateController.calibrated()) gateController.release();
         led = hw.tryGet(Servo.class, "led");
+        if (led != null) {
+            led.setDirection(Servo.Direction.FORWARD);
+            led.scaleRange(0, 1);
+            if (led instanceof PwmControl) {
+                ((PwmControl) led).setPwmRange(new PwmControl.PwmRange(600, 2400));
+            }
+        }
+        ballPresent = false;
+        updateLed();
 
         colorSensor = hw.tryGet(
                 NormalizedColorSensor.class,
-                "colorSensor"
+                "colorsensor"
         );
+        // Preserve compatibility with the previous configuration name.
+        if (colorSensor == null) {
+            colorSensor = hw.tryGet(NormalizedColorSensor.class, "colorSensor");
+        }
+        ballDistanceSensor = null;
 
         if (colorSensor != null) {
             colorSensor.setGain(COLOR_GAIN);
@@ -392,8 +468,39 @@ public class Robot {
     // =========================================
 
     public void updateSensors() {
+        updateHeading();
         updateVision();
         updateBall();
+        updateLed();
+    }
+
+    /** Reuses Pedro's fresh chassis state (Robot turret convention is clockwise degrees). */
+    public void updateMechanismSensors(double clockwiseDegrees, double clockwiseDegreesPerSecond) {
+        chassisHeadingDegrees = clockwiseDegrees;
+        chassisTurnRateDegrees = clockwiseDegreesPerSecond;
+        headingStatus = "PEDRO LOCALIZATION";
+        updateVision();
+        updateBall();
+        updateLed();
+    }
+
+    private void updateHeading() {
+        chassisHeadingDegrees = Double.NaN;
+        chassisTurnRateDegrees = Double.NaN;
+        if (pinpoint == null) return;
+
+        pinpoint.update();
+        headingStatus = pinpoint.getDeviceStatus().toString();
+        if (pinpoint.getDeviceStatus() != GoBildaPinpointDriver.DeviceStatus.READY) return;
+
+        double heading = -pinpoint.getHeading(UnnormalizedAngleUnit.DEGREES);
+        double turnRate = -pinpoint.getHeadingVelocity(UnnormalizedAngleUnit.DEGREES);
+        if (Double.isFinite(heading) && Double.isFinite(turnRate)) {
+            chassisHeadingDegrees = heading;
+            chassisTurnRateDegrees = turnRate;
+        } else {
+            headingStatus = "INVALID HEADING";
+        }
     }
 
     private void updateVision() {
@@ -438,11 +545,13 @@ public class Robot {
         targetDistanceMeters = Double.NaN;
         targetDistanceTagId = -1;
         targetFaceAngleDegrees = Double.NaN;
-        double nearestFaceAngleDegrees = Double.NaN;
-        double nearestDistanceMeters = Double.POSITIVE_INFINITY;
-        int nearestDistanceTagId = -1;
-        double txSum = 0;
-        int firstMatchingId = -1;
+        if (visionAlliance != alliance) {
+            aimTagLock.reset();
+            turretAim.cancelReturn();
+            visionAlliance = alliance;
+            tagEverSeen = false;
+        }
+        aimTagLock.beginFrame();
 
         if (result != null
                 && result.getFiducialResults() != null) {
@@ -474,32 +583,8 @@ public class Robot {
                     if (Double.isFinite(
                             tag.getTargetXDegrees())) {
 
-                        txSum += tag.getTargetXDegrees();
-
-                        Pose3D cameraPose = tag.getTargetPoseCameraSpace();
-                        if (cameraPose != null) {
-                            Position position = cameraPose.getPosition().toUnit(DistanceUnit.METER);
-                            double distance = cameraToTagDistanceMeters(
-                                    position.x, position.y, position.z);
-                            if (Double.isFinite(distance) && distance < nearestDistanceMeters) {
-                                nearestDistanceMeters = distance;
-                                nearestDistanceTagId = tag.getFiducialId();
-                                nearestFaceAngleDegrees = Double.NaN;
-                                Pose3D cameraInTagSpace = tag.getCameraPoseTargetSpace();
-                                if (cameraInTagSpace != null) {
-                                    Position tagPosition = cameraInTagSpace.getPosition()
-                                            .toUnit(DistanceUnit.METER);
-                                    nearestFaceAngleDegrees = tagFaceAngleDegrees(
-                                            tagPosition.x, tagPosition.z);
-                                }
-                            }
-                        }
-
+                        aimTagLock.consider(tag.getFiducialId(), tag.getTargetXDegrees());
                         visionUsableMatches++;
-
-                        if (firstMatchingId < 0) {
-                            firstMatchingId = tag.getFiducialId();
-                        }
                     }
                 }
             }
@@ -526,21 +611,46 @@ public class Robot {
                 visionUsableMatches
         );
 
-        boolean seenNow =
-                "MATCHING TAG VISIBLE".equals(visionDebug);
+        boolean seenNow = "MATCHING TAG VISIBLE".equals(visionDebug);
+        if (seenNow) {
+            int selectedId = aimTagLock.finishFrame(System.nanoTime() / 1e6);
+            if (selectedId < 0) {
+                seenNow = false;
+                visionDebug = "LOCKED TAG TEMPORARILY LOST: ID " + aimTagLock.lockedId;
+            } else {
+                targetId = selectedId;
+                targetTx = aimTagLock.selectedTx;
+            }
+        }
 
         if (seenNow) {
-
-            targetTx = txSum / visionUsableMatches;
-            targetId = firstMatchingId;
-            if (nearestDistanceTagId >= 0) {
-                targetDistanceMeters = nearestDistanceMeters;
-                targetDistanceTagId = nearestDistanceTagId;
-                targetFaceAngleDegrees = nearestFaceAngleDegrees;
+            targetFrameTimestamp = result.getTimestamp();
+            if (!Double.isFinite(targetFrameTimestamp) || targetFrameTimestamp == 0) {
+                targetFrameTimestamp = result.getControlHubTimeStamp();
+            }
+            targetFrameAgeMs = visionResultAgeMs + result.getCaptureLatency()
+                    + result.getTargetingLatency() + result.getParseLatency();
+            for (LLResultTypes.FiducialResult tag : result.getFiducialResults()) {
+                if (tag.getFiducialId() != targetId) continue;
+                Pose3D cameraPose = tag.getTargetPoseCameraSpace();
+                if (cameraPose != null) {
+                    Position position = cameraPose.getPosition().toUnit(DistanceUnit.METER);
+                    targetDistanceMeters = cameraToTagDistanceMeters(position.x, position.y, position.z);
+                    if (Double.isFinite(targetDistanceMeters)) targetDistanceTagId = targetId;
+                }
+                Pose3D cameraInTagSpace = tag.getCameraPoseTargetSpace();
+                if (cameraInTagSpace != null) {
+                    Position position = cameraInTagSpace.getPosition().toUnit(DistanceUnit.METER);
+                    targetFaceAngleDegrees = tagFaceAngleDegrees(position.x, position.z);
+                }
+                break;
             }
 
             tagEverSeen = true;
             sinceTagSeen.reset();
+        } else {
+            // A retained TX must not look like a live measurement (or authorize a shot).
+            targetTx = Double.NaN;
         }
 
         targetFresh = seenNow;
@@ -641,7 +751,7 @@ public class Robot {
         }
 
         if (Double.isFinite(targetDistanceMeters)) {
-            telemetry.addData("LL tag distance", "ID %d: %.2f m / %.1f in (nearest matching tag)",
+            telemetry.addData("LL tag distance", "ID %d: %.2f m / %.1f in (locked aim tag)",
                     targetDistanceTagId, targetDistanceMeters, targetDistanceMeters / 0.0254);
         } else {
             telemetry.addData("LL tag distance", "unavailable (no fresh matching tag pose)");
@@ -702,6 +812,24 @@ public class Robot {
                 turretAppliedPower,
                 turretPowerLimit
         );
+        telemetry.addData("Turret encoder", "%d ticks (soft limits %d to %d)",
+                turret.getCurrentPosition(), TURRET_MIN_TICKS, TURRET_MAX_TICKS);
+        telemetry.addData("Heading compensation", "%s; CW heading=%.1f rate=%.1f deg/s",
+                headingStatus, chassisHeadingDegrees, chassisTurnRateDegrees);
+        telemetry.addData("Aim target", aimTargetLabel());
+        telemetry.addData("Aim gains", "P=%.4f I=0 D=%.5f kS=%.3f kV=%.6f DB=%.2f deg",
+                turretGains.p, turretGains.d, turretGains.kS, turretGains.kV, turretGains.deadbandDeg);
+        telemetry.addData("Aim terms", "P=%+.3f D=%+.3f velocity FF=%+.3f static=%+.3f settled=%s",
+                turretAim.pTerm, turretAim.dTerm, turretAim.velocityTerm, turretAim.staticTerm,
+                turretAim.settled);
+        telemetry.addData("Aim error/rate", "%.2f deg / %.1f deg/s",
+                turretAimErrorDegrees(), turret.getVelocity() / TURRET_TICKS_PER_DEG);
+        if (Double.isFinite(turretAim.lastTargetAngle)) {
+            telemetry.addData("Turret aim goal", "%.1f deg; observation age=%.0f ms",
+                    turretAim.lastTargetAngle, turretAim.observationAgeMs());
+        } else {
+            telemetry.addData("Turret aim goal", "no observation");
+        }
     }
 
     private boolean isOurHiveTag(int id) {
@@ -720,6 +848,7 @@ public class Robot {
 
     private void updateBall() {
 
+        ballDistanceCm = Double.NaN;
         if (colorSensor == null) {
             ballPresent = false;
             ballColor = BallColor.NONE;
@@ -765,7 +894,9 @@ public class Robot {
                     ballDistanceSensor.getDistance(DistanceUnit.CM);
 
             ballPresent =
-                    ballDistanceCm < BALL_PRESENT_CM;
+                    Double.isFinite(ballDistanceCm)
+                            && ballDistanceCm > 0
+                            && ballDistanceCm < BALL_PRESENT_CM;
 
         } else {
 
@@ -828,27 +959,19 @@ public class Robot {
 
         if (autoAim && Limelight != null) {
 
-            if (!targetFresh
-                    && targetVisible
-                    && !turretAim.returning) {
-
-                power = 0;
-                turretAimState = "WAIT FOR FRESH TAG";
-
-            } else {
-
-                power = turretAim.update(
-                        turretDegrees(),
-                        targetFresh,
-                        (targetTx - TURRET_AIM_OFFSET_DEG)
-                                * TURRET_VISION_POWER_SIGN
-                );
-
-                turretAimState = turretAim.state;
-            }
-
+            power = turretAim.update(
+                    turretDegrees(),
+                    targetFresh,
+                    (targetTx - TURRET_AIM_OFFSET_DEG) * TURRET_VISION_POWER_SIGN,
+                    targetFrameTimestamp,
+                    visionConnected && visionRunning && visionPipelineIndex == LIMELIGHT_PIPELINE,
+                    chassisHeadingDegrees,
+                    chassisTurnRateDegrees,
+                    turret.getVelocity() / TURRET_TICKS_PER_DEG,
+                    targetFrameAgeMs
+            );
+            turretAimState = turretAim.state;
         } else {
-
             turretAim.cancelReturn();
 
             turretAimState = autoAim
@@ -896,17 +1019,17 @@ public class Robot {
                 TURRET_MAX_POWER
         );
 
-        double degrees = turretDegrees();
+        int ticks = turret.getCurrentPosition();
 
         turretPowerLimit = "none";
 
-        if (degrees >= TURRET_MAX_DEG && power > 0) {
+        if (ticks >= TURRET_MAX_TICKS && power > 0) {
 
             power = 0;
             turretPowerLimit = "RIGHT ENCODER LIMIT";
 
         } else if (
-                degrees <= TURRET_MIN_DEG && power < 0
+                ticks <= TURRET_MIN_TICKS && power < 0
         ) {
 
             power = 0;
@@ -920,6 +1043,7 @@ public class Robot {
     public void zeroTurret() {
 
         turretAim.cancelReturn();
+        turret.setPower(0);
 
         turret.setMode(
                 DcMotor.RunMode.STOP_AND_RESET_ENCODER
@@ -947,7 +1071,86 @@ public class Robot {
 
         return TURRET_AIM_TAG_ID >= 0
                 ? "TAG " + TURRET_AIM_TAG_ID
-                : "MATCHING TAG GROUP MEAN";
+                : aimTagLock.lockedId >= 0 ? "LOCKED TAG " + aimTagLock.lockedId : "AUTO TAG LOCK";
+    }
+
+    public double turretAimErrorDegrees() {
+        return turretAim.lastTargetAngle - turretDegrees();
+    }
+
+    public void resetTurretAim() {
+        turretAim.cancelReturn();
+    }
+
+    /** Mutable per-OpMode gains; tuning does not persist or change competition defaults. */
+    public static final class TurretGains {
+        public double p = TURRET_KP;
+        public double d = TURRET_KD;
+        public double kS = TURRET_KS;
+        public double kV = TURRET_KV;
+        public double deadbandDeg = TURRET_DEADBAND_DEG;
+
+        public void reset() {
+            p = TURRET_KP;
+            d = TURRET_KD;
+            kS = TURRET_KS;
+            kV = TURRET_KV;
+            deadbandDeg = TURRET_DEADBAND_DEG;
+        }
+
+        public void quietStart() {
+            reset();
+            p = 0.012;
+            kS = 0.020;
+            deadbandDeg = 1.5;
+        }
+    }
+
+    /** Keeps changes in the number/order of visible tags from moving the aim point. */
+    static final class AimTagLock {
+        private int lockedId = -1;
+        private double lastSeenMs = Double.NEGATIVE_INFINITY;
+        private int bestId;
+        private double bestTx;
+        private double lockedTx;
+        private double selectedTx = Double.NaN;
+
+        void beginFrame() {
+            bestId = -1;
+            bestTx = Double.NaN;
+            lockedTx = Double.NaN;
+        }
+
+        void consider(int id, double tx) {
+            if (id < 0 || !Double.isFinite(tx)) return;
+            if (id == lockedId) lockedTx = tx;
+            if (bestId < 0 || Math.abs(tx) < Math.abs(bestTx)
+                    || (Math.abs(tx) == Math.abs(bestTx) && id < bestId)) {
+                bestId = id;
+                bestTx = tx;
+            }
+        }
+
+        int finishFrame(double nowMs) {
+            selectedTx = Double.NaN;
+            if (Double.isFinite(lockedTx)) {
+                selectedTx = lockedTx;
+                lastSeenMs = nowMs;
+            } else if (bestId >= 0 && (lockedId < 0
+                    || nowMs - lastSeenMs >= TURRET_TAG_SWITCH_DELAY_MS)) {
+                lockedId = bestId;
+                selectedTx = bestTx;
+                lastSeenMs = nowMs;
+            }
+            return Double.isFinite(selectedTx) ? lockedId : -1;
+        }
+
+        void reset() {
+            lockedId = -1;
+            lastSeenMs = Double.NEGATIVE_INFINITY;
+            selectedTx = Double.NaN;
+            beginFrame();
+        }
     }
 
     // =========================================
@@ -958,188 +1161,197 @@ public class Robot {
 
         private final double minDeg;
         private final double maxDeg;
-
+        private final DoubleSupplier clockMs;
+        private final TurretGains gains;
         private int searchDirection = 1;
-
-        private boolean returning = false;
-        private double returnGoal;
-
+        private boolean returning;
+        private double lastFrameTimestamp = Double.NaN;
+        private double lastTargetAngle = Double.NaN;
+        private double lastHeading = Double.NaN;
+        private double lastObservationMs = Double.NEGATIVE_INFINITY;
         private String state = "SEARCH RIGHT";
+        private boolean settled;
+        private double pTerm;
+        private double dTerm;
+        private double velocityTerm;
+        private double staticTerm;
 
-        TurretAimController(
-                double minDeg,
-                double maxDeg
-        ) {
-
-            double span = maxDeg - minDeg;
-
-            if (!Double.isFinite(minDeg)
-                    || !Double.isFinite(maxDeg)
-                    || minDeg > 0
-                    || maxDeg < 0
-                    || span > 360
-                    || span <= 2 * (
-                    TURRET_RETURN_MARGIN_DEG
-                            + TURRET_RETURN_TOLERANCE_DEG
-            )) {
-
-                throw new IllegalArgumentException(
-                        "Invalid turret range"
-                );
-            }
-
-            this.minDeg = minDeg;
-            this.maxDeg = maxDeg;
+        TurretAimController(double minDeg, double maxDeg) {
+            this(minDeg, maxDeg, new TurretGains());
         }
 
-        double update(
-                double angle,
-                boolean visible,
-                double error
-        ) {
+        TurretAimController(double minDeg, double maxDeg, TurretGains gains) {
+            this(minDeg, maxDeg, () -> System.nanoTime() / 1e6, gains);
+        }
 
+        TurretAimController(double minDeg, double maxDeg, DoubleSupplier clockMs) {
+            this(minDeg, maxDeg, clockMs, new TurretGains());
+        }
+
+        TurretAimController(double minDeg, double maxDeg, DoubleSupplier clockMs, TurretGains gains) {
+            double span = maxDeg - minDeg;
+            if (!Double.isFinite(minDeg) || !Double.isFinite(maxDeg)
+                    || !Double.isFinite(span) || minDeg > 0 || maxDeg < 0
+                    || span <= 2 * (TURRET_RETURN_MARGIN_DEG + TURRET_RETURN_TOLERANCE_DEG)) {
+                throw new IllegalArgumentException("Invalid turret range");
+            }
+            // Keep encoder angles unwrapped: the measured mechanism has more than 360 deg travel.
+            this.minDeg = minDeg;
+            this.maxDeg = maxDeg;
+            this.clockMs = clockMs;
+            this.gains = gains;
+        }
+
+        double update(double angle, boolean visible, double error, double frameTimestamp,
+                      boolean cameraUsable, double heading, double turnRate,
+                      double turretVelocity, double frameAgeMs) {
+            pTerm = dTerm = velocityTerm = staticTerm = 0;
             if (!Double.isFinite(angle)
-                    || (visible && !Double.isFinite(error))) {
-
+                    || (visible && (!Double.isFinite(error) || !Double.isFinite(frameTimestamp)
+                    || !Double.isFinite(frameAgeMs) || frameAgeMs < 0))) {
                 cancelReturn();
                 state = "INVALID READING";
-
                 return 0;
             }
 
-            double targetAngle = angle + error;
-
-            boolean reachable =
-                    visible
-                            && angle >= minDeg
-                            && angle <= maxDeg
-                            && targetAngle >= minDeg
-                            && targetAngle <= maxDeg;
-
-            if (returning && reachable) {
-                returning = false;
+            double nowMs = clockMs.getAsDouble();
+            boolean headingAvailable = Double.isFinite(heading);
+            if (headingAvailable && Double.isFinite(lastHeading)
+                    && Double.isFinite(lastTargetAngle)) {
+                // Subtract chassis rotation even when there is no new camera frame.
+                double delta = heading - lastHeading;
+                delta -= 360.0 * Math.floor((delta + 180.0) / 360.0);
+                lastTargetAngle -= delta;
             }
+            lastHeading = headingAvailable ? heading : Double.NaN;
+            double rate = headingAvailable && Double.isFinite(turnRate) ? turnRate : 0;
 
-            if (returning) {
-
-                if (Math.abs(returnGoal - angle)
-                        > TURRET_RETURN_TOLERANCE_DEG) {
-
-                    return limited(
-                            angle,
-                            positionPower(
-                                    returnGoal - angle,
-                                    TURRET_RETURN_MAX_POWER
-                            )
-                    );
-                }
-
-                returning = false;
-            }
-
-            double power;
-
-            if (visible) {
-
-                if (Math.abs(error) >= TURRET_DEADBAND_DEG) {
+            // A camera frame is one observation, regardless of how often the USB result is read.
+            if (cameraUsable && visible && frameAgeMs < LIMELIGHT_STALE_MS
+                    && frameTimestamp != lastFrameTimestamp) {
+                lastFrameTimestamp = frameTimestamp;
+                double velocity = Double.isFinite(turretVelocity) ? turretVelocity : 0;
+                // First-order capture-time correction for motion during camera/USB latency.
+                lastTargetAngle = angle + error - (velocity + rate) * frameAgeMs / 1000.0;
+                lastObservationMs = nowMs - frameAgeMs;
+                if (Math.abs(error) >= gains.deadbandDeg) {
                     searchDirection = error > 0 ? 1 : -1;
                 }
-
-                power = positionPower(
-                        error,
-                        TURRET_MAX_POWER
-                );
-
-                state = "TRACK";
-
-            } else {
-
-                power =
-                        searchDirection * TURRET_SEARCH_POWER;
-
-                state = searchDirection > 0
-                        ? "SEARCH RIGHT"
-                        : "SEARCH LEFT";
             }
 
-            if (angle > maxDeg
-                    || (!reachable && power > 0
-                    && angle >= maxDeg - TURRET_RETURN_MARGIN_DEG)) {
-
-                returnGoal =
-                        minDeg + TURRET_RETURN_MARGIN_DEG;
-
+            returning = false;
+            // An out-of-range encoder reading gets a short inward recovery, not a full-range sweep.
+            if (angle < minDeg || angle > maxDeg) {
+                double goal = angle < minDeg
+                        ? minDeg + TURRET_RETURN_MARGIN_DEG : maxDeg - TURRET_RETURN_MARGIN_DEG;
+                state = angle < minDeg ? "LIMIT RECOVERY RIGHT" : "LIMIT RECOVERY LEFT";
                 returning = true;
-                state = "RETURN LEFT";
-
-            } else if (
-                    angle < minDeg
-                            || (!reachable && power < 0
-                            && angle <= minDeg + TURRET_RETURN_MARGIN_DEG)
-            ) {
-
-                returnGoal =
-                        maxDeg - TURRET_RETURN_MARGIN_DEG;
-
-                returning = true;
-                state = "RETURN RIGHT";
+                return limited(angle, positionPower(goal - angle, 0, TURRET_RETURN_MAX_POWER));
             }
 
-            if (returning) {
-
-                power = positionPower(
-                        returnGoal - angle,
-                        TURRET_RETURN_MAX_POWER
-                );
+            double goal = nearestReachableAngle(lastTargetAngle, angle);
+            boolean tracking = cameraUsable && Double.isFinite(goal)
+                    && nowMs - lastObservationMs < TURRET_REACQUIRE_MS;
+            if (tracking) {
+                lastTargetAngle = goal;
+                double trackingError = goal - angle;
+                // A full turn may be needed to unwind near a cable limit. Never wrap the encoder.
+                returning = Math.abs(trackingError) > 180;
+                state = returning ? (trackingError > 0 ? "UNWIND RIGHT" : "UNWIND LEFT")
+                        : visible ? "TRACK" : "REACQUIRE LAST TAG";
+                double feedforward = Math.abs(rate) >= TURRET_ROTATION_DEADBAND_DEG_S
+                        ? -rate * gains.kV : 0;
+                double velocity = Double.isFinite(turretVelocity) ? turretVelocity : 0;
+                boolean moving = Math.abs(rate) >= TURRET_ROTATION_DEADBAND_DEG_S
+                        || Math.abs(velocity) >= 5.0;
+                // Enter hold inside DB; resume above DB+0.5 deg to avoid noise-driven kick reversals.
+                if (moving || Math.abs(trackingError) >= gains.deadbandDeg + 0.5) settled = false;
+                else if (Math.abs(trackingError) < gains.deadbandDeg) settled = true;
+                if (settled) return 0;
+                // D uses measured field angular velocity, avoiding derivative kicks from tag noise.
+                double damping = returning ? 0 : gains.d * (-rate - velocity);
+                return limited(angle, positionPower(trackingError, damping,
+                        returning ? 0 : feedforward,
+                        returning ? TURRET_RETURN_MAX_POWER : TURRET_TRACK_MAX_POWER));
             }
 
-            return limited(angle, power);
+            // Search automatically before the first detection and after an expired target.
+            // Reverse near either endpoint instead of latching a return to the far endpoint.
+            if (angle >= maxDeg - TURRET_RETURN_MARGIN_DEG) searchDirection = -1;
+            if (angle <= minDeg + TURRET_RETURN_MARGIN_DEG) searchDirection = 1;
+            settled = false;
+            state = searchDirection > 0 ? "SEARCH RIGHT" : "SEARCH LEFT";
+            return limited(angle, searchDirection * TURRET_SEARCH_POWER);
+        }
+
+        private double nearestReachableAngle(double desired, double current) {
+            if (!Double.isFinite(desired)) return Double.NaN;
+            double firstTurn = Math.ceil((minDeg - desired) / 360.0);
+            double lastTurn = Math.floor((maxDeg - desired) / 360.0);
+            if (firstTurn > lastTurn) return Double.NaN;
+            double nearestTurn = Math.rint((current - desired) / 360.0);
+            nearestTurn = Math.max(firstTurn, Math.min(lastTurn, nearestTurn));
+            return desired + nearestTurn * 360.0;
+        }
+
+        double observationAgeMs() {
+            return clockMs.getAsDouble() - lastObservationMs;
         }
 
         void cancelReturn() {
             returning = false;
+            lastFrameTimestamp = Double.NaN;
+            lastTargetAngle = Double.NaN;
+            lastHeading = Double.NaN;
+            lastObservationMs = Double.NEGATIVE_INFINITY;
+            settled = false;
+            pTerm = dTerm = velocityTerm = staticTerm = 0;
         }
 
-        private double positionPower(
-                double error,
-                double maxPower
-        ) {
-
-            if (Math.abs(error) < TURRET_DEADBAND_DEG) {
-                return 0;
-            }
-
-            double power =
-                    TURRET_KP * error
-                            + Math.copySign(TURRET_KS, error);
-
-            return Math.max(
-                    -maxPower,
-                    Math.min(maxPower, power)
-            );
+        private double positionPower(double error, double feedforward, double maxPower) {
+            return positionPower(error, 0, feedforward, maxPower);
         }
 
-        private double limited(
-                double angle,
-                double power
-        ) {
+        private double positionPower(double error, double damping, double feedforward, double maxPower) {
+            pTerm = Math.abs(error) < gains.deadbandDeg ? 0 : gains.p * error;
+            dTerm = damping;
+            velocityTerm = feedforward;
+            double power = pTerm + dTerm + velocityTerm;
+            staticTerm = power == 0 ? 0 : Math.copySign(gains.kS, power);
+            power += staticTerm;
+            return Math.max(-maxPower, Math.min(maxPower, power));
+        }
 
-            if ((angle >= maxDeg && power > 0)
-                    || (angle <= minDeg && power < 0)) {
-
-                return 0;
-            }
-
-            return Math.max(
-                    -TURRET_MAX_POWER,
-                    Math.min(TURRET_MAX_POWER, power)
-            );
+        private double limited(double angle, double power) {
+            if (!Double.isFinite(power) || (angle >= maxDeg && power > 0)
+                    || (angle <= minDeg && power < 0)) return 0;
+            return Math.max(-TURRET_MAX_POWER, Math.min(TURRET_MAX_POWER, power));
         }
     }
 
     // =========================================
     // SHOOTER
     // =========================================
+
+    /** Interpolate measured camera-to-AprilTag distances; clamp beyond the measured range. */
+    public static double rpmForDistance(double meters) {
+        if (!Double.isFinite(meters) || meters <= 0) return TELEOP_DEFAULT_RPM;
+        if (meters <= SHOOTER_DISTANCE_METERS[0]) return SHOOTER_DISTANCE_RPM[0];
+        for (int i = 1; i < SHOOTER_DISTANCE_METERS.length; i++) {
+            if (meters <= SHOOTER_DISTANCE_METERS[i]) {
+                double fraction = (meters - SHOOTER_DISTANCE_METERS[i - 1])
+                        / (SHOOTER_DISTANCE_METERS[i] - SHOOTER_DISTANCE_METERS[i - 1]);
+                return SHOOTER_DISTANCE_RPM[i - 1]
+                        + fraction * (SHOOTER_DISTANCE_RPM[i] - SHOOTER_DISTANCE_RPM[i - 1]);
+            }
+        }
+        return SHOOTER_DISTANCE_RPM[SHOOTER_DISTANCE_RPM.length - 1];
+    }
+
+    public double distanceBasedShooterRpm() {
+        // targetVisible can outlive the latest detection during the short aim hold.
+        return rpmForDistance(targetFresh ? targetDistanceMeters : Double.NaN);
+    }
 
     public static double rpmFor(BallColor color) {
 
@@ -1161,7 +1373,12 @@ public class Robot {
             shotColor = ballColor;
         }
 
-        targetRpm = rpmFor(shotColor);
+        updateShooter(rpmFor(shotColor));
+    }
+
+    /** TeleOp supplies a distance-based base RPM; keep motor output/readiness on one target. */
+    public void updateShooter(double baseRpm) {
+        targetRpm = baseRpm;
 
         if (shooterOn) {
 
@@ -1197,7 +1414,138 @@ public class Robot {
 
     public boolean readyToShoot() {
 
-        return aimedAtTarget() && shooterAtSpeed();
+        return gateCalibrated() && aimedAtTarget() && shooterAtSpeed();
+    }
+
+    public boolean gateCalibrated() {
+        return gateController != null && gateController.calibrated();
+    }
+
+    public void addGateTelemetry(Telemetry telemetry) {
+        telemetry.addData("Gate calibration", gateCalibrated()
+                ? gateController.usingCodeDefaults ? "CODE DEFAULTS (measured)" : "SAVED for current model"
+                : "REQUIRED - run Gate Calibration; no gate commands");
+        if (gateController != null) {
+            telemetry.addData("Gate endpoints", "OPEN=%.4f CLOSED=%.4f command=%.4f",
+                    gateController.openPosition, gateController.closedPosition, gateController.command);
+        }
+    }
+
+    /** Shared by calibration, TeleOp, Auto and Robot Test. Values describe commands, not shaft angle. */
+    public static final class GateController {
+        private final Servo servo;
+        private final SharedPreferences preferences;
+        public double openPosition = Double.NaN;
+        public double closedPosition = Double.NaN;
+        public double command = Double.NaN;
+        public double markedOpen = Double.NaN;
+        public double markedClosed = Double.NaN;
+        public boolean usingCodeDefaults;
+        private boolean armed;
+
+        public GateController(Servo servo, SharedPreferences preferences) {
+            this.servo = servo;
+            this.preferences = preferences;
+            openPosition = preferences.getFloat("open", Float.NaN);
+            closedPosition = preferences.getFloat("closed", Float.NaN);
+            if (preferences.getBoolean("disabled", false)) {
+                openPosition = closedPosition = Double.NaN;
+            } else if (!preferences.contains("open") && !preferences.contains("closed")) {
+                openPosition = GATE_OPEN;
+                closedPosition = GATE_CLOSED;
+                usingCodeDefaults = true;
+            }
+        }
+
+        private static boolean validPosition(double position) {
+            return Double.isFinite(position) && position >= 0 && position <= 1;
+        }
+
+        private static boolean distinct(double open, double closed) {
+            // Allow float persistence roundoff at the two-fine-step (0.001) boundary.
+            return validPosition(open) && validPosition(closed) && Math.abs(open - closed) >= 0.000999;
+        }
+
+        public boolean calibrated() {
+            return distinct(openPosition, closedPosition);
+        }
+
+        public boolean canRelease() {
+            return servo instanceof PwmControl;
+        }
+
+        public void release() {
+            if (canRelease()) ((PwmControl) servo).setPwmDisable();
+            armed = false;
+            command = Double.NaN;
+        }
+
+        /** Explicit operator action only: establish this reference with the linkage freed. */
+        public void establishMidpoint() {
+            markedOpen = markedClosed = Double.NaN;
+            write(0.5);
+        }
+
+        public boolean jogCalibration(int direction, boolean fine) {
+            if (!armed || !validPosition(command) || direction == 0) return false;
+            write(Range.clip(command + Math.signum(direction) * (fine ? 0.0005 : GATE_CALIBRATION_STEP), 0, 1));
+            return true;
+        }
+
+        public boolean markOpen() {
+            if (!armed || !validPosition(command)) return false;
+            markedOpen = command;
+            return true;
+        }
+
+        public boolean markClosed() {
+            if (!armed || !validPosition(command)) return false;
+            markedClosed = command;
+            return true;
+        }
+
+        public boolean saveMarks() {
+            if (!distinct(markedOpen, markedClosed)) return false;
+            boolean saved = preferences.edit().putFloat("open", (float) markedOpen)
+                    .putFloat("closed", (float) markedClosed).putBoolean("disabled", false).commit();
+            if (saved) {
+                openPosition = markedOpen;
+                closedPosition = markedClosed;
+                usingCodeDefaults = false;
+            }
+            return saved;
+        }
+
+        public boolean forgetCalibration() {
+            release();
+            openPosition = closedPosition = markedOpen = markedClosed = Double.NaN;
+            usingCodeDefaults = false;
+            return preferences.edit().remove("open").remove("closed").putBoolean("disabled", true).commit();
+        }
+
+        public boolean commandSaved(boolean open) {
+            if (!calibrated()) return false;
+            write(open ? openPosition : closedPosition);
+            return true;
+        }
+
+        public boolean jogWithinSaved(int direction) {
+            if (!calibrated() || direction == 0) return false;
+            double start = validPosition(command) ? command : closedPosition;
+            write(Range.clip(start + Math.signum(direction) * GATE_JOG_STEP,
+                    Math.min(openPosition, closedPosition), Math.max(openPosition, closedPosition)));
+            return true;
+        }
+
+        private void write(double position) {
+            if (!validPosition(position)) return;
+            if (!armed || position != command) {
+                servo.setPosition(position);
+                if (canRelease()) ((PwmControl) servo).setPwmEnable();
+            }
+            command = position;
+            armed = true;
+        }
     }
 
     // =========================================
@@ -1208,6 +1556,13 @@ public class Robot {
             boolean wantShoot,
             double intakePower
     ) {
+
+        if (!gateCalibrated()) {
+            gateOpen = feedingBall = false;
+            transmission.setPower(0);
+            intake.setPower(intakePower);
+            return;
+        }
 
         if (!targetVisible) {
 
@@ -1231,9 +1586,7 @@ public class Robot {
             feedTimer.reset();
         }
 
-        gate.setPosition(
-                gateOpen ? GATE_OPEN : GATE_CLOSED
-        );
+        gateController.commandSaved(gateOpen);
 
         updateFeederMotors(
                 gateOpen,
@@ -1248,13 +1601,18 @@ public class Robot {
             double intakePower
     ) {
 
+        if (!gateCalibrated()) {
+            gateOpen = false;
+            transmission.setPower(0);
+            intake.setPower(intakePower);
+            return;
+        }
+
         if (toggleGate) {
             gateOpen = !gateOpen;
         }
 
-        gate.setPosition(
-                gateOpen ? GATE_OPEN : GATE_CLOSED
-        );
+        gateController.commandSaved(gateOpen);
 
         updateFeederMotors(
                 false,
@@ -1303,38 +1661,8 @@ public class Robot {
 
         if (led == null) return;
 
-        double color;
-
-        if (gateOpen || (ballPresent && readyToShoot())) {
-
-            color = LED_GREEN;
-
-        } else if (ballColor == BallColor.YELLOW) {
-
-            color = LED_YELLOW;
-
-        } else if (ballColor == BallColor.RED) {
-
-            color = LED_RED;
-
-        } else if (ballColor == BallColor.BLUE) {
-
-            color = LED_BLUE;
-
-        } else if (ballPresent) {
-
-            color = LED_WHITE;
-
-        } else if (targetVisible) {
-
-            color = LED_VIOLET;
-
-        } else {
-
-            color = LED_OFF;
-        }
-
-        led.setPosition(color);
+        // Presence of any pollen color wins, independent of the gate/shooter/tag.
+        led.setPosition(ballPresent ? LED_GREEN : LED_RED);
     }
 
     // =========================================

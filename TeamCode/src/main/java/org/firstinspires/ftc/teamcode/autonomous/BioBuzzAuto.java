@@ -21,8 +21,7 @@ import java.util.function.BooleanSupplier;
 
 /** Guarded Pedro route tests and optional reviewed mechanism actions. See TeamCode/AUTONOMOUS.md. */
 @Disabled
-@Autonomous(name = "BioBuzz Pedro Auto", group = "Development",
-        preselectTeleOp = "BioBuzz TeleOp")
+@Autonomous(name = "BioBuzz Pedro Auto", group = "Development")
 public class BioBuzzAuto extends OpMode {
     private final BioBuzzAutoPaths paths = new BioBuzzAutoPaths();
     private final List<DcMotorEx> driveMotors = new ArrayList<>();
@@ -194,7 +193,13 @@ public class BioBuzzAuto extends OpMode {
             }
             if (mechanismInitFailed) throw new IllegalStateException("Mechanism initialization failed; re-INIT after correcting hardware");
             try {
-                mechanisms = BioBuzzAutoMechanisms.initialize(hardwareMap, alliance);
+                mechanisms = BioBuzzAutoMechanisms.initialize(hardwareMap, alliance,
+                        () -> -Math.toDegrees(follower.pose().heading()),
+                        () -> -Math.toDegrees(follower.velocity().omega));
+                if (!mechanisms.supportsCountedCollection()) {
+                    mechanisms.stop();
+                    throw new IllegalStateException("Four-ball stored inventory/indexing remains unverified");
+                }
                 mechanismsInitialized = true;
             } catch (RuntimeException error) {
                 mechanismInitFailed = true;
@@ -253,6 +258,7 @@ public class BioBuzzAuto extends OpMode {
         telemetry.addData("Selected paths", "%d/%d (D-pad +/-; Y toggles full)", selectedPaths, BioBuzzAutoPaths.PATH_COUNT);
         telemetry.addData("Alliance for mechanisms", "%s (A blue, B red); route is not mirrored", alliance);
         telemetry.addData("Mechanisms", mechanisms.state());
+        telemetry.addData("Mechanism diagnostics", mechanisms.diagnostics());
         telemetry.addData("Collection verification", mechanisms.inventoryStatus());
         telemetry.addData("Scoring plan", "Shoot 4 preloads; intake 4 during path 1; shoot @2; intake 4 FLOWER @4; shoot @5");
         telemetry.addData("Ball counts", "%d preload / %d staged / %d FLOWER",

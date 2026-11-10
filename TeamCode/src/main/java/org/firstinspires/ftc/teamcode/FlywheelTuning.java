@@ -1,6 +1,7 @@
 
 package org.firstinspires.ftc.teamcode;
 
+import android.content.Context;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
@@ -34,9 +35,6 @@ public class FlywheelTuning extends OpMode {
     private static final double LOW_RPM =
             900.0 * 60.0 / TICKS_PER_REV;
 
-    private static final double GATE_CLOSED = 0.0;
-    private static final double GATE_OPEN = 0.14;
-
     private static final double FEED_POWER = 1.0;
 
     private static final long POST_FEED_WINDOW_NS =
@@ -49,6 +47,7 @@ public class FlywheelTuning extends OpMode {
     private DcMotorEx shooter;
     private DcMotorEx transmission;
     private Servo gate;
+    private Robot.GateController gateController;
 
     // =========================================
     // PIDF
@@ -133,6 +132,9 @@ public class FlywheelTuning extends OpMode {
                 Servo.class,
                 "torqueservo1"
         );
+        gateController = new Robot.GateController(gate,
+                hardwareMap.appContext.getSharedPreferences(Robot.GATE_PREFERENCES, Context.MODE_PRIVATE));
+        if (!gateController.calibrated()) gateController.release();
 
         shooter.setDirection(
                 DcMotorSimple.Direction.FORWARD
@@ -186,7 +188,7 @@ public class FlywheelTuning extends OpMode {
 
         gateOpen = false;
 
-        gate.setPosition(GATE_CLOSED);
+        gateController.commandSaved(false);
         transmission.setPower(0);
     }
 
@@ -584,15 +586,13 @@ public class FlywheelTuning extends OpMode {
 
         // Toggle gate
         if (gamepad1.xWasPressed()) {
-            gateOpen = !gateOpen;
+            gateOpen = gateController.calibrated() && !gateOpen;
         }
 
-        gate.setPosition(
-                gateOpen ? GATE_OPEN : GATE_CLOSED
-        );
+        gateController.commandSaved(gateOpen);
 
         // Right bumper runs feeder
-        feederOn = gamepad1.right_bumper;
+        feederOn = gamepad1.right_bumper && gateController.calibrated();
 
         transmission.setPower(
                 feederOn ? FEED_POWER : 0
@@ -907,6 +907,9 @@ public class FlywheelTuning extends OpMode {
                 "D-pad Left/Right = F"
         );
 
+        telemetry.addData("Gate calibration", gateController.calibrated()
+                ? gateController.usingCodeDefaults ? "code defaults" : "saved endpoints"
+                : "REQUIRED - run Gate Calibration; gate/feed disabled");
         telemetry.update();
     }
 
@@ -929,6 +932,6 @@ public class FlywheelTuning extends OpMode {
         transmission.setPower(0);
 
         gateOpen = false;
-        gate.setPosition(GATE_CLOSED);
+        gateController.commandSaved(false);
     }
 }

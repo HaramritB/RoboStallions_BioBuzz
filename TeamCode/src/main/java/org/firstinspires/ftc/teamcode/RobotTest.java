@@ -3,11 +3,10 @@ package org.firstinspires.ftc.teamcode;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.robotcore.util.Range;
 
 /**
  * Tests every mechanism from gamepad1 alone. Nothing moves until you press something: motors
- * start with no power, and the gate servo stays unpowered where it is until you first nudge it.
+ * start with no power, and the gate receives no position command until explicitly requested.
  *
  * Gamepad1
  *   Left stick / right stick X   drive, strafe, turn
@@ -18,7 +17,7 @@ import com.qualcomm.robotcore.util.Range;
  *   Right stick button           shooter target: POLLEN rpm <-> NECTAR rpm from Robot.java
  *   Dpad right / left (hold)     turret right / left (soft limits +/-150 deg from where it started)
  *   Left stick button            turret auto-aim on / off (needs the Limelight)
- *   X / B                        nudge gate +0.02 / -0.02 (first press goes to 0.50, mid-travel)
+ *   X / B                        nudge gate +/-0.002 inside saved calibration limits
  *   Hold Y                       the real competition shot sequence (needs the Limelight + tag)
  *   Back                         WHEEL TEST mode on / off. In it, hold X / Y / A / B to spin ONE
  *                                wheel forward: frontleft / frontright / backleft / backright
@@ -33,8 +32,6 @@ public class RobotTest extends LinearOpMode {
     static final double STICK_DEADBAND = 0.1;
     static final double RPM_STEP = 250;
     static final double MAX_RPM = 6000;
-    static final double GATE_STEP = 0.02;
-    static final double GATE_FIRST_POSITION = 0.5;   // mid-travel, so the first move is never a full swing
 
     @Override
     public void runOpMode() {
@@ -47,8 +44,6 @@ public class RobotTest extends LinearOpMode {
         double testRpm = 1000;  // start slow so you can check the spin direction safely
         double peakRpm = 0;
         boolean autoAim = false;
-        boolean gateCommanded = false;
-        double gatePosition = GATE_FIRST_POSITION;
         boolean wasRunningSequence = false;
 
         telemetry.addLine("Nothing moves until you press a button. Everything is on gamepad1.");
@@ -100,10 +95,7 @@ public class RobotTest extends LinearOpMode {
 
             // ---------------- Gate settings ----------------
             if (!wheelTestMode && (xPressed || bPressed)) {
-                if (gateCommanded) {
-                    gatePosition = Range.clip(gatePosition + (xPressed ? GATE_STEP : -GATE_STEP), 0, 1);
-                }
-                gateCommanded = true;
+                robot.gateController.jogWithinSaved(xPressed ? 1 : -1);
             }
 
             double intakePower = 0;
@@ -121,15 +113,13 @@ public class RobotTest extends LinearOpMode {
                 if (wasRunningSequence) {
                     // The sequence left the gate closed; pick up manual control from there.
                     robot.shooterOn = false;
-                    gatePosition = Robot.GATE_CLOSED;
-                    gateCommanded = true;
+                    robot.gateOpen = false;
+                    robot.gateController.commandSaved(false);
                     wasRunningSequence = false;
                 }
 
                 if (testShooterOn) robot.setShooterRpm(testRpm);
                 else robot.shooter.setPower(0);
-
-                if (gateCommanded) robot.gate.setPosition(gatePosition);
 
                 robot.intake.setPower(intakePower);
                 double transmissionPower = 0;
@@ -137,7 +127,6 @@ public class RobotTest extends LinearOpMode {
                 else if (gamepad1.left_bumper) transmissionPower = -Robot.TRANSMISSION_FEED_POWER;
                 robot.transmission.setPower(transmissionPower);
             }
-            robot.updateLed();
 
             double rpm = robot.shooterRpm();
             peakRpm = Math.max(peakRpm, rpm);
@@ -176,9 +165,10 @@ public class RobotTest extends LinearOpMode {
                 telemetry.addData("Gate", "%s (sequence)%s", robot.gateOpen ? "OPEN" : "closed",
                         robot.targetVisible ? "" : "   locked: no HIVE tag");
             } else {
-                telemetry.addData("Gate", gateCommanded ? String.format("position %.2f", gatePosition)
-                                                        : "not moved yet (unpowered)");
+                telemetry.addData("Gate", Double.isFinite(robot.gateController.command)
+                        ? String.format("command %.4f", robot.gateController.command) : "not commanded");
             }
+            robot.addGateTelemetry(telemetry);
 
             telemetry.addLine("--- Sensors ---");
             telemetry.addData("Limelight", robot.Limelight == null ? "not in config"
@@ -186,6 +176,8 @@ public class RobotTest extends LinearOpMode {
                     : "no HIVE tag for " + robot.alliance);
             telemetry.addData("Color sensor", robot.colorSensor == null ? "not in config"
                     : String.format("%s   hue %.0f   %.1f cm", robot.ballColor, robot.ballHue, robot.ballDistanceCm));
+            telemetry.addData("Pollen LED", robot.led == null ? "not in config"
+                    : robot.ballPresent ? "GREEN: pollen detected" : "RED: no pollen detected");
             telemetry.update();
         }
 

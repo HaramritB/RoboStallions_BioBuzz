@@ -23,8 +23,22 @@ public final class AutoLifecycleRegression {
         java.lang.reflect.Method method=Gamepad.class.getDeclaredMethod("updateEdgeDetection");
         method.setAccessible(true); method.invoke(gamepad);
     }
+    static final class TestAuto extends BioBuzzAuto {
+        BioBuzzAutoRegression.Tracking tracking;
+        BioBuzzAutoRegression.Drive drive;
+        final BioBuzzAutoRegression.Mech mechanismPort=new BioBuzzAutoRegression.Mech();
+        @Override protected BioBuzzAutoMechanisms createMechanisms() {
+            mechanismPort.ball=true;
+            return new BioBuzzAutoMechanisms(mechanismPort);
+        }
+        @Override protected com.pedropathing.follower.Follower createFollower() {
+            drive=new BioBuzzAutoRegression.Drive();
+            tracking=new BioBuzzAutoRegression.Tracking(new BioBuzzAutoRegression.Navigation(),drive);
+            return tracking;
+        }
+    }
     public static void main(String[] args) throws Exception {
-        BioBuzzAuto auto=new BioBuzzAuto();
+        TestAuto auto=new TestAuto();
         int[] telemetryUpdates={0};
         auto.telemetry=(Telemetry)Proxy.newProxyInstance(Telemetry.class.getClassLoader(),new Class<?>[]{Telemetry.class},
                 (proxy,method,parameters)-> {
@@ -37,13 +51,17 @@ public final class AutoLifecycleRegression {
         Command stale=Command.build(); Scheduler.schedule(stale);
         auto.init();
         check(!Scheduler.isScheduled(stale),"INIT clears stale scheduler state");
-        check(field(auto,"follower")==null && field(auto,"routine")==null,"Unapproved INIT never initializes drive or schedules motion");
+        check(field(auto,"follower")!=null && field(auto,"routine")==null && auto.tracking.followed==0
+                && auto.drive.writes==0,"INIT initializes tested components without driving");
+        check((int)field(auto,"selectedPaths")==5 && (boolean)field(auto,"fullRoute"),"Full five-path scoring routine is the default");
+        auto.gamepad1.y=true; edges(auto.gamepad1); auto.init_loop();
+        check((int)field(auto,"selectedPaths")==1 && !(boolean)field(auto,"fullRoute"),"Y explicitly selects a movement-only test");
         auto.gamepad1.dpad_up=true; edges(auto.gamepad1); auto.init_loop();
         check((int)field(auto,"selectedPaths")==2 && !(boolean)field(auto,"fullRoute"),"INIT can select controlled first N test");
-        auto.gamepad1.y=true; edges(auto.gamepad1); auto.init_loop();
+        auto.gamepad1.y=false; edges(auto.gamepad1); auto.gamepad1.y=true; edges(auto.gamepad1); auto.init_loop();
         check((int)field(auto,"selectedPaths")==5 && (boolean)field(auto,"fullRoute"),"Full operation is explicitly distinct from test mode");
         auto.start(); auto.start(); auto.loop();
-        check((boolean)field(auto,"safeStopRequested") && field(auto,"routine")==null,"START fails closed on unverified configuration");
+        check((boolean)field(auto,"safeStopRequested") && field(auto,"routine")==null,"START waits for required FLOWER tip offset, without scheduling movement");
         auto.stop();
         BioBuzzAutoRegression.Mech hardware=new BioBuzzAutoRegression.Mech();
         field(auto,"mechanisms",new BioBuzzAutoMechanisms(hardware));
@@ -51,9 +69,22 @@ public final class AutoLifecycleRegression {
         auto.init();
         check(hardware.closes>0,"Repeated INIT cleans up even a prepared, unstarted mechanism subsystem");
         check(!(boolean)field(auto,"started") && !(boolean)field(auto,"safeStopRequested")
-                && (int)field(auto,"selectedPaths")==1,"Repeated INIT resets start, stop and route selection");
+                && (int)field(auto,"selectedPaths")==5 && (boolean)field(auto,"fullRoute"),"Repeated INIT resets start, stop and route selection");
+        auto.gamepad1.y=false; edges(auto.gamepad1); auto.gamepad1.y=true; edges(auto.gamepad1); auto.init_loop();
+        auto.start(); auto.start();
+        check(auto.tracking.followed==1,"Controlled movement can START once with tested components; no blanket geometry approval flags");
         check(telemetryUpdates[0]>0,"Real FTC telemetry is published");
         auto.stop(); Scheduler.reset();
+        double oldReach=BioBuzzAutoConfig.INTAKE_TIP_FORWARD_IN;
+        try {
+            BioBuzzAutoConfig.INTAKE_TIP_FORWARD_IN=12; // Synthetic test offset, not a robot measurement.
+            auto.init(); auto.init_loop(); auto.start(); auto.start(); auto.loop();
+            check(field(auto,"routine")!=null && !((BioBuzzAutoRoutine)field(auto,"routine")).failed()
+                    && (boolean)field(auto,"fullRoute"),"Full scoring START proceeds when measured offset is supplied");
+            check(auto.tracking.followed==0 && auto.mechanismPort.request==BioBuzzAutoMechanisms.Kind.SHOOT,
+                    "Default full mode shoots preloads before any path movement");
+            auto.stop();
+        } finally { BioBuzzAutoConfig.INTAKE_TIP_FORWARD_IN=oldReach; Scheduler.reset(); }
         System.out.println("Passed " + checks + " iterative OpMode lifecycle checks.");
     }
 }

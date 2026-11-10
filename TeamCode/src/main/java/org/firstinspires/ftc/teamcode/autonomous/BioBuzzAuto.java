@@ -7,7 +7,6 @@ import com.pedropathing.localization.MotionState;
 import com.pedropathing.math.Pose;
 import com.qualcomm.hardware.gobilda.GoBildaPinpointDriver;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
-import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
@@ -20,10 +19,9 @@ import java.util.List;
 import java.util.function.BooleanSupplier;
 
 /** Guarded Pedro route tests and optional reviewed mechanism actions. See TeamCode/AUTONOMOUS.md. */
-@Disabled
 @Autonomous(name = "BioBuzz Pedro Auto", group = "Development")
 public class BioBuzzAuto extends OpMode {
-    private final BioBuzzAutoPaths paths = new BioBuzzAutoPaths();
+    private BioBuzzAutoPaths paths = new BioBuzzAutoPaths();
     private final List<DcMotorEx> driveMotors = new ArrayList<>();
     private Follower follower;
     private GoBildaPinpointDriver pinpoint;
@@ -31,8 +29,8 @@ public class BioBuzzAuto extends OpMode {
     private BioBuzzAutoMechanisms mechanisms = new BioBuzzAutoMechanisms();
     private boolean mechanismsInitialized;
     private boolean mechanismInitFailed;
-    private int selectedPaths = 1;
-    private boolean fullRoute;
+    private int selectedPaths = BioBuzzAutoPaths.PATH_COUNT;
+    private boolean fullRoute = true;
     private Robot.Alliance alliance = Robot.lastAlliance;
     private Pose currentPose;
     private boolean started;
@@ -54,8 +52,9 @@ public class BioBuzzAuto extends OpMode {
         mechanisms = new BioBuzzAutoMechanisms();
         mechanismsInitialized = false;
         mechanismInitFailed = false;
-        selectedPaths = 1;
-        fullRoute = false;
+        selectedPaths = BioBuzzAutoPaths.PATH_COUNT;
+        fullRoute = true;
+        paths = new BioBuzzAutoPaths();
         alliance = Robot.lastAlliance;
         driveMotors.clear();
         currentPose = null;
@@ -67,41 +66,52 @@ public class BioBuzzAuto extends OpMode {
         failureReason = "";
         telemetry.setMsTransmissionInterval(BioBuzzAutoConfig.TELEMETRY_INTERVAL_MS);
         diagnostic = BioBuzzAutoConfig.blockers(selectedPaths, fullRoute);
-        // Removing @Disabled alone must never bypass unverified hardware or route geometry.
-        if (!diagnostic.isEmpty()) {
+        // Initialize the tested hardware without commanding movement, even if the FLOWER
+        // offset is missing. This also permits controlled first-1..3-path selection in INIT.
+        if (!BioBuzzAutoConfig.blockers(1, false).isEmpty()) {
             publishTelemetry();
             return;
         }
         try {
-            for (String name : new String[]{Constants.drivetrainConfig.frontLeftName.get(),
-                    Constants.drivetrainConfig.frontRightName.get(),
-                    Constants.drivetrainConfig.backLeftName.get(),
-                    Constants.drivetrainConfig.backRightName.get()}) {
-                DcMotorEx motor = hardwareMap.get(DcMotorEx.class, name);
-                driveMotors.add(motor);
-                motor.setPower(0);
-                // Mecanum 3.0.2 doesn't set this mode. Do not silently change encoder modes.
-                if (motor.getMode() != DcMotor.RunMode.RUN_WITHOUT_ENCODER) {
-                    throw new IllegalStateException(name + " must already be RUN_WITHOUT_ENCODER");
-                }
-            }
-            pinpoint = hardwareMap.get(GoBildaPinpointDriver.class, Constants.localizerConfig.name.get());
-            Follower configured = Constants.create(hardwareMap);
-            // Reuse the factory's exact drivetrain, localizer, algorithm and hold setting.
-            // Validate each fresh localizer sample INSIDE update(), before motor output.
-            follower = new Follower(new CheckedLocalizer(configured.localizer,
-                    () -> pinpoint.getDeviceStatus() == GoBildaPinpointDriver.DeviceStatus.READY),
-                    configured.drivetrain, configured.algorithm());
-            follower.holdEnd.set(configured.holdEnd.get());
-            if (!follower.holdEnd.get()) {
-                throw new IllegalStateException("Validated waypoint completion requires holdEnd=true");
-            }
+            follower = createFollower();
             follower.setPose(paths.startPose);
             diagnostic = "Waiting for Pinpoint READY and a valid starting pose";
         } catch (RuntimeException error) {
             fail("INIT: " + describe(error));
         }
         publishTelemetry();
+    }
+
+    protected Follower createFollower() {
+        for (String name : new String[]{Constants.drivetrainConfig.frontLeftName.get(),
+                Constants.drivetrainConfig.frontRightName.get(),
+                Constants.drivetrainConfig.backLeftName.get(),
+                Constants.drivetrainConfig.backRightName.get()}) {
+            DcMotorEx motor = hardwareMap.get(DcMotorEx.class, name);
+            driveMotors.add(motor);
+            motor.setPower(0);
+            // Mecanum 3.0.2 doesn't set this mode. Do not silently change encoder modes.
+            if (motor.getMode() != DcMotor.RunMode.RUN_WITHOUT_ENCODER) {
+                throw new IllegalStateException(name + " must already be RUN_WITHOUT_ENCODER");
+            }
+        }
+        pinpoint = hardwareMap.get(GoBildaPinpointDriver.class, Constants.localizerConfig.name.get());
+        Follower configured = Constants.create(hardwareMap);
+        // Reuse the factory's exact drivetrain, localizer, algorithm and hold setting.
+        // Validate each fresh localizer sample INSIDE update(), before motor output.
+        Follower result = new Follower(new CheckedLocalizer(configured.localizer,
+                () -> pinpoint.getDeviceStatus() == GoBildaPinpointDriver.DeviceStatus.READY),
+                configured.drivetrain, configured.algorithm());
+        result.holdEnd.set(configured.holdEnd.get());
+        if (!result.holdEnd.get()) {
+            throw new IllegalStateException("Validated waypoint completion requires holdEnd=true");
+        }
+        return result;
+    }
+
+    private void configurePaths() {
+        paths = selectedPaths>=4 ? new BioBuzzAutoPaths(BioBuzzAutoConfig.INTAKE_TIP_FORWARD_IN,
+                BioBuzzAutoConfig.INTAKE_TIP_LEFT_IN) : new BioBuzzAutoPaths();
     }
 
     @Override
@@ -115,6 +125,7 @@ public class BioBuzzAuto extends OpMode {
         if (!blockers.isEmpty()) { diagnostic = blockers; localizationReady = false; }
         if (follower != null && !safeStopRequested && blockers.isEmpty()) {
             try {
+                configurePaths();
                 // Localizer only: no follower controller or scheduler runs before START.
                 refreshLocalization();
                 localizationReady = BioBuzzAutoConfig.atPose(currentPose, paths.startPose) && BioBuzzAutoConfig.settled(follower.velocity());
@@ -140,6 +151,7 @@ public class BioBuzzAuto extends OpMode {
             if (!BioBuzzAutoConfig.blockers(selectedPaths, fullRoute).isEmpty() || follower == null) {
                 throw new IllegalStateException("Configuration blocked: " + BioBuzzAutoConfig.blockers(selectedPaths, fullRoute));
             }
+            configurePaths();
             refreshLocalization();
             if (!BioBuzzAutoConfig.atPose(currentPose, paths.startPose)
                     || !BioBuzzAutoConfig.settled(follower.velocity())) {
@@ -186,16 +198,17 @@ public class BioBuzzAuto extends OpMode {
         shutdown();
     }
 
+    protected BioBuzzAutoMechanisms createMechanisms() {
+        return BioBuzzAutoMechanisms.initialize(hardwareMap, alliance,
+                () -> -Math.toDegrees(follower.pose().heading()),
+                () -> -Math.toDegrees(follower.velocity().omega));
+    }
+
     private void prepareMechanisms() {
         if (fullRoute && BioBuzzAutoConfig.hasMechanismActions() && !mechanismsInitialized) {
-            if (!BioBuzzAutoConfig.MECHANISMS_VALIDATED || !BioBuzzAutoConfig.MECHANISM_SEQUENCE_VALIDATED) {
-                throw new IllegalStateException("Mechanisms/sequence not verified");
-            }
             if (mechanismInitFailed) throw new IllegalStateException("Mechanism initialization failed; re-INIT after correcting hardware");
             try {
-                mechanisms = BioBuzzAutoMechanisms.initialize(hardwareMap, alliance,
-                        () -> -Math.toDegrees(follower.pose().heading()),
-                        () -> -Math.toDegrees(follower.velocity().omega));
+                mechanisms = createMechanisms();
                 mechanismsInitialized = true;
             } catch (RuntimeException error) {
                 mechanismInitFailed = true;
@@ -261,6 +274,11 @@ public class BioBuzzAuto extends OpMode {
                 BioBuzzAutoConfig.PRELOAD_BALL_COUNT, BioBuzzAutoConfig.STAGED_BALL_COUNT, BioBuzzAutoConfig.FLOWER_BALL_COUNT);
         telemetry.addData("Mechanism failure", mechanisms.failure().isEmpty() ? "none" : mechanisms.failure());
         telemetry.addData("Route source SHA", BioBuzzAutoPaths.SOURCE_SHA256);
+        telemetry.addData("FLOWER target", "Visualizer point 4 is intake tip; measured forward reach=%s in", BioBuzzAutoConfig.INTAKE_TIP_FORWARD_IN);
+        if (Double.isFinite(BioBuzzAutoConfig.INTAKE_TIP_FORWARD_IN) && selectedPaths>=4) {
+            Pose center=paths.end(4);
+            telemetry.addData("FLOWER robot center (in)", "%.3f, %.3f", center.x(),center.y());
+        }
         telemetry.addData("Stage", routine == null ? "BLOCKED" : routine.stage());
         telemetry.addData("Route segment", routine == null ? "none" : routine.segment());
         telemetry.addData("Routine finished", routine != null && routine.finished());

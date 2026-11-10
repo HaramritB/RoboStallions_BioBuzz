@@ -59,8 +59,8 @@ public final class BioBuzzAutoRoutine {
         for (int i=1;i<=pathCount;i++) {
             if (paths.turnBefore(i)) steps.add(movement(null,paths.end(i-1),paths.start(i),"Turn before path " + i));
             Path path=paths.path(i).with(
-                    Constants.foresightConfig.maxVelocityConstraint.at(BioBuzzAutoConfig.PATH_SPEED_IN_S),
-                    Constants.foresightConfig.maxPathSpeed.at(BioBuzzAutoConfig.PATH_SPEED_FRACTION),
+                    Constants.foresightConfig.maxVelocityConstraint.at(plan.movementOnly() ? BioBuzzAutoConfig.PATH_SPEED_IN_S : Constants.foresightConfig.maxVelocityConstraint.get()),
+                    Constants.foresightConfig.maxPathSpeed.at(plan.movementOnly() ? BioBuzzAutoConfig.PATH_SPEED_FRACTION : Constants.foresightConfig.maxPathSpeed.get()),
                     Constants.foresightConfig.pathSkip.at(false));
             steps.add(movement(path,paths.start(i),paths.end(i),"Path " + i,plan.duringPath[i-1]));
             if (plan.afterPath[i-1].kind!=BioBuzzAutoMechanisms.Kind.NONE) {

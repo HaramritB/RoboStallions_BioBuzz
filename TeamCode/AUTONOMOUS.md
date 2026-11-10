@@ -5,10 +5,23 @@ This branch integrates the mechanism controllers from main commit
 follow-up is based on `cd5952fb199036fdc5fb02c911faa41724a37dab`. Only PradhyunAuto is published.
 Main is not modified. The disabled legacy encoder Auto is preserved.
 
-**Shooting/intake controllers are implemented. Intake is open-loop by user instruction: no
-stored-ball counter or inventory approval is required. The full driving/scoring OpMode remains
-disabled pending physical hardware, tuning and route-clearance checks.**
-The stationary mechanism test is separately selectable and requires held operator controls.
+**BioBuzz Pedro Auto is selectable and defaults to the full five-path scoring routine.**
+The team confirmed that drivetrain, localization and mechanisms are tested; stale component
+approval flags were removed. INIT initializes hardware without driving; START schedules once.
+Live hardware, localization, arrival, timeout, failure and Stop protections remain.
+
+**One physical input is still missing:** the team clarified that visualizer point 4 is the
+intake tip pushing into FLOWER, not robot center. Set INTAKE_TIP_FORWARD_IN to the measured
+forward distance from robot center to intake tip, in inches. INTAKE_TIP_LEFT_IN defaults to
+0 for a centered intake; set the measured lateral offset if it is not centered (left positive).
+The forward measurement is deliberately NaN until supplied. Paths 4/5 cannot START without it;
+this is a required coordinate conversion, not another component-test approval.
+
+No hardware dimensions or intake reach were invented. The source JSON is unchanged. Runtime
+geometry subtracts the rotated intake offset from point 4 to obtain chassis center, retaining
+its heading, and uses that identical center for the beginning of path 5. Other waypoints and
+control points are preserved. Telemetry shows both the source interpretation and computed center.
+Physical clearance must be checked on the actual robot; this conversion does not certify it.
 No robot deployment or motor activation was performed from the development environment.
 
 ## Confirmed routine
@@ -120,7 +133,8 @@ Setting the pose in software does not verify the physical starting location.
 | Path 4 | Previous end -> (46.7883,140.2305,90.572) | Line, linear heading |
 | Path 5 | Previous end -> (38.0943,127.3583,-66.9637) | Quadratic control (45.4429,110.0765), linear heading |
 
-These are confirmed route inputs, not measured physical clearance. Path 4's center ends inside
+These are the raw exported route inputs, not measured chassis clearance. Point 4's listed
+coordinates now refer to the intake tip; the robot-center endpoint is computed from its offset. Path 4's center ends inside
 Scoring-Side FLOWER, 1.2695 in below the supplied 141.5-inch reference boundary; path 5 starts
 inside FLOWER. Intended intake contact does not approve center penetration. Measure footprint
 and intake reach, then approve an approach outside solid geometry. For vertical half extent at
@@ -130,20 +144,29 @@ collision proof.
 
 ## Full autonomous: BioBuzz Pedro Auto
 
-The full OpMode remains @Disabled. Hardware/calibration, footprint/route-clearance/hash review,
-FLOWER approach and mechanism validation gates remain unconfirmed. The
-main-controller source/API integration gate is now complete; that is not physical validation.
-Do not mark missing measurements or capabilities confirmed just to make the Auto selectable.
+The OpMode is enabled and default INIT selection is FULL ROUTE, all five paths with mechanisms.
+Supply INTAKE_TIP_FORWARD_IN before full-route START; use actual center-to-tip inches, not a
+wheelbase, robot length, or guessed visualizer default. A lateral intake offset, if present,
+must be entered in INTAKE_TIP_LEFT_IN. Component approval, footprint/hash approval and counted
+inventory booleans no longer prevent execution. Unknown reach is reported precisely in telemetry.
 
-After the documented physical checks, controlled first-N **movement-only** mode is the first
-route test: default path 1, D-pad +/- chooses N, Y selects the separate full scoring plan.
-Movement tests skip all mechanisms, including preload shooting. N>=3 includes the explicit
-turn. A/B chooses BLUE/RED mechanism tag filtering without mirroring geometry.
+A/B chooses BLUE/RED targeting during INIT. Place the robot at (57.6323,9.0657), facing +Y (90°),
+load four preloads, verify live readiness/targeting, then START. The routine shoots preloads,
+intakes during path 1, shoots after path 2, turns before path 3, intakes at FLOWER, and shoots
+after path 5. The FLOWER lever is never deployed. An empty/incomplete shooting volley still
+fails its existing bounded verification, as documented above.
+
+Y toggles FULL ROUTE vs a first-path movement-only test. D-pad +/- selects controlled first N
+movement-only paths; N>=3 includes the turn. First-N tests omit all mechanisms and retain the
+slow path policy. First 1..3 paths need no FLOWER coordinate conversion. INIT prepares the
+follower even if the full-route reach is missing, so switching to those tests works without
+reinitializing hardware. Tests including paths 4/5 use the measured correction too.
 
 Each waypoint requires <=2 in position error, <=3 deg heading error, <=2 in/s speed and
-<=8 deg/s turn rate, sustained .20 s. Path deadlines 15 s, turn 5 s, whole run 27 s. Requests
-12 in/s and .25 modeled max path speed with path skipping disabled; these are velocity requests,
-not hard motor-power caps. Full-route timing with three volleys must be measured and tuned to
+<=8 deg/s turn rate, sustained .20 s. Path deadlines 15 s, turn 5 s, whole run 27 s. Full scoring retains the speed constraints
+from the existing tested Constants/Foresight configuration. The 12 in/s and .25 modeled speed
+limits apply only to movement-only controlled tests. Path skipping remains disabled for verified
+waypoint transitions. These are velocity requests, not hard motor-power caps. Full-route timing with three volleys must be measured and tuned to
 fit the competition period; increasing the deadline does not solve an overlong route.
 
 Fresh Pinpoint READY and finite pose/velocity are checked before navigation output. Arrival,
@@ -170,7 +193,7 @@ All Java paths below begin TeamCode/src/main/java/org/firstinspires/ftc/teamcode
 | FlywheelTuning.java; RobotTest.java; TurretLimitsTest.java; TurretTrackingTuner.java | Import main's matching tuning/test clients |
 | GateCalibration.java; FlowerCalibration.java | Import main's existing calibration utilities; flower utility never called by Auto |
 | autonomous/BioBuzzAuto.java | Use current Robot interfaces and Pedro chassis state; capability preflight; diagnostics; remove obsolete TeleOp preselection |
-| autonomous/BioBuzzAutoConfig.java | Mark controller source/API integration done; physical validation gates remain closed |
+| autonomous/BioBuzzAutoConfig.java | Remove stale component approval gates; require measured intake-tip coordinates for FLOWER |
 | autonomous/BioBuzzAutoMechanisms.java | Calibrated gate cleanup, distance-based RPM/readiness, manual test ownership, sensor-source isolation and diagnostics |
 | autonomous/BioBuzzMechanismTest.java | Stationary operator-held intake/four-shot test, bounded interruption and cleanup |
 
@@ -186,13 +209,14 @@ All Java paths below begin TeamCode/src/main/java/org/firstinspires/ftc/teamcode
 
 ## Validation of this update
 
-The earlier parent commit built an APK on macOS. This session runs on a new Linux machine;
-that old successful APK build is not evidence of packaging this update.
+Current validation runs on the macOS checkout with actual cached FTC SDK 12.0.0,
+PedroPathing 3.0.2 and Ivy 1.1.1 Maven binaries. Android debug packaging passed. This supersedes
+the prior Linux environment's network/build limitations.
 
 ```sh
 python3 TeamCode/tests/run_robot_controls.py
 python3 TeamCode/tests/run_turret_tracking.py
-python3 TeamCode/tests/run_autonomous.py --upstream-source /tmp/biobuzz-upstream
+python3 TeamCode/tests/run_autonomous.py
 python3 -m unittest discover -s TeamCode/tests -p test_route_source.py -v
 ./gradlew :TeamCode:assembleDebug
 # Prior integration also attempted with a locally downloaded, unmodified Gradle 9.1.0 distribution:
@@ -201,31 +225,33 @@ python3 -m unittest discover -s TeamCode/tests -p test_route_source.py -v
 git diff --check
 ```
 
-The current test environment is ../validation-env: JAVA_HOME points to its java/ launcher
-for the installed OpenJDK 21 compiler module, GRADLE_USER_HOME to gradle/ (FTC caches),
-ANDROID_HOME to sdk/, and --upstream-source to upstream/. These are local verification inputs,
-not robot dependencies or committed build changes. The official Android API 30 jar is used.
-FTC RobotCore/Hardware 12.0.0 are actual published AARs. Pedro and Ivy were compiled from
-unmodified upstream tags v3.0.2 and v1.1.1 (95 main-source files), rather than unavailable
-resolved Maven archives. This checks actual source/API compatibility, not Android APK packaging.
-The source-mode runner intentionally skips the unchanged Tuning.java client, which depends on
-the separately distributed tuning artifact. All modified/new production OpModes are compiled.
+Current build command:
+
+```sh
+GRADLE_USER_HOME=/tmp/biobuzz-gradle-home \
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' \
+./gradlew :TeamCode:assembleDebug :TeamCode:testDebugUnitTest --offline --no-daemon
+```
+
+Synthetic test offsets verify forward/lateral coordinate transforms and exact path-4/path-5
+continuity. They are not BioBuzz measurements. Lifecycle tests cover enabled registration,
+full-route default, no INIT movement, missing-reach failure, controlled test selection and
+full scoring START with a synthetic reach and recording hardware.
 
 | Check | Result |
 | --- | --- |
 | Main gate/robot controls | 82 checks PASS (previous stale missing-member suite now fixed by main integration) |
 | Main turret tracking | 65 checks PASS |
-| Autonomous sequence/navigation/mechanisms | 138 checks PASS |
+| Autonomous sequence/navigation/mechanisms | 148 checks PASS |
 | Mechanism isolation/cleanup/heading ownership | 29 checks PASS |
-| Full route OpMode lifecycle | 8 checks PASS |
+| Full route OpMode lifecycle | 13 checks PASS |
 | Stationary mechanism test lifecycle | 10 checks PASS |
 | Route-source/audit generation | 8 tests PASS; route unchanged |
 | Changed Java API compilation | PASS against real FTC AARs, Android jar and tagged Pedro/Ivy sources |
-| Android Gradle wrapper | FAILED downloading Gradle: Java network access unavailable |
-| Prior integration: locally downloaded Gradle build | FAILED resolving Android Gradle plugin 8.13.2 before Java compilation |
+| Current macOS Android assembleDebug | BUILD SUCCESSFUL, including Java compilation/dex/APK packaging |
+| Gradle testDebugUnitTest | NO-SOURCE; custom Java/Python harnesses above execute the checks |
 | Physical robot tests/deployment | NOT PERFORMED |
 
 No dependency version or robot tuning change was made to hide environment failures. Build this
-branch in the team's configured Android Studio environment before installing. First test gate,
-turret reference, intake/storage behavior and a stationary four-shot volley, then verify
-route clearance and mechanism timing before full-route testing.
+branch in the team's configured Android Studio environment before installing. The team reports the components are tested. Supply the measured intake-tip reach, then verify
+corrected path clearance and the complete routine timing on the robot.

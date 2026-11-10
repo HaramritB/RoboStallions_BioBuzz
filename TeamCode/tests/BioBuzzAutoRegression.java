@@ -95,9 +95,9 @@ public final class BioBuzzAutoRegression {
         void drain() { for (int i=0;i<8;i++) tick(); }
     }
     public static void main(String[] args) {
-        check(BioBuzzAuto.class.isAnnotationPresent(Disabled.class),"Physical Auto remains disabled");
-        check(!BioBuzzAutoConfig.blockers(1,false).isEmpty(),"Review gates remain closed");
-        check(BioBuzzAutoConfig.blockers(5,true).contains("FLOWER"),"Flag unresolved full route conflict");
+        check(!BioBuzzAuto.class.isAnnotationPresent(Disabled.class),"Full autonomous is registered and enabled");
+        check(BioBuzzAutoConfig.blockers(1,false).isEmpty(),"Tested components do not have stale approval gates");
+        check(BioBuzzAutoConfig.blockers(5,true).contains("INTAKE_TIP_FORWARD_IN"),"Missing tip-to-center offset is identified precisely");
         check(BioBuzzAutoConfig.hasMechanismActions(),"Full route includes user-confirmed mechanism mapping");
         check(!BioBuzzAutoConfig.blockers(5,true).toLowerCase().contains("inventory"),"No stored-ball inventory approval blocks full route");
         check(BioBuzzAutoConfig.PRELOAD_BALL_COUNT==4 && BioBuzzAutoConfig.STAGED_BALL_COUNT==4
@@ -123,6 +123,20 @@ public final class BioBuzzAutoRegression {
         check(Math.abs(midpoint.x()-(9.5657+2*40.923+32.2934)/4)<1e-8
                 && Math.abs(midpoint.y()-(9.2715+2*34.4143+127.6559)/4)<1e-8,"Preserve Bezier control geometry");
         check(Math.abs(BioBuzzAutoConfig.headingErrorDegrees(P.of(0,0,1),P.of(0,0,359))-2)<1e-7,"Wrapped heading error");
+        // Synthetic offsets test geometry only; these are NOT robot measurements.
+        BioBuzzAutoPaths shifted=new BioBuzzAutoPaths(12, 1.5);
+        Pose center=shifted.end(4), tip=shifted.flowerTipPose;
+        double heading=center.heading();
+        near(P.of(center.x()+12*Math.cos(heading)-1.5*Math.sin(heading),
+                center.y()+12*Math.sin(heading)+1.5*Math.cos(heading),Math.toDegrees(heading)),tip,
+                "Measured forward/lateral offset reconstructs exact intake-tip target");
+        near(shifted.start(5),shifted.end(4),"Corrected path 4 endpoint exactly matches path 5 start");
+        near(shifted.path(4).get(1),center,"Path 4 actually uses corrected robot center");
+        near(shifted.path(5).get(0),center,"Path 5 starts at corrected robot center");
+        for (int i=1;i<=3;i++) near(shifted.end(i),p.end(i),"Unaffected endpoint "+i);
+        near(shifted.end(5),p.end(5),"Park/last scoring target remains unchanged");
+        try { new BioBuzzAutoPaths(Double.NaN,0); throw new AssertionError("Unknown offset accepted"); }
+        catch (IllegalArgumentException expected) { check(true,"Unknown reach rejected before path construction"); }
         double velocityBefore=Constants.foresightConfig.maxVelocityConstraint.get();
         boolean skipBefore=Constants.foresightConfig.pathSkip.get();
         Fixture f=new Fixture(5);
@@ -244,10 +258,14 @@ public final class BioBuzzAutoRegression {
         check(plan.duringPath[0].kind==BioBuzzAutoMechanisms.Kind.COLLECT && plan.duringPath[0].count==0
                 && plan.duringPath[0].durationSeconds==0 && plan.afterPath[0].kind==BioBuzzAutoMechanisms.Kind.NONE,
                 "Path-1 intake has no inventory target or separate after-path pickup");
+        double fullVelocity=Constants.foresightConfig.maxVelocityConstraint.get();
+        double fullSpeed=Constants.foresightConfig.maxPathSpeed.get();
         Fixture run=new Fixture(plan); run.start(); run.tick();
         check(run.follower.followed==0 && run.follower.holding() && run.hardware.request==BioBuzzAutoMechanisms.Kind.SHOOT,
                 "Shoot preloads while holding start, before any path movement");
         volley(run); run.tick();
+        check(Constants.foresightConfig.maxVelocityConstraint.get()==fullVelocity
+                && Constants.foresightConfig.maxPathSpeed.get()==fullSpeed,"Full routine preserves tested factory speed policy");
         check(run.follower.followed==1 && run.hardware.request==BioBuzzAutoMechanisms.Kind.COLLECT
                 && run.routine.stage()==BioBuzzAutoRoutine.Stage.DRIVING_AND_COLLECTING,"Intake alongside path 1 after all preloads clear");
         run.hardware.ball=false; run.advance(.5);

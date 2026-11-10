@@ -5,18 +5,11 @@ import com.pedropathing.math.Velocity;
 
 /** Review gates and initial test policy. None of these approvals is inferred from an export. */
 public final class BioBuzzAutoConfig {
-    public static final boolean HARDWARE_VALIDATED = false;
-    public static final boolean CALIBRATION_VALIDATED = false;
-    public static final double ROBOT_LENGTH_IN = Double.NaN;
-    public static final double ROBOT_WIDTH_IN = Double.NaN;
-    public static final int VALIDATED_PATH_COUNT = 0;
-    public static final String REVIEWED_ROUTE_SHA256 = "";
-    public static final boolean FLOWER_APPROACH_VALIDATED = false;
-    public static final boolean FULL_ROUTE_VALIDATED = false;
-    public static final boolean MECHANISMS_VALIDATED = false;
-    public static final boolean MECHANISM_SEQUENCE_VALIDATED = false;
-    // Controller source integrated from main b41fb87; physical mechanism checks remain separate.
-    public static final boolean ROBOT_CONTROLLER_REVISION_VALIDATED = true;
+    // The team confirmed drivetrain, localization and mechanisms have already been tested.
+    // These are not additional approval gates; runtime hardware/sensor checks remain active.
+    // Point 4 was clarified to be the intake tip, not the chassis center.
+    public static double INTAKE_TIP_FORWARD_IN = Double.NaN; // Measured center-to-tip reach required.
+    public static double INTAKE_TIP_LEFT_IN = 0.0; // Centered intake assumption; adjust if offset left/right.
 
     public static final int PRELOAD_BALL_COUNT = 4;
     public static final int STAGED_BALL_COUNT = 4;
@@ -31,6 +24,13 @@ public final class BioBuzzAutoConfig {
         public final BioBuzzAutoMechanisms.Action beforeFirstPath;
         public final BioBuzzAutoMechanisms.Action[] duringPath;
         public final BioBuzzAutoMechanisms.Action[] afterPath;
+        public boolean movementOnly() {
+            if (beforeFirstPath.kind!=BioBuzzAutoMechanisms.Kind.NONE) return false;
+            for (int i=0;i<duringPath.length;i++) {
+                if (duringPath[i].kind!=BioBuzzAutoMechanisms.Kind.NONE || afterPath[i].kind!=BioBuzzAutoMechanisms.Kind.NONE) return false;
+            }
+            return true;
+        }
         public Plan(BioBuzzAutoMechanisms.Action before, BioBuzzAutoMechanisms.Action[] during,
                     BioBuzzAutoMechanisms.Action[] after) {
             if (before == null || during.length != BioBuzzAutoPaths.PATH_COUNT
@@ -88,21 +88,13 @@ public final class BioBuzzAutoConfig {
     private BioBuzzAutoConfig() { }
 
     public static String blockers(int pathCount, boolean fullRoute) {
-        String result = "";
-        if (!HARDWARE_VALIDATED) result += "Hardware/directions unverified; ";
-        if (!CALIBRATION_VALIDATED) result += "Localization/tuning unverified; ";
-        if (!Double.isFinite(ROBOT_LENGTH_IN) || ROBOT_LENGTH_IN <= 0
-                || !Double.isFinite(ROBOT_WIDTH_IN) || ROBOT_WIDTH_IN <= 0) result += "Measured footprint missing; ";
-        if (pathCount < 1 || pathCount > BioBuzzAutoPaths.PATH_COUNT) result += "Invalid path count; ";
-        if (VALIDATED_PATH_COUNT < pathCount) result += "Selected route clearance unverified; ";
-        if (!REVIEWED_ROUTE_SHA256.equals(BioBuzzAutoPaths.SOURCE_SHA256)) result += "Route hash not reviewed; ";
-        if (pathCount >= 4 && !FLOWER_APPROACH_VALIDATED) result += "FLOWER intersection unresolved; ";
-        if (fullRoute && !FULL_ROUTE_VALIDATED) result += "Full route not validated; ";
-        if (fullRoute && !ROBOT_CONTROLLER_REVISION_VALIDATED) result += "New main mechanism API reconciliation pending; ";
-        if (fullRoute && hasMechanismActions() && (!MECHANISMS_VALIDATED || !MECHANISM_SEQUENCE_VALIDATED)) {
-            result += "Mechanism configuration/sequence unverified; ";
+        if (pathCount<1 || pathCount>BioBuzzAutoPaths.PATH_COUNT) return "Invalid path count";
+        if (fullRoute && pathCount!=BioBuzzAutoPaths.PATH_COUNT) return "Full routine requires all five paths";
+        if (pathCount>=4 && (!Double.isFinite(INTAKE_TIP_FORWARD_IN) || INTAKE_TIP_FORWARD_IN<=0
+                || !Double.isFinite(INTAKE_TIP_LEFT_IN))) {
+            return "Set INTAKE_TIP_FORWARD_IN: FLOWER point 4 is the intake tip, not robot center";
         }
-        return result;
+        return "";
     }
 
     public static boolean hasMechanismActions() {

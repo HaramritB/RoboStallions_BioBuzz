@@ -11,6 +11,9 @@ public final class AutoPathRegression {
                 || !BioBuzzAuto.class.isAnnotationPresent(Disabled.class)) {
             throw new AssertionError("Compatibility/legacy autonomous must remain disabled");
         }
+        if (org.firstinspires.ftc.teamcode.autonomous.BioBuzzAuto.class.isAnnotationPresent(Disabled.class)) {
+            throw new AssertionError("Intended full autonomous must be selectable");
+        }
         Autonomous name=org.firstinspires.ftc.teamcode.autonomous.BioBuzzAuto.class.getAnnotation(Autonomous.class);
         if (!name.name().equals("BioBuzz Pedro Auto")) throw new AssertionError("Unexpected Driver Station name");
         System.out.println("Passed compatibility and autonomous registration checks.");

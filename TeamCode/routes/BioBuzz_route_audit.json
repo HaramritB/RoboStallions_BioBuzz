@@ -2,7 +2,7 @@
   "source": "TeamCode/routes/BioBuzz_AutoPath.pp.json",
   "source_sha256": "a61a3d550df9bbd607a2752377f7f146ff9c3287f79398649f6a459dd5936f3b",
   "requested_attachment_name": "BioBuzz_AutoPath.pp.json",
-  "input_note": "Saved original source matches the requested coordinate table and explicit linear waypoint headings.",
+  "input_note": "Raw source geometry is preserved. User clarified waypoint 4 as the intake tip; runtime Java applies measured forward/left offsets to path 4 end and path 5 start.",
   "path_count": 5,
   "explicit_turns": [
     {
@@ -18,7 +18,7 @@
   "robot_dimensions_present": false,
   "robot_length_in": null,
   "robot_width_in": null,
-  "clearance_status": "BLOCKED: robot dimensions and safe FLOWER pickup clearance unconfirmed",
+  "clearance_status": "BLOCKED RAW-EXPORT CLEARANCE CERTIFICATION: intake-tip offset and measured footprint not applied in this audit",
   "reference_field_size_in": 141.5,
   "reference_not_physical_measurement": true,
   "path4_center_to_reference_upper_boundary_in": 1.2695,
@@ -42,5 +42,5 @@
   ],
   "sampled_footprint_conflicts": [],
   "sampling_note": "1001 Bezier-parameter samples per path. Not a continuous swept-volume or physical clearance proof.",
-  "required_resolution": "FLOWER pickup is intended. Measure actual footprint and intake/lever reach; center penetration is not approved by that intent. Preserve source until an approach with physical clearance is approved and remeasured."
+  "required_resolution": "Waypoint 4 is an intake-tip target. Supply measured center-to-tip offsets; runtime conversion preserves headings and path continuity. The corrected chassis route still needs physical clearance verification."
 }

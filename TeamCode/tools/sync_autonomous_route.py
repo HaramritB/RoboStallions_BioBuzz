@@ -129,6 +129,23 @@ public final class BioBuzzAutoPaths {
     private final Pose[] starts = {STARTS};
     private final Pose[] ends = {ENDS};
 
+    public final Pose flowerTipPose;
+    public BioBuzzAutoPaths() { this(0, 0); } // Raw source geometry for inspection/generation.
+    public BioBuzzAutoPaths(double forwardIn, double leftIn) {
+        if (!Double.isFinite(forwardIn) || forwardIn<0 || !Double.isFinite(leftIn)) {
+            throw new IllegalArgumentException("Invalid measured intake offset");
+        }
+        flowerTipPose=PATH_COUNT>=4 ? ends[3] : null;
+        if (forwardIn!=0 || leftIn!=0) {
+            if (PATH_COUNT<5) throw new IllegalArgumentException("FLOWER correction requires paths 4 and 5");
+            double h=flowerTipPose.heading();
+            Pose center=P.of(flowerTipPose.x()-forwardIn*Math.cos(h)+leftIn*Math.sin(h),
+                    flowerTipPose.y()-forwardIn*Math.sin(h)-leftIn*Math.cos(h), Math.toDegrees(h));
+            ends[3]=center;
+            starts[4]=center; // Exact continuity into path 5 after converting tip to center.
+        }
+    }
+
     public Pose start(int path) { check(path); return starts[path-1]; }
     public Pose end(int path) { check(path); return ends[path-1]; }
     public boolean turnBefore(int path) {
@@ -178,15 +195,15 @@ CASES
         footprint_conflicts=[{'path':i,'obstacle':name} for i,name in sorted(found)]
     report = {'source':str(SOURCE.relative_to(ROOT)), 'source_sha256':digest,
               'requested_attachment_name':'BioBuzz_AutoPath.pp.json',
-              'input_note':'Saved original source matches the requested coordinate table and explicit linear waypoint headings.',
+              'input_note':'Raw source geometry is preserved. User clarified waypoint 4 as the intake tip; runtime Java applies measured forward/left offsets to path 4 end and path 5 start.',
               'path_count':len(lines), 'explicit_turns':turns,
               'robot_dimensions_present':footprint_known, 'robot_length_in':length,'robot_width_in':width,
-              'clearance_status':'BLOCKED: robot dimensions and safe FLOWER pickup clearance unconfirmed',
+              'clearance_status':'BLOCKED RAW-EXPORT CLEARANCE CERTIFICATION: intake-tip offset and measured footprint not applied in this audit',
               'reference_field_size_in':141.5, 'reference_not_physical_measurement':True,
               'path4_center_to_reference_upper_boundary_in':round(141.5-ends[3][1],4) if len(ends)>=4 else None,
               'center_conflicts':conflicts, 'sampled_footprint_conflicts':footprint_conflicts,
               'sampling_note':'1001 Bezier-parameter samples per path. Not a continuous swept-volume or physical clearance proof.',
-              'required_resolution':'FLOWER pickup is intended. Measure actual footprint and intake/lever reach; center penetration is not approved by that intent. Preserve source until an approach with physical clearance is approved and remeasured.'}
+              'required_resolution':'Waypoint 4 is an intake-tip target. Supply measured center-to-tip offsets; runtime conversion preserves headings and path continuity. The corrected chassis route still needs physical clearance verification.'}
     return java, json.dumps(report, indent=2, allow_nan=False)+'\n'
 
 

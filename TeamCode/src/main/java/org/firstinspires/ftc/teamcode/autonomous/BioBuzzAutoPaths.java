@@ -31,6 +31,23 @@ public final class BioBuzzAutoPaths {
         P.of(38.0943, 127.3583, -66.9637)
     };
 
+    public final Pose flowerTipPose;
+    public BioBuzzAutoPaths() { this(0, 0); } // Raw source geometry for inspection/generation.
+    public BioBuzzAutoPaths(double forwardIn, double leftIn) {
+        if (!Double.isFinite(forwardIn) || forwardIn<0 || !Double.isFinite(leftIn)) {
+            throw new IllegalArgumentException("Invalid measured intake offset");
+        }
+        flowerTipPose=PATH_COUNT>=4 ? ends[3] : null;
+        if (forwardIn!=0 || leftIn!=0) {
+            if (PATH_COUNT<5) throw new IllegalArgumentException("FLOWER correction requires paths 4 and 5");
+            double h=flowerTipPose.heading();
+            Pose center=P.of(flowerTipPose.x()-forwardIn*Math.cos(h)+leftIn*Math.sin(h),
+                    flowerTipPose.y()-forwardIn*Math.sin(h)-leftIn*Math.cos(h), Math.toDegrees(h));
+            ends[3]=center;
+            starts[4]=center; // Exact continuity into path 5 after converting tip to center.
+        }
+    }
+
     public Pose start(int path) { check(path); return starts[path-1]; }
     public Pose end(int path) { check(path); return ends[path-1]; }
     public boolean turnBefore(int path) {

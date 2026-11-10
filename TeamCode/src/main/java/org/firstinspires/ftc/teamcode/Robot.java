@@ -118,6 +118,10 @@ public class Robot {
     public static final double RPM_RED = 4000.0;
     public static final double RPM_BLUE = 4000.0;
 
+    public static final double TELEOP_DEFAULT_RPM = 3150.0;
+    private static final double[] SHOOTER_DISTANCE_METERS = {1.41, 1.60, 1.76, 1.90};
+    private static final double[] SHOOTER_DISTANCE_RPM = {3150, 3150, 3200, 3250};
+
     public static final double SHOOTER_RPM_TOLERANCE = 100.0;
     public static final double RPM_TRIM_STEP = 50.0;
 
@@ -149,6 +153,7 @@ public class Robot {
 
     public static final float COLOR_GAIN = 4;
 
+    // Starting threshold: verify with pollen at the installed sensor position.
     public static final double BALL_PRESENT_CM = 4.0;
 
     public static final double RED_HUE_ABOVE = 330;
@@ -164,8 +169,10 @@ public class Robot {
     // LED
     // =========================================
 
+    // goBILDA RGB Indicator 3118-0808-0002, standard FTC Servo PWM range.
     public static final double LED_OFF = 0.0;
-    public static final double LED_RED = 0.277;
+    // 1104 us: just above the light's 1100 us minimum for red (below it is OFF).
+    public static final double LED_RED = 0.28;
     public static final double LED_YELLOW = 0.388;
     public static final double LED_GREEN = 0.500;
     public static final double LED_BLUE = 0.611;
@@ -269,7 +276,7 @@ public class Robot {
     public BallColor ballColor = BallColor.NONE;
 
     public double ballHue;
-    public double ballDistanceCm;
+    public double ballDistanceCm = Double.NaN;
 
     private final float[] hsv = new float[3];
 
@@ -394,11 +401,25 @@ public class Robot {
                 hw.appContext.getSharedPreferences(GATE_PREFERENCES, Context.MODE_PRIVATE));
         if (!gateController.calibrated()) gateController.release();
         led = hw.tryGet(Servo.class, "led");
+        if (led != null) {
+            led.setDirection(Servo.Direction.FORWARD);
+            led.scaleRange(0, 1);
+            if (led instanceof PwmControl) {
+                ((PwmControl) led).setPwmRange(new PwmControl.PwmRange(600, 2400));
+            }
+        }
+        ballPresent = false;
+        updateLed();
 
         colorSensor = hw.tryGet(
                 NormalizedColorSensor.class,
-                "colorSensor"
+                "colorsensor"
         );
+        // Preserve compatibility with the previous configuration name.
+        if (colorSensor == null) {
+            colorSensor = hw.tryGet(NormalizedColorSensor.class, "colorSensor");
+        }
+        ballDistanceSensor = null;
 
         if (colorSensor != null) {
             colorSensor.setGain(COLOR_GAIN);
@@ -433,6 +454,7 @@ public class Robot {
         updateHeading();
         updateVision();
         updateBall();
+        updateLed();
     }
 
     private void updateHeading() {
@@ -799,6 +821,7 @@ public class Robot {
 
     private void updateBall() {
 
+        ballDistanceCm = Double.NaN;
         if (colorSensor == null) {
             ballPresent = false;
             ballColor = BallColor.NONE;
@@ -844,7 +867,9 @@ public class Robot {
                     ballDistanceSensor.getDistance(DistanceUnit.CM);
 
             ballPresent =
-                    ballDistanceCm < BALL_PRESENT_CM;
+                    Double.isFinite(ballDistanceCm)
+                            && ballDistanceCm > 0
+                            && ballDistanceCm < BALL_PRESENT_CM;
 
         } else {
 
@@ -1281,6 +1306,26 @@ public class Robot {
     // SHOOTER
     // =========================================
 
+    /** Interpolate measured camera-to-AprilTag distances; clamp beyond the measured range. */
+    public static double rpmForDistance(double meters) {
+        if (!Double.isFinite(meters) || meters <= 0) return TELEOP_DEFAULT_RPM;
+        if (meters <= SHOOTER_DISTANCE_METERS[0]) return SHOOTER_DISTANCE_RPM[0];
+        for (int i = 1; i < SHOOTER_DISTANCE_METERS.length; i++) {
+            if (meters <= SHOOTER_DISTANCE_METERS[i]) {
+                double fraction = (meters - SHOOTER_DISTANCE_METERS[i - 1])
+                        / (SHOOTER_DISTANCE_METERS[i] - SHOOTER_DISTANCE_METERS[i - 1]);
+                return SHOOTER_DISTANCE_RPM[i - 1]
+                        + fraction * (SHOOTER_DISTANCE_RPM[i] - SHOOTER_DISTANCE_RPM[i - 1]);
+            }
+        }
+        return SHOOTER_DISTANCE_RPM[SHOOTER_DISTANCE_RPM.length - 1];
+    }
+
+    public double distanceBasedShooterRpm() {
+        // targetVisible can outlive the latest detection during the short aim hold.
+        return rpmForDistance(targetFresh ? targetDistanceMeters : Double.NaN);
+    }
+
     public static double rpmFor(BallColor color) {
 
         switch (color) {
@@ -1301,7 +1346,12 @@ public class Robot {
             shotColor = ballColor;
         }
 
-        targetRpm = rpmFor(shotColor);
+        updateShooter(rpmFor(shotColor));
+    }
+
+    /** TeleOp supplies a distance-based base RPM; keep motor output/readiness on one target. */
+    public void updateShooter(double baseRpm) {
+        targetRpm = baseRpm;
 
         if (shooterOn) {
 
@@ -1584,38 +1634,8 @@ public class Robot {
 
         if (led == null) return;
 
-        double color;
-
-        if (gateOpen || (ballPresent && readyToShoot())) {
-
-            color = LED_GREEN;
-
-        } else if (ballColor == BallColor.YELLOW) {
-
-            color = LED_YELLOW;
-
-        } else if (ballColor == BallColor.RED) {
-
-            color = LED_RED;
-
-        } else if (ballColor == BallColor.BLUE) {
-
-            color = LED_BLUE;
-
-        } else if (ballPresent) {
-
-            color = LED_WHITE;
-
-        } else if (targetVisible) {
-
-            color = LED_VIOLET;
-
-        } else {
-
-            color = LED_OFF;
-        }
-
-        led.setPosition(color);
+        // Presence of any pollen color wins, independent of the gate/shooter/tag.
+        led.setPosition(ballPresent ? LED_GREEN : LED_RED);
     }
 
     // =========================================

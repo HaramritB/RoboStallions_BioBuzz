@@ -128,7 +128,6 @@ public class BioBuzzAuto extends LinearOpMode {
         else robot.aimTurret(true, 0);
         robot.updateShooter();
         robot.updateFeeder(wantShoot, intakePower);
-        robot.updateLed();
 
         telemetry.addData("Step", step);
         telemetry.addData("HIVE tag", robot.targetVisible

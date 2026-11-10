@@ -14,6 +14,12 @@ saved calibration overrides the code defaults. With no saved pair, fresh install
 use the measured defaults; loading them sends no position command during INIT.
 The configured gate servo remains named `torqueservo1`.
 
+In both competition TeleOps, **gamepad 2 right bumper** toggles the flower lever
+**ON=0.38 / OFF=0.03** using the Servo named **`flower`**. It moves to OFF at
+START, holds its position with PWM enabled while TeleOp runs, and displays its
+commanded state. No flower position is commanded during INIT. These measured
+values are fixed TeleOp constants; calibration preferences do not override them.
+
 In either competition TeleOp, **gamepad 2 X** toggles OPEN/CLOSED. Telemetry identifies whether
 the active endpoints came from code defaults or saved calibration. A partially saved
 or invalid pair blocks the gate instead of mixing it with defaults.
@@ -76,6 +82,90 @@ Robot Test uses **gamepad 1 X/B** to nudge by 0.002 inside the saved endpoint in
 Its first requested movement uses the calibrated closed position as the command reference.
 Use Gate Calibration to change endpoints; Robot Test cannot expand the saved travel.
 
+## TeleOp shooter RPM by AprilTag distance
+
+Both competition TeleOps select the base shooter RPM from the fresh, locked HIVE
+AprilTag's camera-to-tag distance in meters:
+
+| Distance (m) | Base RPM |
+| --- | --- |
+| 1.41 | 3150 |
+| 1.60 | 3150 |
+| 1.76 | 3200 |
+| 1.90 | 3250 |
+
+Values between points are linearly interpolated. Closer than the table uses 3150;
+farther than the table uses 3250. A missing tag or unavailable/invalid pose immediately
+uses **3150 base RPM**, even during the brief retained turret-target visibility period.
+The distance is from the camera to the locked alliance HIVE tag, matching the
+existing Limelight distance telemetry. Shooter telemetry identifies the RPM source.
+
+**Gamepad 2 D-pad up/down** still adds/subtracts **50 RPM** of manual trim; at zero
+trim, motor targets match the table and fallback exactly. **A** and the right trigger
+retain their shooter on/off behavior. Distance selection alone does not start the
+shooter. Auto and Robot Test retain their existing shooter speed selection.
+
+## Flower lever calibration
+
+Configure the SWYFT torque servo as **Servo**, named **`flower`**. Select
+**Flower Calibration** in the **Test** group. It maps only `flower`; INIT sends
+no position and disables its PWM. The configured PWM range/direction are preserved.
+Use positional mode for this calibration; a continuously rotating servo needs its
+mode changed before numeric positions can represent lever ON and OFF.
+
+All controls use **gamepad 1**, after START:
+
+1. Free the linkage or mounting first, then hold **LB** and tap **A** to command
+   the **0.5000 reference**. Reattach the lever in a clear position while holding
+   that reference. A positional servo cannot report its unknown starting angle.
+2. Hold **RB** and tap **D-pad left/right** to move **-0.05/+0.05** per press.
+   Add **LB** for **0.005** fine steps. Holding the D-pad does not repeat.
+3. At the desired ON position, tap **X**. At OFF, tap **Y**. ON can be numerically
+   above or below OFF. Stop before the lever binds or hits a hard stop.
+4. Tap **A without bumpers** to save both marked values on this Robot Controller.
+   The screen shows current command, marked positions, and saved positions.
+5. With a powered reference, hold **RB** and tap **D-pad up/down** to verify the
+   saved **ON/OFF** positions. **B** releases PWM immediately; STOP also releases it.
+   After release, jogging and recall require the explicit reference command again.
+
+After a position is commanded, the OpMode keeps the PWM hold enabled until **B**
+or STOP; marking/saving endpoints and releasing the bumpers keep the hold active.
+Telemetry shows **Position hold** and **PWM signal**. These confirm the software
+request and PWM state, not measured servo voltage/current. Larger steps change
+the target position, not servo torque or supply power.
+
+Flower calibration values use separate preferences (`biobuzz_flower_calibration_v1`,
+keys `on` and `off`) and do not change gate calibration. Competition TeleOp uses
+the confirmed **ON=0.38 / OFF=0.03** constants; saving a new calibration pair does
+not automatically change those competition endpoints.
+
+## Pollen indicator setup
+
+Use the **goBILDA RGB Indicator Light (3118-0808-0002)**. On the Driver Station,
+configure **Expansion Hub -> Servos -> port 3** as **Servo**, named **`led`**.
+Configure the sensor on its connected **I2C bus** as **REV Color Sensor V3**,
+named **`colorsensor`**. The older name **`colorSensor`** is also accepted.
+
+The light is **green whenever pollen is detected**, otherwise **red**, independent
+of pollen color, shooter readiness, gate position, or visible HIVE tags. It starts
+red on INIT and refreshes with every sensor update, including competition INIT loops.
+Both **BioBuzz Blue TeleOp** and **BioBuzz Red TeleOp** show **Pollen LED** during
+INIT and driving, including a message if the LED or color sensor is missing.
+The V3 uses proximity for presence, so any nearby object can trigger the indicator.
+A missing color sensor leaves the light red.
+
+Start by holding pollen in its intended position and checking distance in **Robot
+Test (every feature)**. The starting detection threshold is **less than 4.0 cm**
+(`BALL_PRESENT_CM` in Robot.java); tune it for your mounting so the empty mechanism
+does not trigger it. Nonfinite, zero, and negative distances count as no detection.
+Robot Test displays the detected presence as **Pollen LED** along with color/distance.
+
+The LED alone uses the standard FTC 600-2400 us servo PWM range. Green is 0.500
+(1500 us); red is 0.280 (1104 us), slightly above the OFF boundary. See the
+[manufacturer's PWM chart](https://cdn11.bigcommerce.com/s-x56mtydx1w/images/stencil/original/products/2275/15126/3118-0808-0002-Product-Insight-4__88285.1757516465.png?c=1).
+This behavior runs while an OpMode using Robot's sensor updates is initialized or
+active; software cannot keep updating the light after the FTC runtime disables PWM.
+
 ## Hardware-free regression checks
 
 After syncing FTC SDK 12.0.0 and installing the Android SDK:
@@ -84,5 +174,5 @@ After syncing FTC SDK 12.0.0 and installing the Android SDK:
 python3 TeamCode/tests/run_robot_controls.py
 ```
 
-This exercises production gate/turret methods against recording hardware proxies. It does
+This exercises production gate/turret/indicator methods against recording hardware proxies. It does
 not validate actual motor wiring, servo travel, mechanical clearance, or on-robot behavior.

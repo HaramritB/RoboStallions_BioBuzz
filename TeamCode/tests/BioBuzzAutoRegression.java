@@ -146,7 +146,8 @@ public final class BioBuzzAutoRegression {
         check(f.follower.followed==0 && f.hardware.controls==0,"INIT/construction must not drive mechanisms or paths");
         f.start(); f.start();
         check(f.follower.followed==1,"START schedules exactly once");
-        check(Constants.foresightConfig.maxVelocityConstraint.get()==12,"Scoped slow path policy applied");
+        check(Constants.foresightConfig.maxVelocityConstraint.get()==18
+                && Constants.foresightConfig.maxPathSpeed.get()==0.35,"Path 1 uses the lower wall constraints");
         f.drain(); check(f.follower.followed==1,"Path 2 cannot precede arrival");
         f.nav.pose=f.paths.end(1).withHeading(0); f.follower.hold(f.nav.pose); f.tick();
         check(f.follower.followed==1,"Correct XY with wrong heading is insufficient");
@@ -156,12 +157,20 @@ public final class BioBuzzAutoRegression {
         check(f.follower.followed==1,"Require sustained settling, not one sample");
         f.advance(.11);
         check(f.follower.followed==2,"Path 2 starts after verified path 1");
+        check(Constants.foresightConfig.maxVelocityConstraint.get()==36
+                && Constants.foresightConfig.maxPathSpeed.get()==0.60,"Path 2 uses the faster transit constraints");
         f.arrive(f.paths.end(2));
         check(f.routine.stage()==BioBuzzAutoRoutine.Stage.TURNING && f.follower.followed==2,"Turn is a separate action");
         near(f.follower.held,f.paths.start(3),"Turn to 0 at the same XY");
         f.advance(.21); check(f.follower.followed==2,"Turn cannot finish without measured orientation");
         f.arrive(f.paths.start(3)); check(f.follower.followed==3,"Path 3 starts only after turn settles");
-        f.arrive(f.paths.end(3)); f.arrive(f.paths.end(4)); f.arrive(f.paths.end(5)); f.drain();
+        check(Constants.foresightConfig.maxVelocityConstraint.get()==36,"Path 3 uses the faster transit constraints");
+        f.arrive(f.paths.end(3));
+        check(Constants.foresightConfig.maxVelocityConstraint.get()==18
+                && Constants.foresightConfig.maxPathSpeed.get()==0.35,"Path 4 slows before FLOWER");
+        f.arrive(f.paths.end(4));
+        check(Constants.foresightConfig.maxVelocityConstraint.get()==18,"Path 5 keeps the lower departure constraint");
+        f.arrive(f.paths.end(5)); f.drain();
         check(f.routine.stage()==BioBuzzAutoRoutine.Stage.COMPLETE && f.follower.followed==5,"Complete all five paths");
         check(f.follower.idle() && f.drive.stops>0 && f.hardware.closes>0,"Success stops drivetrain and all activated mechanisms");
         f.routine.stop(); Scheduler.reset();

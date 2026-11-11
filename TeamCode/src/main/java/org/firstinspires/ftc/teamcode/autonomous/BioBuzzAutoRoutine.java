@@ -72,18 +72,18 @@ public final class BioBuzzAutoRoutine {
             Pose aligned=poses.of(pathOneEntry.x(),turnY,Math.toDegrees(pathOneEntry.heading()));
             boolean needsInwardMove=turnY>paths.startPose.y();
             if (needsInwardMove) {
-                steps.add(movement(constrain(line(paths.startPose,awayFromWall).constant(paths.startPose),movementOnly),
+                steps.add(movement(constrain(line(paths.startPose,awayFromWall).constant(paths.startPose),movementOnly,1),
                         paths.startPose,awayFromWall,"Move inward before path 1"));
             }
             steps.add(movement(null,awayFromWall,aligned,"Align with straight pickup line"));
             if (needsInwardMove) {
-                steps.add(movement(constrain(line(aligned,pathOneEntry).constant(pathOneEntry),movementOnly),
+                steps.add(movement(constrain(line(aligned,pathOneEntry).constant(pathOneEntry),movementOnly,1),
                         aligned,pathOneEntry,"Return to path 1 entry"));
             }
         }
         for (int i=1;i<=pathCount;i++) {
             if (paths.turnBefore(i)) steps.add(movement(null,paths.end(i-1),paths.start(i),"Turn before path " + i));
-            Path path=constrain(paths.path(i),movementOnly);
+            Path path=constrain(paths.path(i),movementOnly,i);
             steps.add(movement(path,paths.start(i),paths.end(i),"Path " + i,plan.duringPath[i-1]));
             if (plan.afterPath[i-1].kind!=BioBuzzAutoMechanisms.Kind.NONE) {
                 steps.add(stationaryAction(plan.afterPath[i-1],paths.end(i),"After path " + i));
@@ -98,12 +98,16 @@ public final class BioBuzzAutoRoutine {
         command=sequential(steps.toArray(new Command[0]));
     }
 
-    private static Path constrain(Path path, boolean movementOnly) {
+    private static Path constrain(Path path, boolean movementOnly, int pathNumber) {
+        // Use the lower constraints by the starting wall and at FLOWER.
+        boolean transit = pathNumber == 2 || pathNumber == 3;
+        double velocity = transit ? BioBuzzAutoConfig.TRANSIT_SPEED_IN_S : BioBuzzAutoConfig.NEAR_OBSTACLE_SPEED_IN_S;
+        double speed = transit ? BioBuzzAutoConfig.TRANSIT_SPEED_FRACTION : BioBuzzAutoConfig.NEAR_OBSTACLE_SPEED_FRACTION;
         return path.with(
                 Constants.foresightConfig.maxVelocityConstraint.at(movementOnly
-                        ? BioBuzzAutoConfig.PATH_SPEED_IN_S : Constants.foresightConfig.maxVelocityConstraint.get()),
+                        ? velocity : Constants.foresightConfig.maxVelocityConstraint.get()),
                 Constants.foresightConfig.maxPathSpeed.at(movementOnly
-                        ? BioBuzzAutoConfig.PATH_SPEED_FRACTION : Constants.foresightConfig.maxPathSpeed.get()),
+                        ? speed : Constants.foresightConfig.maxPathSpeed.get()),
                 Constants.foresightConfig.pathSkip.at(false));
     }
 

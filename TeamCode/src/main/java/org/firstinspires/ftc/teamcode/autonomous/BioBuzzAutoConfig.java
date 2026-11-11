@@ -79,8 +79,10 @@ public final class BioBuzzAutoConfig {
     public static final double SEGMENT_TIMEOUT_S = 15.0;
     public static final double TURN_TIMEOUT_S = 5.0;
     public static final double AUTO_TIMEOUT_S = 27.0;
-    public static final double PATH_SPEED_IN_S = 12.0;
-    public static final double PATH_SPEED_FRACTION = 0.25;
+    public static final double NEAR_OBSTACLE_SPEED_IN_S = 18.0;
+    public static final double NEAR_OBSTACLE_SPEED_FRACTION = 0.35;
+    public static final double TRANSIT_SPEED_IN_S = 36.0;
+    public static final double TRANSIT_SPEED_FRACTION = 0.60;
     public static final double POSITION_TOLERANCE_IN = 2.0;
     // Turn with enough room for the rectangle's diagonal, arrival tolerance, and a small nominal margin.
     public static final double PATH1_TURN_Y_IN = Math.hypot(ROBOT_LENGTH_IN, ROBOT_WIDTH_IN)/2

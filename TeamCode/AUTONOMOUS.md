@@ -158,8 +158,10 @@ export audit, with the measured offset and heading alignment applied at runtime.
    observe the narrow lower-wall clearance and the FLOWER approach/departure.
 5. If the route stops early, record Status, Route segment, Pinpoint, and Failure telemetry.
 
-The fixed route uses the existing controlled-test velocity constraints of 12 in/s and a
-0.25 modeled speed fraction. Each waypoint requires <=2 in position error, <=3 degrees
+The fixed route uses 36 in/s and a 0.60 modeled speed fraction on paths 2 and 3.
+The inward move, return, path 1, and FLOWER paths 4 and 5 use 18 in/s and a 0.35
+modeled speed fraction. Actual speed depends on tracking, braking, and available distance.
+Each waypoint requires <=2 in position error, <=3 degrees
 heading error, <=2 in/s speed and <=8 degrees/s turn rate, sustained 0.20 s. Path deadlines
 are 15 s, turn deadlines 5 s, and the run deadline 27 s. Path skipping is disabled.
 Verify physical tracking and total elapsed time on the field.

@@ -23,10 +23,9 @@ import java.util.Map;
 public final class AutoPathRegression {
     public static void main(String[] args) {
         assertRegistered(AutoPath.class, "AutoPath");
+        assertRegistered(AutoPathDriveOnly.class, "AutoPath (Drive Only)");
         assertRegistered(org.firstinspires.ftc.teamcode.autonomous.BioBuzzAuto.class, "BioBuzz Pedro Auto");
-        if (!BioBuzzAuto.class.isAnnotationPresent(Disabled.class)) {
-            throw new AssertionError("Legacy encoder autonomous must remain disabled");
-        }
+        assertRegistered(BioBuzzAuto.class, "BioBuzz Auto"); // Replaced by the teammate's Pedro route.
         Path transit = AutoPath.path2();
         Path[] paths = {AutoPath.path1(), transit, AutoPath.path3(transit.endPose()),
                 AutoPath.path4(), AutoPath.path5()};
@@ -181,7 +180,7 @@ public final class AutoPathRegression {
         }
     }
 
-    private static final class Navigation implements Localizer {
+    static final class Navigation implements Localizer {
         private Pose pose = AutoPath.path1().get(0);
 
         @Override public MotionState state() { return MotionState.ofVelocity(pose, Velocity.zero()); }
@@ -190,8 +189,8 @@ public final class AutoPathRegression {
         @Override public void reset() { }
     }
 
-    private static final class Drive implements Drivetrain {
-        private int stops;
+    static final class Drive implements Drivetrain {
+        int stops;
 
         @Override public void drive(DrivePowers powers, boolean manual) { }
         @Override public void stop() { stops++; }
@@ -201,9 +200,9 @@ public final class AutoPathRegression {
         @Override public Map<String, Object> debug() { return Collections.emptyMap(); }
     }
 
-    private static final class Tracking extends Follower {
-        private int pathsStarted;
-        private boolean atEnd;
+    static final class Tracking extends Follower {
+        int pathsStarted;
+        boolean atEnd;
 
         Tracking(Navigation navigation, Drive drive) {
             super(navigation, drive, new Foresight(Constants.foresightConfig));

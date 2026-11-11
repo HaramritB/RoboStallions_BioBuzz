@@ -10,8 +10,8 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
 
     static final double SLOW_MODE_SCALE = 0.4;
     static final double STICK_DEADBAND = 0.1;
-    static final double FLOWER_ON = 0.38;
-    static final double FLOWER_OFF = 0.03;
+    static final double FLOWER_ON = FlowerLever.DEPLOYED_POSITION;
+    static final double FLOWER_OFF = FlowerLever.RETRACTED_POSITION;
 
     protected abstract Robot.Alliance teleOpAlliance();
 
@@ -452,8 +452,7 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
     }
 
     private void commandFlower(Servo flower, boolean on) {
-        flower.setPosition(on ? FLOWER_ON : FLOWER_OFF);
-        if (flower instanceof PwmControl) ((PwmControl) flower).setPwmEnable();
+        FlowerLever.command(flower, on);
     }
 
     private void addShooterDistanceTelemetry(Robot robot) {

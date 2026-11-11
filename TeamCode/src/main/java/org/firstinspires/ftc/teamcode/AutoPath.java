@@ -8,18 +8,22 @@ import com.pedropathing.math.Pose;
 import com.pedropathing.paths.Path;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+import com.qualcomm.robotcore.hardware.Servo;
+import org.firstinspires.ftc.teamcode.autonomous.BioBuzzAutoConfig;
+import org.firstinspires.ftc.teamcode.autonomous.BioBuzzAutoMechanisms;
 
 import java.util.function.LongSupplier;
 
 import static com.pedropathing.api.Paths.curve;
 import static com.pedropathing.api.Paths.line;
 import static com.pedropathing.ivy.commands.Commands.lazy;
+import static com.pedropathing.ivy.groups.Groups.parallel;
 import static com.pedropathing.ivy.groups.Groups.sequential;
 import static com.pedropathing.ivy.pedro.PedroCommands.follow;
 
-/** Follows the five supplied paths with Pedro and Pinpoint. */
+/** BioBuzz scoring using the field-tested AutoPath route and shared TeleOp mechanisms. */
 @Autonomous(name = "AutoPath", group = "Autonomous")
-public final class AutoPath extends LinearOpMode {
+public class AutoPath extends LinearOpMode {
     private static final double SPEED_FRACTION = 0.70;
     private static final double PATH_1_ARRIVAL_IN = 3.0;
     private static final long PATH_1_PAUSE_NS = 1_000_000_000L;
@@ -39,55 +43,176 @@ public final class AutoPath extends LinearOpMode {
     public void runOpMode() {
         Scheduler.reset();
         Follower follower = Constants.create(hardwareMap);
-        Command route = route(follower, System::nanoTime);
+        BioBuzzAutoMechanisms mechanisms = new BioBuzzAutoMechanisms();
+        FlowerLever flowerLever = null;
+        Command route = null;
+        Robot.Alliance alliance = Robot.lastAlliance;
 
         try {
             follower.setPose(START);
+            if (useMechanisms()) {
+                flowerLever = new FlowerLever(hardwareMap.get(Servo.class, "flower"));
+                mechanisms = BioBuzzAutoMechanisms.initialize(hardwareMap, alliance,
+                        () -> -Math.toDegrees(follower.pose().heading()),
+                        () -> -Math.toDegrees(follower.velocity().omega));
+                mechanisms.manualIntake(false); // Motors idle; no INIT gate position command.
+            }
+            while (opModeInInit()) {
+                if (useMechanisms()) {
+                    if (gamepad1.aWasPressed()) alliance = Robot.Alliance.BLUE;
+                    if (gamepad1.bWasPressed()) alliance = Robot.Alliance.RED;
+                    if (gamepad1.backWasPressed()) mechanisms.zeroTurret();
+                    mechanisms.setAlliance(alliance);
+                }
+                follower.localizer.update(); // Read only; never run the drive controller in INIT.
+                mechanisms.observe();
+                publish(follower, mechanisms, alliance);
+                idle();
+            }
             waitForStart();
             if (!opModeIsActive()) return;
 
+            if (useMechanisms()) Robot.lastAlliance = alliance;
+            mechanisms.observe();
+            if (flowerLever != null) flowerLever.setDeployed(false);
+            route = useMechanisms() ? route(follower, System::nanoTime, mechanisms, flowerLever)
+                    : route(follower, System::nanoTime);
             Scheduler.schedule(route);
             while (opModeIsActive() && Scheduler.isScheduled(route)) {
                 follower.update();
+                mechanisms.update(); // Use the chassis sample from Pedro; no second Pinpoint update.
                 Scheduler.execute();
-
-                Pose pose = follower.pose();
-                telemetry.addData("X (in)", "%.2f", pose.x());
-                telemetry.addData("Y (in)", "%.2f", pose.y());
-                telemetry.addData("Heading (deg)", "%.1f", Math.toDegrees(pose.heading()));
-                if (follower.currentPath() != null) {
-                    telemetry.addData("Distance remaining (in)", "%.2f", follower.distanceToEndpoint());
-                }
-                telemetry.update();
+                publish(follower, mechanisms, alliance);
                 idle();
             }
+        } catch (RuntimeException error) {
+            telemetry.addData("AutoPath failure", "%s: %s", error.getClass().getSimpleName(), error.getMessage());
+            telemetry.update();
+            requestOpModeStop();
         } finally {
-            try {
-                Scheduler.cancel(route);
-            } finally {
-                Scheduler.reset();
-                stopDrive(follower);
-            }
+            stopAll(follower, mechanisms, route, flowerLever);
         }
     }
 
+    protected boolean useMechanisms() { return true; }
+
+    private void publish(Follower follower, BioBuzzAutoMechanisms mechanisms, Robot.Alliance alliance) {
+        telemetry.addData("Mode", useMechanisms() ? "BioBuzz FTC 2026: shoot + intake" : "Drive only");
+        if (useMechanisms()) {
+            telemetry.addData("Alliance", "%s (INIT: A blue / B red)", alliance);
+            telemetry.addData("Turret zero", "INIT: point turret forward, then BACK to zero");
+            telemetry.addData("Mechanisms", mechanisms.state());
+            telemetry.addData("Shooter / aiming / gate", mechanisms.diagnostics());
+            telemetry.addData("Mechanism failure", mechanisms.failure().isEmpty() ? "none" : mechanisms.failure());
+        }
+        Pose pose = follower.pose();
+        telemetry.addData("X (in)", "%.2f", pose.x());
+        telemetry.addData("Y (in)", "%.2f", pose.y());
+        telemetry.addData("Heading (deg)", "%.1f", Math.toDegrees(pose.heading()));
+        if (follower.currentPath() != null) telemetry.addData("Distance remaining (in)", "%.2f", follower.distanceToEndpoint());
+        telemetry.update();
+    }
+
     static Command route(Follower follower, LongSupplier clock) {
+        return route(follower, clock, null);
+    }
+
+    static Command route(Follower follower, LongSupplier clock, BioBuzzAutoMechanisms mechanisms) {
+        return route(follower, clock, mechanisms, null);
+    }
+
+    static Command route(Follower follower, LongSupplier clock, BioBuzzAutoMechanisms mechanisms, FlowerLever flowerLever) {
         FlowerApproach flower = new FlowerApproach();
         Path transit = path2();
         Path approach = atRouteSpeed(path4());
-        return sequential(
-                follow(follower, atRouteSpeed(path1())).setDone(() ->
+        Command pickup = follow(follower, atRouteSpeed(path1())).setDone(() ->
                         follower.atParametricEnd() || follower.holding()
-                                || follower.pose().distance(POINT_1) <= PATH_1_ARRIVAL_IN),
+                                || follower.pose().distance(POINT_1) <= PATH_1_ARRIVAL_IN);
+        Command flowerPickup = Command.build().setStart(() -> {
+            follower.follow(approach);
+            flower.start(follower.pose(), clock.getAsLong());
+        }).setDone(() -> flower.finished(follower, clock.getAsLong()));
+        Command exit = lazy(() -> follow(follower, atRouteSpeed(path5(flower.departure))));
+        if (mechanisms == null) return sequential(
+                pickup,
                 pauseDrive(follower, clock, PATH_1_PAUSE_NS),
                 follow(follower, atRouteSpeed(transit)),
                 pauseDrive(follower, clock, PATH_2_PAUSE_NS),
                 follow(follower, atRouteSpeed(path3(transit.endPose()))),
-                Command.build().setStart(() -> {
-                    follower.follow(approach);
-                    flower.start(follower.pose(), clock.getAsLong());
-                }).setDone(() -> flower.finished(follower, clock.getAsLong())),
-                lazy(() -> follow(follower, atRouteSpeed(path5(flower.departure)))));
+                flowerPickup, exit);
+        Command collectAtFlower = sequential(
+                intakeAlong(follower, mechanisms, flowerPickup),
+                // Stop pushing during pickup, including a recovered approach stall.
+                parallel(pauseDrive(follower, clock, 0), mechanisms.command(
+                        BioBuzzAutoMechanisms.Action.intakeFor(BioBuzzAutoConfig.FLOWER_INTAKE_SECONDS,
+                                BioBuzzAutoConfig.COLLECTION_TIMEOUT_S), clock, AutoPath::mechanismFailure)));
+        if (flowerLever != null) collectAtFlower = flowerDuring(follower, mechanisms, flowerLever, collectAtFlower);
+        return sequential(
+                stoppedShot(follower, clock, mechanisms, BioBuzzAutoConfig.PRELOAD_BALL_COUNT, 0),
+                intakeAlong(follower, mechanisms, pickup),
+                pauseDrive(follower, clock, PATH_1_PAUSE_NS),
+                follow(follower, atRouteSpeed(transit)),
+                stoppedShot(follower, clock, mechanisms, BioBuzzAutoConfig.STAGED_BALL_COUNT, PATH_2_PAUSE_NS),
+                follow(follower, atRouteSpeed(path3(transit.endPose()))),
+                collectAtFlower,
+                exit,
+                stoppedShot(follower, clock, mechanisms, BioBuzzAutoConfig.FLOWER_BALL_COUNT, 0));
+    }
+
+    private static Command flowerDuring(Follower follower, BioBuzzAutoMechanisms mechanisms,
+                                         FlowerLever flower, Command pickup) {
+        boolean[] active = {false};
+        return Command.build().requiring(follower, mechanisms, flower)
+                .setStart(() -> { active[0] = true; flower.setDeployed(true); pickup.start(); })
+                .setExecute(() -> { flower.refresh(); pickup.execute(); }).setDone(pickup::done)
+                .setEnd(reason -> {
+                    if (!active[0]) return;
+                    active[0] = false;
+                    try { pickup.end(reason); }
+                    finally { flower.setDeployed(false); }
+                });
+    }
+
+    private static Command stoppedShot(Follower follower, LongSupplier clock, BioBuzzAutoMechanisms mechanisms,
+                                       int count, long minimumPauseNs) {
+        // Parallel waits for both children: retain the tested four-second stop even if shots finish early.
+        return parallel(pauseDrive(follower, clock, minimumPauseNs), mechanisms.command(
+                BioBuzzAutoMechanisms.Action.shoot(count, BioBuzzAutoConfig.SHOOT_TIMEOUT_S),
+                clock, AutoPath::mechanismFailure));
+    }
+
+    private static Command intakeAlong(Follower follower, BioBuzzAutoMechanisms mechanisms, Command movement) {
+        boolean[] active = {false};
+        return Command.build().requiring(follower, mechanisms)
+                .setStart(() -> { active[0] = true; mechanisms.manualIntake(true); movement.start(); })
+                .setExecute(movement::execute).setDone(movement::done)
+                .setEnd(reason -> {
+                    if (!active[0]) return; // Ivy may end children that have not started.
+                    active[0] = false;
+                    try { movement.end(reason); }
+                    finally { mechanisms.manualIntake(false); }
+                });
+    }
+
+    private static void mechanismFailure(String reason) {
+        // Abort the composition immediately; never let a failed volley start the next path.
+        throw new IllegalStateException(reason);
+    }
+
+    static void stopAll(Follower follower, BioBuzzAutoMechanisms mechanisms, Command route) {
+        stopAll(follower, mechanisms, route, null);
+    }
+
+    static void stopAll(Follower follower, BioBuzzAutoMechanisms mechanisms, Command route, FlowerLever flower) {
+        try { if (route != null) Scheduler.cancel(route); }
+        finally {
+            Scheduler.reset();
+            try { mechanisms.stop(); }
+            finally {
+                try { if (flower != null) flower.stop(); }
+                finally { stopDrive(follower); }
+            }
+        }
     }
 
     private static Path atRouteSpeed(Path path) {

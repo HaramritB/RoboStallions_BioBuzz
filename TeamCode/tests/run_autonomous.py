@@ -64,6 +64,7 @@ with tempfile.TemporaryDirectory(prefix='biobuzz-auto-') as temporary:
                 ROOT / 'TeamCode/src/main/java/org/firstinspires/ftc/teamcode/BioBuzzAuto.java',
                 Path(__file__).with_name('BioBuzzAutoRegression.java'),
                 Path(__file__).with_name('AutoPathRegression.java'),
+                Path(__file__).with_name('AutoPathMechanismRegression.java'),
                 Path(__file__).with_name('MechanismIsolationRegression.java'),
                 Path(__file__).with_name('AutoLifecycleRegression.java')]
     sources += [p for p in (ROOT / 'TeamCode/src/main/java/org/firstinspires/ftc/teamcode').glob('*.java')
@@ -85,6 +86,9 @@ with tempfile.TemporaryDirectory(prefix='biobuzz-auto-') as temporary:
 
     subprocess.run([java_tool('java'), '-cp', os.pathsep.join([str(work), classpath]),
                     'org.firstinspires.ftc.teamcode.AutoPathRegression'], check=True)
+
+    subprocess.run([java_tool('java'), '-cp', os.pathsep.join([str(work), classpath]),
+                    'org.firstinspires.ftc.teamcode.AutoPathMechanismRegression'], check=True)
 
     subprocess.run([java_tool('java'), '-cp', os.pathsep.join([str(work), classpath]),
                     'org.firstinspires.ftc.teamcode.autonomous.MechanismIsolationRegression'], check=True)

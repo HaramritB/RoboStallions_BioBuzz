@@ -3,7 +3,82 @@
 This branch integrates the mechanism controllers from main commit
 `b41fb87d8ae5875d51bb5b3a497c32fb7e62c168` into PradhyunAuto. This open-loop intake
 follow-up is based on `cd5952fb199036fdc5fb02c911faa41724a37dab`. Only PradhyunAuto is published.
-Main is not modified. The disabled legacy encoder Auto is preserved.
+Main is not modified. The newer separate **BioBuzz Auto** route from the teammate is preserved.
+
+## Current scoring entry: AutoPath (BioBuzz FTC 2026)
+
+Select **AutoPath** for the working route with shooter/turret/intake/feeder integration.
+Select **AutoPath (Drive Only)** to run the same tested route and original pauses without
+initializing mechanism hardware. The separate **BioBuzz Auto** from the latest pull is
+unchanged. The older BioBuzz Pedro Auto description below refers to its own implementation.
+
+AutoPath retains the teammate's five paths, heading modes, 70% modeled speed policy,
+path-1 early-arrival condition, widened/shortened path 2, and FLOWER recovery/departure logic.
+There are no new navigation deadlines or drivetrain tuning/motor-direction changes.
+
+1. INIT at the tested start pose. A selects BLUE, B selects RED for tag filtering; the route
+   is not mirrored. With the turret physically pointing forward, BACK explicitly zeros it.
+   INIT zeros mechanism motors and samples sensors; it does not position the gate.
+2. START: stop the drivetrain and shoot **four preloads** before path 1.
+3. Run intake alongside path 1. At its original arrival condition, stop intake and retain
+   the original **one-second** drive pause.
+4. Drive path 2, stop the drivetrain and shoot **four balls**. The original **four-second**
+   minimum pause runs concurrently with shooting. Path 3 waits for both; a slow volley may
+   extend the stop, and a failed volley aborts the route.
+5. Follow path 3 unchanged. Deploy the **flower servo to 0.38** and run intake throughout
+   the path-4 FLOWER approach. Keep the lever deployed through the pickup window. On arrival or
+   the existing four-second no-progress recovery, stop pushing and run intake for the
+   configured **two-second** FLOWER window. This is an intake attempt, not a stored-ball count.
+6. Retract the **flower servo to 0.03** before following path 5 from the same nominal or
+   recovered departure pose, stop, shoot **four balls**,
+   then clean up every mechanism and the camera as well as the drivetrain.
+
+Mechanisms use Robot.initMechanismsOnly, keeping Pedro as the sole drive controller.
+Each active loop first updates Pedro, then supplies its CW-converted heading/turn rate to
+Robot.updateMechanismSensors. Robot.aimTurret(true, 0), distanceBasedShooterRpm and
+updateShooter(baseRpm) reuse TeleOp's aiming and measured RPM interpolation/PIDF.
+Collection uses Robot.updateManualFeeder with the calibrated gate closed. Shooting is a
+single continuous burst using the same manual feeder motor control:
+
+- Command calibrated CLOSED once while spinning up. Keep intake/transmission stopped.
+- On the first fresh, aimed, at-target-speed sample, command calibrated OPEN and start both
+  motors together in **gamepad 1 RIGHT-trigger** direction: intake -INTAKE_POWER and
+  transmission -TRANSMISSION_INDEX_POWER. There is no extra RPM-settle delay.
+- Hold the gate open and keep both motors running through all four balls, including normal
+  flywheel RPM dips. The old 300 ms per-ball gate timer is not used by autonomous shooting.
+- Count feeder presence-to-clear events only while the burst is feeding. On the fourth event,
+  close the gate and stop both motors before another feed command. Repeated empty samples
+  do not count additional balls. If the four events cannot be observed, the volley times out.
+- Loss of aiming/distance during an open burst aborts and closes the gate, rather than
+  reopening and cycling it. STOP, timeout and failures also close it and stop the motors.
+
+The shooter uses the same measured distance/RPM interpolation and tuned PIDF as TeleOp:
+**1.41 m -> 3150 RPM, 1.60 m -> 3150, 1.76 m -> 3200, 1.90 m -> 3250**. Interpolate between
+points and clamp beyond the measured endpoints, as in Robot.rpmForDistance. Motor targets
+and at-speed checks use that same target (the existing RPM tolerance is 100 RPM). Fresh,
+positive finite tag distance is required to begin feeding. No fixed 4000 RPM/color-based
+shooting target replaces the measured table.
+
+AutoPath maps the `flower` servo without moving it in INIT, retracts it at START, deploys
+it only for the path-4 approach and FLOWER pickup, and retracts it before path 5 and during
+STOP/failure cleanup. FlowerLever shares TeleOp's measured ON=0.38/OFF=0.03 positions and
+PWM-enable/restore behavior. AutoPath (Drive Only) never maps or commands it.
+
+Scoring needs intake, transmission, turret, shooter, torqueservo1, **flower**, a working Limelight and
+the configured color/range feeder sensor. Missing devices, invalid sensor samples, invalid
+gate calibration, seven-second volley timeout and STOP abort and clean up outputs. Mechanism
+failure throws immediately out of Ivy so the next path cannot start in the same iteration.
+The drive-only entry does not require any of these mechanism devices.
+
+Validate physical exits, collection yield and total match time on the robot. The mechanism
+integration preserves the route the team reports working; it does not establish new physical
+clearance. Use the **AutoPath** telemetry for alliance, mechanism state, RPM/aim/gate diagnostics
+and failures. Software regression tests cover both normal and recovered FLOWER departures,
+all three volleys, the one-/four-second pauses, late/failed shots, fresh sensor failure,
+stop during intake, shot-limit ordering, flower deployment/retraction/PWM restoration, and
+cleanup even when a device close or flower retraction fails.
+
+## Older entry: BioBuzz Pedro Auto
 
 **BioBuzz Pedro Auto runs all five fixed paths with drivetrain and Pinpoint only.**
 INIT initializes localization without driving. START begins the inward move before path 1.
@@ -33,9 +108,9 @@ This plan is inactive in BioBuzz Pedro Auto.
    and not physically tuned. Finish the timed attempt without claiming four stored balls.
 6. Drive path 5; hold its endpoint, shoot **4 balls**, then stop all outputs.
 
-**FLOWER is intake only. The autonomous and stationary test never map or command its lever.**
-The imported Flower Calibration utility and competition TeleOp controls are separate main-code
-features; they are not called by autonomous.
+**The older BioBuzz Pedro Auto and stationary mechanism test use intake only.**
+The current AutoPath scoring entry also operates the flower lever as described above;
+Flower Calibration remains a separate utility.
 
 ## Software and hardware
 
@@ -52,13 +127,13 @@ features; they are not called by autonomous.
   calibrated CLOSED endpoint, including overrides, rather than writing a fixed constant.
 - Shooter PIDF remains 180/0/0/13.83. Auto reuses main's measured distance/RPM interpolation
   and target selection, not a new flywheel controller. Target distance must be finite/positive,
-  aiming fresh and within tolerance, and RPM ready before feeding. Readiness must settle for
-  the existing .20-second policy before opening. An already open normal feed pulse continues
-  through the expected RPM dip; loss of valid aiming closes the gate and stops feeding.
-- Shooting completion requires four feed-cycle counts AND corresponding observed ball-clear
-  events. The motor/gate stop at the requested counter limit while remaining verification is
-  pending. A timer or spin-up delay alone cannot count as a successful volley. Actual scoring
-  in the goal still requires observation on the robot.
+  aiming fresh and within tolerance, and RPM ready before feeding. Feeding starts immediately
+  on readiness and remains continuous through normal RPM dips; loss of valid aiming aborts
+  the burst, closes the gate and stops feeding.
+- Shooting completion requires four observed feeder ball-clear events during continuous
+  feeding. Time alone cannot count a shot. The gate closes and motors stop on the fourth
+  exit; result settling does not continue feeding. Actual scoring in the goal still requires
+  observation on the robot.
 
 Robot.initMechanismsOnly preserves main's mechanism initialization but never maps/configures
 drivetrain motors. The full autonomous supplies Pedro's fresh pose/rate to Robot's turret
@@ -110,7 +185,7 @@ verify turret reference and linkage clearance, and provide a safe shooting targe
    and closes the camera. No indefinite retry or automatic rearming occurs.
 
 Telemetry reports mode, status/failure, RPM/target RPM, vision/aim/gate readiness, ball presence,
-feed cycles and the open-loop intake policy. A successful software volley cannot itself
+observed ball exits and the open-loop intake policy. A successful software volley cannot itself
 prove four goals were scored: verify physical exits, RPM recovery, aiming and gate travel.
 
 ## Route source and geometry
@@ -178,12 +253,13 @@ It applies the supplied tangent, reverse tangent, and linear heading interpolati
 Pedro caps the modeled travel speed on all five paths at 70 percent. At the end of
 path 1, Pedro's endpoint signal or a Pinpoint pose within 3 inches starts a one-second
 pause with the drivetrain stopped. Path 2 then starts automatically. At the end of
-path 2, the drivetrain stops for four seconds. Path 3 starts at the path-2 endpoint
+path 2, the drivetrain stops for at least four seconds and until shooting completes. Path 3 starts at the path-2 endpoint
 with the same heading, then blends to its original end heading. If path 4 reaches
 within 1 inch of its target, path 5 starts as drawn. If the robot makes less than 0.25 inch
 of new progress toward that target for four seconds, the follower stops pushing and starts
-path 5 from the measured pose. There are no other custom deadlines. Driver Station STOP
-ends the OpMode and zeros the drivetrain.
+path 5 from the measured pose. Scoring adds a stopped two-second intake window before
+that departure. There are no other navigation deadlines. Driver Station STOP ends the OpMode
+and zeros the drivetrain and mechanisms.
 
 AutoPath path 2 retains the wider curve around the center frame and stops about
 4.7 inches earlier at (32.4082, 122.9979). The shortened quadratic uses control point

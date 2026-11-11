@@ -130,8 +130,7 @@ public final class BioBuzzAutoMechanisms {
         if (hardware != null && !closed && request != Kind.NONE) {
             if (!validObservation()) throw new IllegalStateException("Mechanism sensor sample unavailable/nonfinite");
             if (request == Kind.SHOOT && observation.shotsFired >= shotLimit) {
-                // Stop before control can open the gate for another feed cycle.
-                // The command still verifies the shot count and ball-clear events.
+                // The fourth observed exit ends the burst before another feed motor write.
                 request = Kind.NONE;
                 hardware.stopOutputs();
             } else {
@@ -197,7 +196,7 @@ public final class BioBuzzAutoMechanisms {
                             }
                             if (observation.shotsFired-baseline[0]>=action.count && request==Kind.SHOOT) {
                                 request=Kind.NONE;
-                                hardware.stopOutputs(); // Never feed a fifth while waiting for clear verification.
+                                hardware.stopOutputs(); // End the burst at the requested ball count.
                             }
                             done=observation.shotsFired-baseline[0]>=action.count && clearTransitions[0]>=action.count;
                             break;
@@ -237,6 +236,11 @@ public final class BioBuzzAutoMechanisms {
     public void setAlliance(Robot.Alliance alliance) {
         if (hardware instanceof RobotHardware) ((RobotHardware) hardware).robot.alliance = alliance;
     }
+    /** Explicit INIT operator action, with the turret physically pointing forward. */
+    public void zeroTurret() {
+        if (closed || commandActive || request!=Kind.NONE) throw new IllegalStateException("Turret zero requires idle mechanisms");
+        if (hardware instanceof RobotHardware) ((RobotHardware)hardware).robot.zeroTurret();
+    }
     public String diagnostics() { return hardware==null ? "inactive" : hardware.diagnostics(); }
     public String state() { return hardware == null ? "DISABLED - no mapped actions" : closed ? "STOPPED" : request.name(); }
     public String failure() { return failure; }
@@ -245,7 +249,9 @@ public final class BioBuzzAutoMechanisms {
     static final class RobotHardware implements Hardware {
         final Robot robot;
         DoubleSupplier headingCw, turnRateCw;
-        private long readySince=-1;
+        private boolean shootingRequested;
+        private boolean burstFeeding;
+        private boolean previousBurstBall;
         private String detail="Not sampled";
         @Override public String diagnostics() { return detail; }
         private boolean used;
@@ -254,42 +260,59 @@ public final class BioBuzzAutoMechanisms {
         @Override public Observation observe() {
             if (headingCw==null) robot.updateSensors();
             else robot.updateMechanismSensors(headingCw.getAsDouble(),turnRateCw.getAsDouble());
-            detail=String.format(java.util.Locale.US,"RPM %.0f/%.0f; target fresh=%s aimed=%s; gate calibrated=%s; ball=%s; feed cycles=%d",
+            // Count actual feeder presence->clear transitions during the open burst, not
+            // timed gate pulses. Observe before control so the fourth exit stops immediately.
+            if (burstFeeding) {
+                if (previousBurstBall && !robot.ballPresent) robot.shotsFired++;
+                previousBurstBall=robot.ballPresent;
+            }
+            detail=String.format(java.util.Locale.US,"RPM %.0f/%.0f; target fresh=%s aimed=%s; gate calibrated=%s; ball=%s; exits=%d; burst=%s",
                     robot.shooterRpm(),robot.targetRpm+robot.rpmTrim,robot.targetFresh,robot.aimedAtTarget(),
-                    robot.gateCalibrated(),robot.ballPresent,robot.shotsFired);
+                    robot.gateCalibrated(),robot.ballPresent,robot.shotsFired,burstFeeding);
             return new Observation(robot.ballPresent,robot.shotsFired,robot.turretDegrees(),
                     Double.isFinite(robot.ballDistanceCm) && robot.ballDistanceCm > 0);
         }
         @Override public void control(Kind request) {
             used=true;
+            if (request==Kind.SHOOT && !shootingRequested) {
+                shootingRequested=true;
+                robot.gateOpen=false;
+                robot.updateManualFeeder(false,0); // Establish CLOSED once before spin-up.
+            }
             robot.shooterOn=request==Kind.SHOOT;
             if (request==Kind.SHOOT) robot.aimTurret(true,0);
             else if (request==Kind.CENTER_TURRET) robot.turretToAngle(0);
             else robot.turret.setPower(0);
+            // Same measured distance interpolation and tuned PIDF as working TeleOp.
             robot.updateShooter(robot.distanceBasedShooterRpm());
-            // A stale target cannot keep a gate open through the old feeder's timed branch.
-            // Existing updateFeeder() checks flywheel speed before OPENING. Keep its timed
-            // feed branch running through the expected RPM dip after a ball enters the wheel.
             boolean targetOk=request==Kind.SHOOT && robot.targetFresh && robot.aimedAtTarget()
                     && Double.isFinite(robot.targetDistanceMeters) && robot.targetDistanceMeters>0;
-            long now=System.nanoTime();
-            if (!targetOk || !robot.readyToShoot()) readySince=-1;
-            else if (readySince<0) readySince=now;
-            boolean shoot=targetOk && (robot.gateOpen || (readySince>=0
-                    && (now-readySince)/1e9>=BioBuzzAutoConfig.SETTLE_TIME_S));
-            if (!shoot) robot.gateOpen=false;
-            if (request==Kind.COLLECT) {
-                // Same forward intake, gate-closed indexing and ball sensor behavior as TeleOp.
-                robot.updateManualFeeder(false, Robot.INTAKE_POWER);
+            if (request==Kind.SHOOT) {
+                if (burstFeeding && !targetOk) {
+                    stopOutputs();
+                    throw new IllegalStateException("Aim/distance lost during shooting burst");
+                }
+                // Start on the first at-speed sample; do not add a delay or re-check RPM
+                // between balls. Keep the gate open through normal flywheel speed dips.
+                if (!burstFeeding && targetOk && robot.readyToShoot()) {
+                    burstFeeding=true;
+                    previousBurstBall=robot.ballPresent;
+                }
+                robot.gateOpen=burstFeeding;
+                // Open the calibrated gate and start both RT-direction motors together.
+                robot.updateManualFeeder(false,burstFeeding ? -Robot.INTAKE_POWER : 0);
             } else {
-                robot.updateFeeder(shoot, shoot ? Robot.INTAKE_POWER : 0);
+                shootingRequested=burstFeeding=previousBurstBall=false;
+                robot.gateOpen=false;
+                // Same forward intake, gate-closed indexing and ball sensor behavior as TeleOp.
+                robot.updateManualFeeder(false,request==Kind.COLLECT ? Robot.INTAKE_POWER : 0);
             }
             robot.updateLed();
         }
         @Override public void stopOutputs() {
             robot.shooterOn=false;
             robot.gateOpen=false;
-            readySince=-1;
+            shootingRequested=burstFeeding=previousBurstBall=false;
             RuntimeException[] first={null};
             attempt(() -> { if (robot.turret!=null) robot.turret.setPower(0); },first);
             attempt(() -> { if (robot.shooter!=null) robot.shooter.setPower(0); },first);

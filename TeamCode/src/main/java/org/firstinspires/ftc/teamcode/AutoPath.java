@@ -140,7 +140,8 @@ public final class AutoPath extends LinearOpMode {
     }
 
     static Path path2() {
-        return curve(POINT_1, POSES.of(40.923, 34.4143, 0), POINT_2).reverseTangent();
+        // Bow toward lower X to give the chassis more clearance past the center frame.
+        return curve(POINT_1, POSES.of(34.923, 34.4143, 0), POINT_2).reverseTangent();
     }
 
     static Path path3() {

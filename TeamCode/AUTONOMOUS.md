@@ -183,6 +183,11 @@ of new progress toward that target for four seconds, the follower stops pushing 
 path 5 from the measured pose. There are no other custom deadlines. Driver Station STOP
 ends the OpMode and zeros the drivetrain.
 
+AutoPath path 2 uses control point (34.923, 34.4143), 6 inches toward lower X from the
+export. Its endpoints and reverse-tangent heading mode are preserved. Sampling the
+measured rectangular footprint against the red HIVE drawing increases the nominal
+minimum horizontal gap from about 2.4 to 4.35 inches. Verify clearance on the field.
+
 This direct route uses (46.7883, 140.2305) as the path-4 **chassis center**. The measured
 footprint extends past the upper field wall there. The first path also requests a
 heading change near the lower wall. Use open space for the raw route or revise those

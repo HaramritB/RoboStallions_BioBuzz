@@ -14,6 +14,7 @@ import com.pedropathing.math.Velocity;
 import com.pedropathing.paths.Path;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
+import org.firstinspires.ftc.teamcode.autonomous.BioBuzzAutoConfig;
 
 import java.util.Collections;
 import java.util.Map;
@@ -34,7 +35,8 @@ public final class AutoPathRegression {
             assertPoint(paths[i].get(1), xy[i + 1][0], xy[i + 1][1]);
         }
         assertHeading(paths[0].heading(0.5), Math.atan2(9.2715 - 9.0657, 9.5657 - 57.6323));
-        assertHeading(paths[1].heading(0), Math.atan2(34.4143 - 9.2715, 40.923 - 9.5657) + Math.PI);
+        assertHeading(paths[1].heading(0), Math.atan2(34.4143 - 9.2715, 34.923 - 9.5657) + Math.PI);
+        checkCenterFrameClearance(paths[1]);
         assertHeading(paths[2].heading(0), 0);
         assertHeading(paths[2].heading(1), Math.PI / 2);
         assertHeading(paths[3].heading(0.5), Math.atan2(140.2305 - 125.3042, 46.7883 - 46.9373));
@@ -42,6 +44,26 @@ public final class AutoPathRegression {
         checkFlowerExit(false);
         checkFlowerExit(true);
         System.out.println("Passed direct route geometry, headings, speed, path-1 pause, FLOWER recovery, and registration checks.");
+    }
+
+    private static void checkCenterFrameClearance(Path path) {
+        double halfLength = BioBuzzAutoConfig.ROBOT_LENGTH_IN / 2;
+        double halfWidth = BioBuzzAutoConfig.ROBOT_WIDTH_IN / 2;
+        double clearance = Double.POSITIVE_INFINITY;
+        for (int i = 0; i <= 1000; i++) {
+            Pose pose = path.get(i / 1000.0);
+            double cos = Math.abs(Math.cos(pose.heading()));
+            double sin = Math.abs(Math.sin(pose.heading()));
+            double extentY = sin * halfLength + cos * halfWidth;
+            // The red HIVE drawing spans Y=50..91.4 and begins at X=46.
+            if (pose.y() + extentY >= 50 && pose.y() - extentY <= 91.4) {
+                double extentX = cos * halfLength + sin * halfWidth;
+                clearance = Math.min(clearance, 46 - pose.x() - extentX);
+            }
+        }
+        if (!Double.isFinite(clearance) || clearance < 4.3) {
+            throw new AssertionError("Path 2 nominal center-frame clearance fell below 4.3 inches: " + clearance);
+        }
     }
 
     private static void checkFlowerExit(boolean stalled) {

@@ -8,7 +8,9 @@ public final class BioBuzzAutoConfig {
     // The team confirmed drivetrain, localization and mechanisms have already been tested.
     // These are not additional approval gates; runtime hardware/sensor checks remain active.
     // Point 4 was clarified to be the intake tip, not the chassis center.
-    public static double INTAKE_TIP_FORWARD_IN = Double.NaN; // Measured center-to-tip reach required.
+    public static final double ROBOT_LENGTH_IN = 427.284 / 25.4;
+    public static final double ROBOT_WIDTH_IN = 448.7 / 25.4;
+    public static double INTAKE_TIP_FORWARD_IN = 213.642 / 25.4; // Team measurement in millimeters, converted to inches.
     public static double INTAKE_TIP_LEFT_IN = 0.0; // Centered intake assumption; adjust if offset left/right.
 
     public static final int PRELOAD_BALL_COUNT = 4;
@@ -63,6 +65,7 @@ public final class BioBuzzAutoConfig {
         BioBuzzAutoMechanisms.Action[] during=actions(false), after=actions(false);
         during[0]=BioBuzzAutoMechanisms.Action.intakeDuringPath(SEGMENT_TIMEOUT_S);
         after[1]=BioBuzzAutoMechanisms.Action.shoot(STAGED_BALL_COUNT, SHOOT_TIMEOUT_S);
+        during[3]=BioBuzzAutoMechanisms.Action.intakeDuringPath(SEGMENT_TIMEOUT_S);
         after[3]=BioBuzzAutoMechanisms.Action.intakeFor(FLOWER_INTAKE_SECONDS, COLLECTION_TIMEOUT_S);
         after[4]=BioBuzzAutoMechanisms.Action.shoot(FLOWER_BALL_COUNT, SHOOT_TIMEOUT_S);
         // No flower lever is mapped or commanded. The user specified intake only.
@@ -79,6 +82,9 @@ public final class BioBuzzAutoConfig {
     public static final double PATH_SPEED_IN_S = 12.0;
     public static final double PATH_SPEED_FRACTION = 0.25;
     public static final double POSITION_TOLERANCE_IN = 2.0;
+    // Turn with enough room for the rectangle's diagonal, arrival tolerance, and a small nominal margin.
+    public static final double PATH1_TURN_Y_IN = Math.hypot(ROBOT_LENGTH_IN, ROBOT_WIDTH_IN)/2
+            + POSITION_TOLERANCE_IN + 0.25;
     public static final double HEADING_TOLERANCE_DEG = 3.0;
     public static final double SETTLED_SPEED_IN_S = 2.0;
     public static final double SETTLED_TURN_DEG_S = 8.0;

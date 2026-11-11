@@ -111,12 +111,14 @@ public final class MechanismIsolationRegression {
         MapFixture burst=new MapFixture();
         BioBuzzAutoMechanisms.RobotHardware firing=new BioBuzzAutoMechanisms.RobotHardware(new TestRobot());
         firing.robot.initMechanismsOnly(burst,false);
-        firing.robot.targetFresh=true; firing.robot.targetVisible=true; firing.robot.targetTx=0; firing.robot.targetDistanceMeters=1.6;
+        firing.robot.targetFresh=true; firing.robot.targetVisible=true; firing.robot.targetTx=0; firing.robot.targetDistanceMeters=1.90;
         firing.robot.ballPresent=true; firing.robot.gateOpen=true;
         java.lang.reflect.Field timer=Robot.class.getDeclaredField("feedTimer"); timer.setAccessible(true);
         ((com.qualcomm.robotcore.util.ElapsedTime)timer.get(firing.robot)).reset();
         firing.control(BioBuzzAutoMechanisms.Kind.SHOOT);
         check(firing.robot.gateOpen,"Existing feed pulse continues through a flywheel RPM dip");
+        check(firing.robot.targetRpm==Robot.rpmForDistance(1.90) && firing.robot.targetRpm!=Robot.TELEOP_DEFAULT_RPM,
+                "Auto shooter uses Limelight distance-based RPM rather than the default");
         firing.robot.targetFresh=false;
         firing.control(BioBuzzAutoMechanisms.Kind.SHOOT);
         check(!firing.robot.gateOpen && burst.motors.get("transmission").power==0

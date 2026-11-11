@@ -1,6 +1,7 @@
 package org.firstinspires.ftc.teamcode.autonomous;
 
 import com.pedropathing.follower.Follower;
+import com.pedropathing.api.PoseFactory;
 import com.pedropathing.ivy.Command;
 import com.pedropathing.ivy.Scheduler;
 import com.pedropathing.ivy.behaviors.EndCondition;
@@ -12,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.LongSupplier;
 
+import static com.pedropathing.api.Paths.line;
 import static com.pedropathing.ivy.commands.Commands.instant;
 import static com.pedropathing.ivy.groups.Groups.sequential;
 import static com.pedropathing.ivy.pedro.PedroCommands.follow;
@@ -56,12 +58,27 @@ public final class BioBuzzAutoRoutine {
         if (plan.beforeFirstPath.kind!=BioBuzzAutoMechanisms.Kind.NONE) {
             steps.add(stationaryAction(plan.beforeFirstPath,paths.startPose,"Shoot preloads before path 1"));
         }
+        boolean movementOnly=plan.movementOnly();
+        Pose pathOneEntry=paths.start(1);
+        if (Math.abs(BioBuzzAutoConfig.headingErrorDegrees(pathOneEntry,paths.startPose))>1e-6) {
+            PoseFactory poses=PoseFactory.degrees();
+            double turnY=Math.max(paths.startPose.y(), BioBuzzAutoConfig.PATH1_TURN_Y_IN);
+            Pose awayFromWall=poses.of(paths.startPose.x(),turnY,Math.toDegrees(paths.startPose.heading()));
+            Pose aligned=poses.of(pathOneEntry.x(),turnY,Math.toDegrees(pathOneEntry.heading()));
+            boolean needsInwardMove=turnY>paths.startPose.y();
+            if (needsInwardMove) {
+                steps.add(movement(constrain(line(paths.startPose,awayFromWall).constant(paths.startPose),movementOnly),
+                        paths.startPose,awayFromWall,"Move inward before path 1"));
+            }
+            steps.add(movement(null,awayFromWall,aligned,"Align with straight pickup line"));
+            if (needsInwardMove) {
+                steps.add(movement(constrain(line(aligned,pathOneEntry).constant(pathOneEntry),movementOnly),
+                        aligned,pathOneEntry,"Return to path 1 entry"));
+            }
+        }
         for (int i=1;i<=pathCount;i++) {
             if (paths.turnBefore(i)) steps.add(movement(null,paths.end(i-1),paths.start(i),"Turn before path " + i));
-            Path path=paths.path(i).with(
-                    Constants.foresightConfig.maxVelocityConstraint.at(plan.movementOnly() ? BioBuzzAutoConfig.PATH_SPEED_IN_S : Constants.foresightConfig.maxVelocityConstraint.get()),
-                    Constants.foresightConfig.maxPathSpeed.at(plan.movementOnly() ? BioBuzzAutoConfig.PATH_SPEED_FRACTION : Constants.foresightConfig.maxPathSpeed.get()),
-                    Constants.foresightConfig.pathSkip.at(false));
+            Path path=constrain(paths.path(i),movementOnly);
             steps.add(movement(path,paths.start(i),paths.end(i),"Path " + i,plan.duringPath[i-1]));
             if (plan.afterPath[i-1].kind!=BioBuzzAutoMechanisms.Kind.NONE) {
                 steps.add(stationaryAction(plan.afterPath[i-1],paths.end(i),"After path " + i));
@@ -74,6 +91,15 @@ public final class BioBuzzAutoRoutine {
             }
         }));
         command=sequential(steps.toArray(new Command[0]));
+    }
+
+    private static Path constrain(Path path, boolean movementOnly) {
+        return path.with(
+                Constants.foresightConfig.maxVelocityConstraint.at(movementOnly
+                        ? BioBuzzAutoConfig.PATH_SPEED_IN_S : Constants.foresightConfig.maxVelocityConstraint.get()),
+                Constants.foresightConfig.maxPathSpeed.at(movementOnly
+                        ? BioBuzzAutoConfig.PATH_SPEED_FRACTION : Constants.foresightConfig.maxPathSpeed.get()),
+                Constants.foresightConfig.pathSkip.at(false));
     }
 
     /** Schedule at most once; test and full route share the same lifecycle. */

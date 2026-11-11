@@ -111,7 +111,7 @@ public class BioBuzzAuto extends OpMode {
 
     private void configurePaths() {
         paths = selectedPaths>=4 ? new BioBuzzAutoPaths(BioBuzzAutoConfig.INTAKE_TIP_FORWARD_IN,
-                BioBuzzAutoConfig.INTAKE_TIP_LEFT_IN) : new BioBuzzAutoPaths();
+                BioBuzzAutoConfig.INTAKE_TIP_LEFT_IN, true) : new BioBuzzAutoPaths(0, 0, true);
     }
 
     @Override

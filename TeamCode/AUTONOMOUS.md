@@ -10,29 +10,23 @@ The team confirmed that drivetrain, localization and mechanisms are tested; stal
 approval flags were removed. INIT initializes hardware without driving; START schedules once.
 Live hardware, localization, arrival, timeout, failure and Stop protections remain.
 
-**One physical input is still missing:** the team clarified that visualizer point 4 is the
-intake tip pushing into FLOWER, not robot center. Set INTAKE_TIP_FORWARD_IN to the measured
-forward distance from robot center to intake tip, in inches. INTAKE_TIP_LEFT_IN defaults to
-0 for a centered intake; set the measured lateral offset if it is not centered (left positive).
-The forward measurement is deliberately NaN until supplied. Paths 4/5 cannot START without it;
-this is a required coordinate conversion, not another component-test approval.
-
-No hardware dimensions or intake reach were invented. The source JSON is unchanged. Runtime
-geometry subtracts the rotated intake offset from point 4 to obtain chassis center, retaining
-its heading, and uses that identical center for the beginning of path 5. Other waypoints and
-control points are preserved. Telemetry shows both the source interpretation and computed center.
-Physical clearance must be checked on the actual robot; this conversion does not certify it.
-No robot deployment or motor activation was performed from the development environment.
+The team measured 427.284 mm from the back to the front of the intake guard, 448.7 mm
+side to side, and 213.642 mm from the tracked center to the intake tip. The runtime offset
+is 8.411102 inches forward with the centered-intake assumption of zero lateral offset.
+This places the FLOWER chassis center at (46.872269, 131.819817) inches, heading 90.572°.
+Path 5 starts at that same pose. The original visualizer JSON remains the route source.
 
 ## Confirmed routine
 
 1. After START, hold the starting pose and shoot **4 preloaded balls before path 1**.
-2. Drive path 1 with intake active to attempt pickup of the staged balls. Keep intake running
+   Move inward to y = 14.447 in, turn to 179.7546°, then return to the original path-1
+   entry XY at that heading. This places the rotation away from the lower wall.
+2. Drive the original straight path 1 at 179.7546° with intake active. Keep intake running
    until settled path arrival, then stop intake and begin path 2. No stored-ball measurement,
    presence transition or inventory target is used to decide when collection finishes.
 3. Drive path 2, hold its endpoint and shoot **4 balls**.
 4. Hold that position while turning from **-84.7123 to 0 degrees**; verify settling.
-5. Drive path 3 (approach), then path 4; hold position and run intake for
+5. Drive path 3, run intake during the path-4 approach, then hold position with intake for
    FLOWER_INTAKE_SECONDS at FLOWER. The initial test window is **2.0 seconds**, configurable
    and not physically tuned. Finish the timed attempt without claiming four stored balls.
 6. Drive path 5; hold its endpoint, shoot **4 balls**, then stop all outputs.
@@ -77,12 +71,16 @@ COUNTED_COLLECTION_VALIDATED approval gate have been removed, rather than marked
 
 Path 1 owns intake lifetime: drive and intake together, stop intake at verified arrival, then
 start path 2. A stalled/interrupted path, invalid localization, timeout or FTC Stop still stops
-both controllers and blocks further autonomous actions. The FLOWER action runs intake while
+both controllers and blocks further autonomous actions. The FLOWER action runs intake during path 4 and while
 holding the waypoint for FLOWER_INTAKE_SECONDS (initial test value 2.0 s), with a separate
 10-second hard timeout. Timed intake stops outputs before the first control update at/after
 the duration; a delay is an intake attempt, not proof of inventory. No FLOWER lever is used.
 
-Ball sensing remains in the existing feeder/shooting interfaces. Shooting still requests four
+Intake calls the same Robot.updateManualFeeder method as TeleOp's forward intake, with the
+calibrated gate closed. The transmission indexes until the feeder sensor sees a ball and the
+intake continues running. Auto reads Limelight through Robot.updateMechanismSensors, uses
+Robot.aimTurret for target tracking and Robot.distanceBasedShooterRpm for flywheel speed.
+Pinpoint supplies the chassis pose. Ball sensing remains in the feeder/shooting interfaces. Shooting still requests four
 shots and requires its existing readiness and shot-clear verification. If fewer balls were
 acquired and four shots cannot be verified, the bounded shooting timeout fails the routine;
 this update changes intake completion, not the shooting failure policy. Verify pickup yield
@@ -133,22 +131,25 @@ Setting the pose in software does not verify the physical starting location.
 | Path 4 | Previous end -> (46.7883,140.2305,90.572) | Line, linear heading |
 | Path 5 | Previous end -> (38.0943,127.3583,-66.9637) | Quadratic control (45.4429,110.0765), linear heading |
 
-These are the raw exported route inputs, not measured chassis clearance. Point 4's listed
-coordinates now refer to the intake tip; the robot-center endpoint is computed from its offset. Path 4's center ends inside
-Scoring-Side FLOWER, 1.2695 in below the supplied 141.5-inch reference boundary; path 5 starts
-inside FLOWER. Intended intake contact does not approve center penetration. Measure footprint
-and intake reach, then approve an approach outside solid geometry. For vertical half extent at
-heading h use abs(sin(h))*length/2 + abs(cos(h))*width/2, plus a measured margin. No numeric
-correction is invented and source geometry is preserved. The sampled audit is not a continuous
-collision proof.
+The table records the raw visualizer export. Runtime path 1 retains its straight XY line at
+a constant 179.7546° after the inward alignment. The original heading change on that line
+put the measured rectangular envelope about 3.03 in past the lower wall. The inward turn
+location accounts for the footprint half-diagonal, the 2-inch position tolerance, and a
+0.25-inch nominal margin. Path 2 already travels backward and inward from the pickup endpoint.
+
+Sampling the five corrected segments with the measured 16.8222 × 17.6654 in envelope found
+no field-boundary intersection. The straight pickup line has about 0.20 in minimum nominal
+lower-wall clearance. The rectangle overlaps the Scoring-Side FLOWER during approach and
+departure, where the measured length includes the intake guard. Physical contact geometry,
+tracking error and full-run timing require a robot trial. The checked-in audit is the raw
+export audit, with the measured offset and heading alignment applied at runtime.
 
 ## Full autonomous: BioBuzz Pedro Auto
 
 The OpMode is enabled and default INIT selection is FULL ROUTE, all five paths with mechanisms.
-Supply INTAKE_TIP_FORWARD_IN before full-route START; use actual center-to-tip inches, not a
-wheelbase, robot length, or guessed visualizer default. A lateral intake offset, if present,
-must be entered in INTAKE_TIP_LEFT_IN. Component approval, footprint/hash approval and counted
-inventory booleans no longer prevent execution. Unknown reach is reported precisely in telemetry.
+The measured INTAKE_TIP_FORWARD_IN is already configured. INIT reports the corrected center
+and runs live hardware and localization checks. Set INTAKE_TIP_LEFT_IN if the intake mouth has
+a lateral offset from center, with positive values toward the robot's left.
 
 A/B chooses BLUE/RED targeting during INIT. Place the robot at (57.6323,9.0657), facing +Y (90°),
 load four preloads, verify live readiness/targeting, then START. The routine shoots preloads,
@@ -158,9 +159,8 @@ fails its existing bounded verification, as documented above.
 
 Y toggles FULL ROUTE vs a first-path movement-only test. D-pad +/- selects controlled first N
 movement-only paths; N>=3 includes the turn. First-N tests omit all mechanisms and retain the
-slow path policy. First 1..3 paths need no FLOWER coordinate conversion. INIT prepares the
-follower even if the full-route reach is missing, so switching to those tests works without
-reinitializing hardware. Tests including paths 4/5 use the measured correction too.
+slow path policy. The controlled path-1 test includes the same inward alignment. Tests including paths 4/5 use
+the measured FLOWER correction.
 
 Each waypoint requires <=2 in position error, <=3 deg heading error, <=2 in/s speed and
 <=8 deg/s turn rate, sustained .20 s. Path deadlines 15 s, turn 5 s, whole run 27 s. Full scoring retains the speed constraints
@@ -209,9 +209,10 @@ All Java paths below begin TeamCode/src/main/java/org/firstinspires/ftc/teamcode
 
 ## Validation of this update
 
-Current validation runs on the macOS checkout with actual cached FTC SDK 12.0.0,
-PedroPathing 3.0.2 and Ivy 1.1.1 Maven binaries. Android debug packaging passed. This supersedes
-the prior Linux environment's network/build limitations.
+The measured update passed source/API compilation and the hardware-free Java and route tests
+using official FTC 12.0.0 AARs, the Android API 30 jar and tagged PedroPathing 3.0.2/Ivy 1.1.1
+sources. The previous 06db929 revision built on macOS. The current Linux wrapper attempt
+stopped while downloading Gradle because Java reported network unreachable.
 
 ```sh
 python3 TeamCode/tests/run_robot_controls.py
@@ -225,7 +226,7 @@ python3 -m unittest discover -s TeamCode/tests -p test_route_source.py -v
 git diff --check
 ```
 
-Current build command:
+Build command for the configured macOS Gradle cache:
 
 ```sh
 GRADLE_USER_HOME=/tmp/biobuzz-gradle-home \
@@ -233,25 +234,24 @@ JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' \
 ./gradlew :TeamCode:assembleDebug :TeamCode:testDebugUnitTest --offline --no-daemon
 ```
 
-Synthetic test offsets verify forward/lateral coordinate transforms and exact path-4/path-5
-continuity. They are not BioBuzz measurements. Lifecycle tests cover enabled registration,
+Geometry tests verify the measured FLOWER center, path-4/path-5 continuity, straight pickup
+line and the alignment maneuver before path 1. Lifecycle tests cover enabled registration,
 full-route default, no INIT movement, missing-reach failure, controlled test selection and
-full scoring START with a synthetic reach and recording hardware.
+full scoring START with the measured reach and recording hardware.
 
 | Check | Result |
 | --- | --- |
 | Main gate/robot controls | 82 checks PASS (previous stale missing-member suite now fixed by main integration) |
 | Main turret tracking | 65 checks PASS |
-| Autonomous sequence/navigation/mechanisms | 148 checks PASS |
-| Mechanism isolation/cleanup/heading ownership | 29 checks PASS |
+| Autonomous sequence/navigation/mechanisms | 161 checks PASS |
+| Mechanism isolation/cleanup/heading ownership | 30 checks PASS |
 | Full route OpMode lifecycle | 13 checks PASS |
 | Stationary mechanism test lifecycle | 10 checks PASS |
 | Route-source/audit generation | 8 tests PASS; route unchanged |
 | Changed Java API compilation | PASS against real FTC AARs, Android jar and tagged Pedro/Ivy sources |
-| Current macOS Android assembleDebug | BUILD SUCCESSFUL, including Java compilation/dex/APK packaging |
-| Gradle testDebugUnitTest | NO-SOURCE; custom Java/Python harnesses above execute the checks |
+| Current assembleDebug | Gradle download blocked by network access before packaging |
+| Prior macOS assembleDebug at 06db929 | BUILD SUCCESSFUL, including APK packaging |
 | Physical robot tests/deployment | NOT PERFORMED |
 
-No dependency version or robot tuning change was made to hide environment failures. Build this
-branch in the team's configured Android Studio environment before installing. The team reports the components are tested. Supply the measured intake-tip reach, then verify
-corrected path clearance and the complete routine timing on the robot.
+Build PradhyunAuto in Android Studio before installing. Verify the corrected route and complete
+routine timing on the robot.

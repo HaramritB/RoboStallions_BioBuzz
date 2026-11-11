@@ -60,8 +60,13 @@ public final class AutoLifecycleRegression {
         check((int)field(auto,"selectedPaths")==2 && !(boolean)field(auto,"fullRoute"),"INIT can select controlled first N test");
         auto.gamepad1.y=false; edges(auto.gamepad1); auto.gamepad1.y=true; edges(auto.gamepad1); auto.init_loop();
         check((int)field(auto,"selectedPaths")==5 && (boolean)field(auto,"fullRoute"),"Full operation is explicitly distinct from test mode");
-        auto.start(); auto.start(); auto.loop();
-        check((boolean)field(auto,"safeStopRequested") && field(auto,"routine")==null,"START waits for required FLOWER tip offset, without scheduling movement");
+        double measuredReach=BioBuzzAutoConfig.INTAKE_TIP_FORWARD_IN;
+        try {
+            BioBuzzAutoConfig.INTAKE_TIP_FORWARD_IN=Double.NaN;
+            auto.start(); auto.start(); auto.loop();
+            check((boolean)field(auto,"safeStopRequested") && field(auto,"routine")==null,
+                    "Missing FLOWER offset prevents START without scheduling movement");
+        } finally { BioBuzzAutoConfig.INTAKE_TIP_FORWARD_IN=measuredReach; }
         auto.stop();
         BioBuzzAutoRegression.Mech hardware=new BioBuzzAutoRegression.Mech();
         field(auto,"mechanisms",new BioBuzzAutoMechanisms(hardware));
@@ -75,16 +80,14 @@ public final class AutoLifecycleRegression {
         check(auto.tracking.followed==1,"Controlled movement can START once with tested components; no blanket geometry approval flags");
         check(telemetryUpdates[0]>0,"Real FTC telemetry is published");
         auto.stop(); Scheduler.reset();
-        double oldReach=BioBuzzAutoConfig.INTAKE_TIP_FORWARD_IN;
         try {
-            BioBuzzAutoConfig.INTAKE_TIP_FORWARD_IN=12; // Synthetic test offset, not a robot measurement.
             auto.init(); auto.init_loop(); auto.start(); auto.start(); auto.loop();
             check(field(auto,"routine")!=null && !((BioBuzzAutoRoutine)field(auto,"routine")).failed()
                     && (boolean)field(auto,"fullRoute"),"Full scoring START proceeds when measured offset is supplied");
             check(auto.tracking.followed==0 && auto.mechanismPort.request==BioBuzzAutoMechanisms.Kind.SHOOT,
                     "Default full mode shoots preloads before any path movement");
             auto.stop();
-        } finally { BioBuzzAutoConfig.INTAKE_TIP_FORWARD_IN=oldReach; Scheduler.reset(); }
+        } finally { Scheduler.reset(); }
         System.out.println("Passed " + checks + " iterative OpMode lifecycle checks.");
     }
 }

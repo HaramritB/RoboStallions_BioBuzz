@@ -131,7 +131,12 @@ public final class BioBuzzAutoPaths {
 
     public final Pose flowerTipPose;
     public BioBuzzAutoPaths() { this(0, 0); } // Raw source geometry for inspection/generation.
-    public BioBuzzAutoPaths(double forwardIn, double leftIn) {
+    public BioBuzzAutoPaths(double forwardIn, double leftIn) { this(forwardIn, leftIn, false); }
+    public BioBuzzAutoPaths(double forwardIn, double leftIn, boolean alignPathOne) {
+        if (alignPathOne) {
+            // The routine aligns away from the wall before returning to this entry pose.
+            starts[0]=P.of(startPose.x(),startPose.y(),Math.toDegrees(ends[0].heading()));
+        }
         if (!Double.isFinite(forwardIn) || forwardIn<0 || !Double.isFinite(leftIn)) {
             throw new IllegalArgumentException("Invalid measured intake offset");
         }

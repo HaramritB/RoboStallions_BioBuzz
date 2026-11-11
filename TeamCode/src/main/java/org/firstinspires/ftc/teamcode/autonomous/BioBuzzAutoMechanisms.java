@@ -269,7 +269,12 @@ public final class BioBuzzAutoMechanisms {
             boolean shoot=targetOk && (robot.gateOpen || (readySince>=0
                     && (now-readySince)/1e9>=BioBuzzAutoConfig.SETTLE_TIME_S));
             if (!shoot) robot.gateOpen=false;
-            robot.updateFeeder(shoot,(request==Kind.COLLECT || shoot) ? Robot.INTAKE_POWER : 0);
+            if (request==Kind.COLLECT) {
+                // Same forward intake, gate-closed indexing and ball sensor behavior as TeleOp.
+                robot.updateManualFeeder(false, Robot.INTAKE_POWER);
+            } else {
+                robot.updateFeeder(shoot, shoot ? Robot.INTAKE_POWER : 0);
+            }
             robot.updateLed();
         }
         @Override public void stopOutputs() {

@@ -69,7 +69,7 @@ public final class BioBuzzAutoRegression {
         return a;
     }
     static final class Fixture {
-        final BioBuzzAutoPaths paths=new BioBuzzAutoPaths();
+        final BioBuzzAutoPaths paths;
         final Navigation nav=new Navigation();
         final Drive drive=new Drive();
         final Tracking follower=new Tracking(nav,drive);
@@ -79,10 +79,13 @@ public final class BioBuzzAutoRegression {
         final BioBuzzAutoRoutine routine;
         Fixture(int count) { this(count,none()); }
         Fixture(int count,BioBuzzAutoMechanisms.Action[] actions) {
+            paths=new BioBuzzAutoPaths();
             Scheduler.reset(); mechanisms.observe();
             routine=new BioBuzzAutoRoutine(follower,paths,count,mechanisms,actions,()->now[0]);
         }
-        Fixture(BioBuzzAutoConfig.Plan plan) {
+        Fixture(BioBuzzAutoConfig.Plan plan) { this(plan,new BioBuzzAutoPaths()); }
+        Fixture(BioBuzzAutoConfig.Plan plan,BioBuzzAutoPaths paths) {
+            this.paths=paths;
             Scheduler.reset(); hardware.ball=true; mechanisms.observe();
             routine=new BioBuzzAutoRoutine(follower,paths,5,mechanisms,plan,()->now[0]);
         }
@@ -97,7 +100,7 @@ public final class BioBuzzAutoRegression {
     public static void main(String[] args) {
         check(!BioBuzzAuto.class.isAnnotationPresent(Disabled.class),"Full autonomous is registered and enabled");
         check(BioBuzzAutoConfig.blockers(1,false).isEmpty(),"Tested components do not have stale approval gates");
-        check(BioBuzzAutoConfig.blockers(5,true).contains("INTAKE_TIP_FORWARD_IN"),"Missing tip-to-center offset is identified precisely");
+        check(BioBuzzAutoConfig.blockers(5,true).isEmpty(),"Team-measured intake reach allows full route");
         check(BioBuzzAutoConfig.hasMechanismActions(),"Full route includes user-confirmed mechanism mapping");
         check(!BioBuzzAutoConfig.blockers(5,true).toLowerCase().contains("inventory"),"No stored-ball inventory approval blocks full route");
         check(BioBuzzAutoConfig.PRELOAD_BALL_COUNT==4 && BioBuzzAutoConfig.STAGED_BALL_COUNT==4
@@ -188,6 +191,7 @@ public final class BioBuzzAutoRegression {
         checkFreshSampleGuard();
         mechanismCommands();
         scoringSequence();
+        straightPickupAlignment();
         Scheduler.reset();
         System.out.println("Passed " + checks + " integrated autonomous regression checks.");
     }
@@ -280,8 +284,12 @@ public final class BioBuzzAutoRegression {
         check(run.routine.stage()==BioBuzzAutoRoutine.Stage.TURNING,"Turn waits for all four path-2 shots");
         run.arrive(run.paths.start(3)); run.arrive(run.paths.end(3));
         check(run.follower.followed==4 && run.hardware.request==BioBuzzAutoMechanisms.Kind.NONE,"No invented action at path 3");
+        run.tick();
+        check(run.hardware.request==BioBuzzAutoMechanisms.Kind.COLLECT
+                && run.routine.stage()==BioBuzzAutoRoutine.Stage.DRIVING_AND_COLLECTING,
+                "FLOWER rollers run during path 4 approach");
         run.arrive(run.paths.end(4)); run.tick();
-        check(run.hardware.request==BioBuzzAutoMechanisms.Kind.COLLECT,"Intake-only FLOWER pickup after path 4");
+        check(run.hardware.request==BioBuzzAutoMechanisms.Kind.COLLECT,"Intake continues while holding the FLOWER waypoint");
         run.hardware.ball=false; run.advance(BioBuzzAutoConfig.FLOWER_INTAKE_SECONDS-.1);
         check(run.follower.followed==4 && run.hardware.request==BioBuzzAutoMechanisms.Kind.COLLECT,"FLOWER intake waits for its duration");
         run.advance(.11);
@@ -320,5 +328,39 @@ public final class BioBuzzAutoRegression {
         catch (IllegalArgumentException expected) { check(true,"Reject nonfinite intake duration"); }
         try { BioBuzzAutoMechanisms.Action.intakeFor(5,4); throw new AssertionError("Window exceeds deadline"); }
         catch (IllegalArgumentException expected) { check(true,"Reject intake window beyond timeout"); }
+    }
+    static void straightPickupAlignment() {
+        BioBuzzAutoPaths paths=new BioBuzzAutoPaths(BioBuzzAutoConfig.INTAKE_TIP_FORWARD_IN,0,true);
+        Pose entry=paths.start(1), end=paths.end(1), center=paths.end(4);
+        near(center,P.of(46.8722690231,131.8198167846,90.572),"Measured FLOWER center");
+        near(paths.start(5),center,"Measured path 5 departure matches FLOWER arrival");
+        double halfLength=BioBuzzAutoConfig.ROBOT_LENGTH_IN/2;
+        double halfWidth=BioBuzzAutoConfig.ROBOT_WIDTH_IN/2;
+        for (int i=0;i<=1000;i++) {
+            Pose sample=paths.path(1).get(i/1000.0);
+            double cross=(sample.x()-entry.x())*(end.y()-entry.y())-(sample.y()-entry.y())*(end.x()-entry.x());
+            double extent=Math.abs(Math.sin(sample.heading()))*halfLength+Math.abs(Math.cos(sample.heading()))*halfWidth;
+            if (Math.abs(cross)>1e-7 || sample.y()<extent
+                    || Math.abs(BioBuzzAutoConfig.headingErrorDegrees(sample,end))>1e-7) {
+                throw new AssertionError("Path 1 must stay straight, aligned and inside the lower wall");
+            }
+        }
+        check(true,"Measured rectangular footprint clears lower wall throughout straight path 1");
+        check(BioBuzzAutoConfig.PATH1_TURN_Y_IN-Math.hypot(halfLength,halfWidth)>BioBuzzAutoConfig.POSITION_TOLERANCE_IN,
+                "Inward turn clears the measured diagonal plus arrival tolerance");
+        Fixture run=new Fixture(BioBuzzAutoConfig.scoringPlan(),paths);
+        run.start(); volley(run); run.tick();
+        check(run.follower.followed==1 && run.hardware.request==BioBuzzAutoMechanisms.Kind.NONE,
+                "After shooting, move inward before alignment or intake");
+        double turnY=BioBuzzAutoConfig.PATH1_TURN_Y_IN;
+        run.arrive(P.of(entry.x(),turnY,Math.toDegrees(paths.startPose.heading())));
+        check(run.routine.stage()==BioBuzzAutoRoutine.Stage.TURNING,"Turn only after inward movement settles");
+        run.arrive(P.of(entry.x(),turnY,Math.toDegrees(entry.heading())));
+        check(run.follower.followed==2 && run.hardware.request==BioBuzzAutoMechanisms.Kind.NONE,
+                "Return to entry at aligned heading before intake");
+        run.arrive(entry); run.tick();
+        check(run.follower.followed==3 && run.hardware.request==BioBuzzAutoMechanisms.Kind.COLLECT,
+                "Intake starts with the original straight pickup line");
+        run.routine.stop();
     }
 }

@@ -151,8 +151,8 @@ public final class AutoPathMechanismRegression {
         try {
             f.toSecondShotApproach();
             f.arrive(); f.drain();
-            check(f.lever.position==FlowerLever.DEPLOYED_POSITION && f.lever.pwm && FlowerLever.DEPLOYED_POSITION==0.41,
-                    "Deploy the flower to ON=0.41 on arrival at the 2nd shooting spot");
+            check(f.lever.position==0.15 && f.lever.pwm,
+                    "Deploy the flower to ON=0.15 on arrival at the 2nd shooting spot");
             f.volley();
             check(f.follower.pathsStarted==5 && f.follower.idle(),"An early volley cannot shorten the four-second path-5 stop");
             f.advance(4-BioBuzzAutoConfig.SHOOT_BURST_SECONDS-.211);

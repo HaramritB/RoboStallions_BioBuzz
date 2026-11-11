@@ -15,7 +15,7 @@ use the measured defaults; loading them sends no position command during INIT.
 The configured gate servo remains named `torqueservo1`.
 
 In both competition TeleOps, **gamepad 2 right bumper** toggles the flower lever
-**ON=0.41 / OFF=0.095** using the Servo named **`flower`**. It moves to OFF at
+**ON=0.15 / OFF=0.095** using the Servo named **`flower`**. It moves to OFF at
 START, holds its position with PWM enabled while TeleOp runs, and displays its
 commanded state. No flower position is commanded during INIT. These measured
 values are fixed TeleOp constants; calibration preferences do not override them.

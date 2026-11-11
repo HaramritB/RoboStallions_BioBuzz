@@ -77,7 +77,7 @@ the stationary burst. No fixed 4000 RPM/color-based shooting target replaces the
 AutoPath maps the `flower` servo without moving it in INIT and retracts it at START. It stays
 OFF through the end of path 5, deploys at the second shooting spot,
 and stays ON through volley 2, paths 6–8 and the final volley. Only the end of the OpMode,
-STOP or a failure retracts it. FlowerLever shares TeleOp's ON=0.41/OFF=0.095 positions and
+STOP or a failure retracts it. FlowerLever shares TeleOp's ON=0.15/OFF=0.095 positions and
 PWM-enable/restore behavior. AutoPath (Drive Only) never maps or commands it.
 
 Scoring needs intake, transmission, turret, shooter, torqueservo1, **flower**, a working Limelight and

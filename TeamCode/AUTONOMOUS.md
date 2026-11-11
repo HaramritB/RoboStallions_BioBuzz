@@ -177,16 +177,19 @@ power, and cancels scheduler commands before reset.
 It applies the supplied tangent, reverse tangent, and linear heading interpolations.
 Pedro caps the modeled travel speed on all five paths at 70 percent. At the end of
 path 1, Pedro's endpoint signal or a Pinpoint pose within 3 inches starts a one-second
-pause with the drivetrain stopped. Path 2 then starts automatically. If path 4 reaches
+pause with the drivetrain stopped. Path 2 then starts automatically. At the end of
+path 2, the drivetrain stops for four seconds. Path 3 starts at the path-2 endpoint
+with the same heading, then blends to its original end heading. If path 4 reaches
 within 1 inch of its target, path 5 starts as drawn. If the robot makes less than 0.25 inch
 of new progress toward that target for four seconds, the follower stops pushing and starts
 path 5 from the measured pose. There are no other custom deadlines. Driver Station STOP
 ends the OpMode and zeros the drivetrain.
 
-AutoPath path 2 uses control point (34.923, 34.4143), 6 inches toward lower X from the
-export. Its endpoints and reverse-tangent heading mode are preserved. Sampling the
-measured rectangular footprint against the red HIVE drawing increases the nominal
-minimum horizontal gap from about 2.4 to 4.35 inches. Verify clearance on the field.
+AutoPath path 2 retains the wider curve around the center frame and stops about
+4.7 inches earlier at (32.4082, 122.9979). The shortened quadratic uses control point
+(34.2837, 33.7804) and reverse-tangent heading. The measured rectangular chassis
+footprint has about 8 inches of modeled clearance to the nearest FLOWER edge at the
+new endpoint. Verify clearance on the field.
 
 This direct route uses (46.7883, 140.2305) as the path-4 **chassis center**. The measured
 footprint extends past the upper field wall there. The first path also requests a

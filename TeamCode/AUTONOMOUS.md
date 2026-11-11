@@ -175,7 +175,9 @@ power, and cancels scheduler commands before reset.
 
 **AutoPath** runs the five pasted Java paths in order using Pedro's follower and Pinpoint.
 It applies the supplied tangent, reverse tangent, and linear heading interpolations.
-Pedro caps the modeled travel speed on all five paths at 70 percent. If path 4 reaches
+Pedro caps the modeled travel speed on all five paths at 70 percent. At the end of
+path 1, Pedro's endpoint signal or a Pinpoint pose within 3 inches starts a one-second
+pause with the drivetrain stopped. Path 2 then starts automatically. If path 4 reaches
 within 1 inch of its target, path 5 starts as drawn. If the robot makes less than 0.25 inch
 of new progress toward that target for four seconds, the follower stops pushing and starts
 path 5 from the measured pose. There are no other custom deadlines. Driver Station STOP

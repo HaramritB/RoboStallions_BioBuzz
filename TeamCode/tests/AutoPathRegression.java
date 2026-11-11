@@ -41,7 +41,7 @@ public final class AutoPathRegression {
         assertHeading(paths[4].heading(1), Math.atan2(127.3583 - 110.0765, 38.0943 - 45.4429) + Math.PI);
         checkFlowerExit(false);
         checkFlowerExit(true);
-        System.out.println("Passed direct route geometry, headings, speed, FLOWER recovery, and registration checks.");
+        System.out.println("Passed direct route geometry, headings, speed, path-1 pause, FLOWER recovery, and registration checks.");
     }
 
     private static void checkFlowerExit(boolean stalled) {
@@ -55,7 +55,26 @@ public final class AutoPathRegression {
         Scheduler.reset();
         try {
             Scheduler.schedule(route);
-            for (int step = 1; step <= 3; step++) {
+            assertStep(follower, 1);
+            now[0] += 2_000_000_000L;
+            Scheduler.execute();
+            assertStep(follower, 1); // Travel time alone must not trigger the pause.
+            navigation.setPose(stalled
+                    ? poses.of(12.0657, 9.2715, 179.7546)
+                    : follower.currentPath().endPose());
+            follower.atEnd = !stalled;
+            int stopsBeforePause = drive.stops;
+            Scheduler.execute();
+            if (!follower.idle() || drive.stops <= stopsBeforePause) {
+                throw new AssertionError("Path-1 pause must start with the drivetrain stopped");
+            }
+            now[0] += 999_000_000L;
+            Scheduler.execute();
+            if (follower.pathsStarted != 1) throw new AssertionError("Path 2 must wait one full second");
+            now[0] += 1_000_000L;
+            Scheduler.execute();
+
+            for (int step = 2; step <= 3; step++) {
                 assertStep(follower, step);
                 navigation.setPose(follower.currentPath().endPose());
                 follower.atEnd = true;

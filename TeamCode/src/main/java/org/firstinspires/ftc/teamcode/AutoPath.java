@@ -21,6 +21,8 @@ import static com.pedropathing.ivy.pedro.PedroCommands.follow;
 @Autonomous(name = "AutoPath", group = "Autonomous")
 public final class AutoPath extends LinearOpMode {
     private static final double SPEED_FRACTION = 0.70;
+    private static final double PATH_1_ARRIVAL_IN = 3.0;
+    private static final long PATH_1_PAUSE_NS = 1_000_000_000L;
     private static final double FLOWER_ARRIVAL_IN = 1.0;
     private static final double FLOWER_PROGRESS_IN = 0.25;
     private static final long FLOWER_STALL_NS = 4_000_000_000L;
@@ -64,8 +66,7 @@ public final class AutoPath extends LinearOpMode {
                 Scheduler.cancel(route);
             } finally {
                 Scheduler.reset();
-                follower.stop();
-                follower.drivetrain.stop();
+                stopDrive(follower);
             }
         }
     }
@@ -73,8 +74,15 @@ public final class AutoPath extends LinearOpMode {
     static Command route(Follower follower, LongSupplier clock) {
         FlowerApproach flower = new FlowerApproach();
         Path approach = atRouteSpeed(path4());
+        long[] pauseStarted = {0};
         return sequential(
-                follow(follower, atRouteSpeed(path1())),
+                follow(follower, atRouteSpeed(path1())).setDone(() ->
+                        follower.atParametricEnd() || follower.holding()
+                                || follower.pose().distance(POINT_1) <= PATH_1_ARRIVAL_IN),
+                Command.build().setStart(() -> {
+                    stopDrive(follower);
+                    pauseStarted[0] = clock.getAsLong();
+                }).setDone(() -> clock.getAsLong() - pauseStarted[0] >= PATH_1_PAUSE_NS),
                 follow(follower, atRouteSpeed(path2())),
                 follow(follower, atRouteSpeed(path3())),
                 Command.build().setStart(() -> {
@@ -86,6 +94,14 @@ public final class AutoPath extends LinearOpMode {
 
     private static Path atRouteSpeed(Path path) {
         return path.with(Constants.foresightConfig.maxPathSpeed.at(SPEED_FRACTION));
+    }
+
+    private static void stopDrive(Follower follower) {
+        try {
+            follower.stop();
+        } finally {
+            follower.drivetrain.stop();
+        }
     }
 
     private static final class FlowerApproach {
@@ -114,8 +130,7 @@ public final class AutoPath extends LinearOpMode {
 
             // Rebase the exit so Pedro can back away without chasing the blocked endpoint.
             departure = pose;
-            follower.stop();
-            follower.drivetrain.stop();
+            stopDrive(follower);
             return true;
         }
     }

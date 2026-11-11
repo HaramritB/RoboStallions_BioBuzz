@@ -1,9 +1,22 @@
 package org.firstinspires.ftc.teamcode;
 
+import com.pedropathing.algorithm.Foresight;
+import com.pedropathing.api.PoseFactory;
+import com.pedropathing.drivetrain.DrivePowers;
+import com.pedropathing.drivetrain.Drivetrain;
+import com.pedropathing.follower.Follower;
+import com.pedropathing.ivy.Command;
+import com.pedropathing.ivy.Scheduler;
+import com.pedropathing.localization.Localizer;
+import com.pedropathing.localization.MotionState;
 import com.pedropathing.math.Pose;
+import com.pedropathing.math.Velocity;
 import com.pedropathing.paths.Path;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
+
+import java.util.Collections;
+import java.util.Map;
 
 /** Checks the direct visualizer route against its exported geometry and heading modes. */
 public final class AutoPathRegression {
@@ -26,7 +39,110 @@ public final class AutoPathRegression {
         assertHeading(paths[2].heading(1), Math.PI / 2);
         assertHeading(paths[3].heading(0.5), Math.atan2(140.2305 - 125.3042, 46.7883 - 46.9373));
         assertHeading(paths[4].heading(1), Math.atan2(127.3583 - 110.0765, 38.0943 - 45.4429) + Math.PI);
-        System.out.println("Passed direct route geometry, headings, and autonomous registration checks.");
+        checkFlowerExit(false);
+        checkFlowerExit(true);
+        System.out.println("Passed direct route geometry, headings, speed, FLOWER recovery, and registration checks.");
+    }
+
+    private static void checkFlowerExit(boolean stalled) {
+        PoseFactory poses = PoseFactory.degrees();
+        Navigation navigation = new Navigation();
+        Drive drive = new Drive();
+        Tracking follower = new Tracking(navigation, drive);
+        long[] now = {0};
+        double originalSpeed = Constants.foresightConfig.maxPathSpeed.get();
+        Command route = AutoPath.route(follower, () -> now[0]);
+        Scheduler.reset();
+        try {
+            Scheduler.schedule(route);
+            for (int step = 1; step <= 3; step++) {
+                assertStep(follower, step);
+                navigation.setPose(follower.currentPath().endPose());
+                follower.atEnd = true;
+                Scheduler.execute();
+            }
+            assertStep(follower, 4);
+            if (stalled) {
+                navigation.setPose(poses.of(46.88, 130.0, 90));
+                follower.atEnd = true; // Path projection alone cannot establish arrival at FLOWER.
+                Scheduler.execute();
+                now[0] += 3_900_000_000L;
+                Scheduler.execute();
+                assertStep(follower, 4);
+
+                navigation.setPose(poses.of(46.88, 131.0, 90));
+                Scheduler.execute(); // Renew the window after genuine approach progress.
+                now[0] += 3_999_000_000L;
+                Scheduler.execute();
+                assertStep(follower, 4);
+                int stopsBeforeEscape = drive.stops;
+                now[0] += 1_000_000L;
+                Scheduler.execute();
+                assertStep(follower, 5);
+                if (drive.stops <= stopsBeforeEscape) throw new AssertionError("Stall must stop pushing");
+                assertPoint(follower.currentPath().get(0), 46.88, 131.0);
+            } else {
+                navigation.setPose(poses.of(46.7883, 140.2305, 90.572));
+                Scheduler.execute();
+                assertStep(follower, 5);
+                assertPoint(follower.currentPath().get(0), 46.7883, 140.2305);
+            }
+            assertPoint(follower.currentPath().get(1), 38.0943, 127.3583);
+            follower.atEnd = true;
+            Scheduler.execute();
+            if (Scheduler.isScheduled(route)) throw new AssertionError("Path 5 must finish the route");
+        } finally {
+            Scheduler.cancel(route);
+            follower.stop();
+            Scheduler.reset();
+        }
+        if (Constants.foresightConfig.maxPathSpeed.get() != originalSpeed) {
+            throw new AssertionError("AutoPath speed must stay scoped to its paths");
+        }
+    }
+
+    private static void assertStep(Tracking follower, int step) {
+        if (follower.pathsStarted != step || Constants.foresightConfig.maxPathSpeed.get() != 0.70) {
+            throw new AssertionError("Expected path " + step + " at 70% speed, saw path " + follower.pathsStarted);
+        }
+    }
+
+    private static final class Navigation implements Localizer {
+        private Pose pose = AutoPath.path1().get(0);
+
+        @Override public MotionState state() { return MotionState.ofVelocity(pose, Velocity.zero()); }
+        @Override public void setPose(Pose pose) { this.pose = pose; }
+        @Override public void update() { }
+        @Override public void reset() { }
+    }
+
+    private static final class Drive implements Drivetrain {
+        private int stops;
+
+        @Override public void drive(DrivePowers powers, boolean manual) { }
+        @Override public void stop() { stops++; }
+        @Override public void stop(boolean brake) { stop(); }
+        @Override public double maxScaling(DrivePowers a, DrivePowers b) { return 1; }
+        @Override public double interpolateVelocity(double x, double y, double turn) { return 1; }
+        @Override public Map<String, Object> debug() { return Collections.emptyMap(); }
+    }
+
+    private static final class Tracking extends Follower {
+        private int pathsStarted;
+        private boolean atEnd;
+
+        Tracking(Navigation navigation, Drive drive) {
+            super(navigation, drive, new Foresight(Constants.foresightConfig));
+        }
+
+        @Override public boolean atParametricEnd() { return atEnd; }
+
+        @Override
+        public void follow(Path path) {
+            super.follow(path);
+            pathsStarted++;
+            atEnd = false;
+        }
     }
 
     private static void assertRegistered(Class<?> type, String name) {

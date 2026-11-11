@@ -8,37 +8,22 @@ Main is not modified. The newer separate **BioBuzz Auto** route from the teammat
 ## Current scoring entry: AutoPath (BioBuzz FTC 2026)
 
 Select **AutoPath** for the working route with shooter/turret/intake/feeder integration.
-Select **AutoPath (Drive Only)** to run the same tested route and original pauses without
+Select **AutoPath (Drive Only)** to run the same route and pauses without
 initializing mechanism hardware. The separate **BioBuzz Auto** from the latest pull is
 unchanged. The older BioBuzz Pedro Auto description below refers to its own implementation.
 
-AutoPath retains the teammate's five paths, heading modes, 70% modeled speed policy,
-path-1 early-arrival condition, widened/shortened path 2, and FLOWER recovery/departure logic.
-There are no new navigation deadlines or drivetrain tuning/motor-direction changes.
+AutoPath follows the supplied eight-segment route. Normal travel retains the 70% modeled
+speed policy. Wall pickup retains the 35% / 18 in/s speed settings.
 
-1. INIT at the tested start pose. A selects BLUE, B selects RED for tag filtering; the route
-   is not mirrored. With the turret physically pointing forward, BACK explicitly zeros it.
-   INIT zeros mechanism motors and samples sensors; it does not position the gate.
-2. START: the flywheel spins up to the calibrated RPM and the turret starts tracking, and both
-   stay on for the whole run (like TeleOp). Stop the drivetrain, wait for aimed calibrated
-   RPM, open the gate, wait for it to open, then run the **2-second feed window** for the
-   four preloads before path 1.
-3. Run intake alongside path 1 at the slower **pickup speed** (35% / 18 in/s instead of 70%),
-   so the intake grabs the four wall balls instead of batting them away. At the original
-   arrival condition, stop the drive but **keep intaking through the one-second pause**.
-4. Drive path 2 (flower still OFF). On arrival at the 2nd shooting spot, deploy the
-   **flower servo to 0.41**; it stays ON for the rest of the route. Stop the drivetrain and
-   run the same timed shooting window for the expected four-ball load. The original **four-second** minimum pause runs concurrently.
-   Path 3 waits for both. Missing sensor counts, a lost tag, a bad sensor sample or a
-   volley that cannot start are reported under **Mechanism warning**; the route keeps going.
-5. The moment volley 2 ends, start intake, then follow path 3 (geometry unchanged) and the
-   path-4 FLOWER approach with intake still on. On arrival or the existing four-second
-   no-progress recovery, stop pushing and run intake for the configured **two-second** FLOWER
-   window. This is an intake attempt, not a stored-ball count.
-6. With the flower still ON, follow path 5 from the same nominal or recovered departure
-   pose, stop, run the final timed shooting window for the expected
-   four-ball load, then clean up every mechanism (flower retracts to 0.095) and the camera as
-   well as the drivetrain.
+1. INIT at (56, 8), heading 270°. A selects BLUE and B selects RED for tag filtering.
+   With the turret physically pointing forward, BACK zeros it.
+2. Shoot the four preloads at START before driving. The flywheel and turret stay active.
+3. Intake on paths 1–2 and through the one-second stop at the wall after path 2.
+4. Follow paths 3–5 to the second shooting spot. At path 5's endpoint, deploy the flower
+   lever and shoot, with a four-second minimum stop.
+5. Intake on paths 6–7 and for two seconds at FLOWER. The existing four-second
+   no-progress recovery uses the measured departure pose if path 7 stalls.
+6. Follow path 8, shoot the final volley, and clean up the mechanisms and drivetrain.
 
 Mechanisms use Robot.initMechanismsOnly, keeping Pedro as the sole drive controller.
 Both full Robot and mechanism-only initialization select AUTO hub bulk caching and clear
@@ -90,8 +75,8 @@ missing frames before using the 3150 no-tag default. Once the gate opens, latch 
 the stationary burst. No fixed 4000 RPM/color-based shooting target replaces the measured table.
 
 AutoPath maps the `flower` servo without moving it in INIT and retracts it at START. It stays
-OFF for the preloads, the wall pickup and path 2, deploys on arrival at the 2nd shooting spot,
-and stays ON through volley 2, paths 3-5 and the final volley. Only the end of the OpMode,
+OFF through the end of path 5, deploys at the second shooting spot,
+and stays ON through volley 2, paths 6–8 and the final volley. Only the end of the OpMode,
 STOP or a failure retracts it. FlowerLever shares TeleOp's ON=0.41/OFF=0.095 positions and
 PWM-enable/restore behavior. AutoPath (Drive Only) never maps or commands it.
 
@@ -289,29 +274,12 @@ power, and cancels scheduler commands before reset.
 
 ## Direct route: AutoPath
 
-**AutoPath** runs the five pasted Java paths in order using Pedro's follower and Pinpoint.
-It applies the supplied tangent, reverse tangent, and linear heading interpolations.
-Pedro caps the modeled travel speed on all five paths at 70 percent. At the end of
-path 1, Pedro's endpoint signal or a Pinpoint pose within 3 inches starts a one-second
-pause with the drivetrain stopped. Path 2 then starts automatically. At the end of
-path 2, the drivetrain stops for at least four seconds and until shooting completes. Path 3 starts at the path-2 endpoint
-with the same heading, then blends to its original end heading. If path 4 reaches
-within 1 inch of its target, path 5 starts as drawn. If the robot makes less than 0.25 inch
-of new progress toward that target for four seconds, the follower stops pushing and starts
-path 5 from the measured pose. Scoring adds a stopped two-second intake window before
-that departure. There are no other navigation deadlines. Driver Station STOP ends the OpMode
-and zeros the drivetrain and mechanisms.
-
-AutoPath path 2 retains the wider curve around the center frame and stops about
-4.7 inches earlier at (32.4082, 122.9979). The shortened quadratic uses control point
-(34.2837, 33.7804) and reverse-tangent heading. The measured rectangular chassis
-footprint has about 8 inches of modeled clearance to the nearest FLOWER edge at the
-new endpoint. Verify clearance on the field.
-
-This direct route uses (46.7883, 140.2305) as the path-4 **chassis center**. The measured
-footprint extends past the upper field wall there. The first path also requests a
-heading change near the lower wall. Use open space for the raw route or revise those
-clearances before a field run. The corrected field route is **BioBuzz Pedro Auto**.
+**AutoPath** and **AutoPath (Drive Only)** follow the same eight-segment geometry and
+heading profiles. The wall stop accepts a Pinpoint pose within 3 inches of the path-2
+target. The second shooting stop is after path 5. Path 7 targets (46.5109, 139.7571);
+if the approach stalls for four seconds without 0.25 inch of new progress, path 8 starts
+from the measured pose. Scoring retains the two-second stopped intake window before
+departure. Verify wall and FLOWER contact and total run time on the field.
 
 ## Earlier scoring integration
 

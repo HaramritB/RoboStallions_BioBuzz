@@ -14,7 +14,6 @@ import com.pedropathing.math.Velocity;
 import com.pedropathing.paths.Path;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
-import org.firstinspires.ftc.teamcode.autonomous.BioBuzzAutoConfig;
 
 import java.util.Collections;
 import java.util.Map;
@@ -26,62 +25,30 @@ public final class AutoPathRegression {
         assertRegistered(AutoPathDriveOnly.class, "AutoPath (Drive Only)");
         assertRegistered(org.firstinspires.ftc.teamcode.autonomous.BioBuzzAuto.class, "BioBuzz Pedro Auto");
         assertRegistered(BioBuzzAuto.class, "BioBuzz Auto"); // Replaced by the teammate's Pedro route.
-        Path transit = AutoPath.path2();
-        Path[] paths = {AutoPath.path1(), transit, AutoPath.path3(transit.endPose()),
-                AutoPath.path4(), AutoPath.path5()};
-        double[][] xy = {{57.6323, 9.0657}, {9.5657, 9.2715}, {32.4082, 122.9979},
-                {46.9373, 125.3042}, {46.7883, 140.2305}, {38.0943, 127.3583}};
+        Path[] paths = {AutoPath.path1(), AutoPath.path2(), AutoPath.path3(), AutoPath.path4(),
+                AutoPath.path5(), AutoPath.path6(), AutoPath.path7(), AutoPath.path8()};
+        double[][] xy = {{56, 8}, {8.2575, 16.1386}, {8.2853, 7.0319}, {8.2939, 15.6271},
+                {26.4473, 15.5231}, {56.5176, 111.2149}, {46.5038, 110.9216},
+                {46.5109, 139.7571}, {56.4722, 111.3911}};
         for (int i = 0; i < paths.length; i++) {
             assertPoint(paths[i].get(0), xy[i][0], xy[i][1]);
             assertPoint(paths[i].get(1), xy[i + 1][0], xy[i + 1][1]);
         }
-        assertHeading(paths[0].heading(0.5), Math.atan2(9.2715 - 9.0657, 9.5657 - 57.6323));
-        assertHeading(paths[1].heading(0), Math.atan2(33.7804 - 9.2715, 34.2837 - 9.5657) + Math.PI);
-        checkCenterFrameClearance(paths[1]);
-        checkFlowerStandOff(transit.endPose());
-        assertHeading(paths[2].heading(0), transit.heading(1));
-        assertHeading(paths[2].heading(1), Math.PI / 2);
-        assertHeading(paths[3].heading(0.5), Math.atan2(140.2305 - 125.3042, 46.7883 - 46.9373));
-        assertHeading(paths[4].heading(1), Math.atan2(127.3583 - 110.0765, 38.0943 - 45.4429) + Math.PI);
+        assertHeading(paths[0].heading(.5), Math.toRadians(270));
+        assertHeading(paths[1].heading(.5), Math.atan2(7.0319 - 16.1386, 8.2853 - 8.2575));
+        assertHeading(paths[2].heading(.5), Math.atan2(15.6271 - 7.0319, 8.2939 - 8.2853) + Math.PI);
+        assertHeading(paths[3].heading(.5), -Math.PI / 2);
+        assertHeading(paths[4].heading(0), -Math.PI / 2);
+        assertHeading(paths[4].heading(1), Math.PI / 2);
+        for (int i = 5; i < paths.length; i++) assertHeading(paths[i].heading(.5), Math.PI / 2);
+        assertPoint(paths[0].get(.5), (56 + 2 * 30.9563 + 8.2575) / 4, (8 + 2 * 74.1493 + 16.1386) / 4);
+        assertPoint(paths[4].get(.5), (26.4473 + 2 * 12.3536 + 56.5176) / 4,
+                (15.5231 + 2 * 107.7844 + 111.2149) / 4);
+        assertPoint(paths[7].get(.5), (46.5109 + 2 * 43.558 + 56.4722) / 4,
+                (139.7571 + 2 * 106.1367 + 111.3911) / 4);
         checkFlowerExit(false);
         checkFlowerExit(true);
-        System.out.println("Passed direct route geometry, headings, speed, pauses, FLOWER recovery, and registration checks.");
-    }
-
-    private static void checkFlowerStandOff(Pose end) {
-        // Project the footprint onto the inward normal of the nearest FLOWER edge
-        // from (43.4, 139.4) to (46.75, 137.7).
-        double edgeLength = Math.hypot(1.7, 3.35);
-        double nx = 1.7 / edgeLength;
-        double ny = 3.35 / edgeLength;
-        double cos = Math.cos(end.heading());
-        double sin = Math.sin(end.heading());
-        double extent = BioBuzzAutoConfig.ROBOT_LENGTH_IN / 2 * Math.abs(nx * cos + ny * sin)
-                + BioBuzzAutoConfig.ROBOT_WIDTH_IN / 2 * Math.abs(-nx * sin + ny * cos);
-        double gap = (43.4 - end.x()) * nx + (139.4 - end.y()) * ny - extent;
-        if (!(gap >= 8.0 && gap <= 8.1)) {
-            throw new AssertionError("Expected an 8-inch path-2 stand-off from FLOWER, got " + gap);
-        }
-    }
-
-    private static void checkCenterFrameClearance(Path path) {
-        double halfLength = BioBuzzAutoConfig.ROBOT_LENGTH_IN / 2;
-        double halfWidth = BioBuzzAutoConfig.ROBOT_WIDTH_IN / 2;
-        double clearance = Double.POSITIVE_INFINITY;
-        for (int i = 0; i <= 1000; i++) {
-            Pose pose = path.get(i / 1000.0);
-            double cos = Math.abs(Math.cos(pose.heading()));
-            double sin = Math.abs(Math.sin(pose.heading()));
-            double extentY = sin * halfLength + cos * halfWidth;
-            // The red HIVE drawing spans Y=50..91.4 and begins at X=46.
-            if (pose.y() + extentY >= 50 && pose.y() - extentY <= 91.4) {
-                double extentX = cos * halfLength + sin * halfWidth;
-                clearance = Math.min(clearance, 46 - pose.x() - extentX);
-            }
-        }
-        if (!Double.isFinite(clearance) || clearance < 4.3) {
-            throw new AssertionError("Path 2 nominal center-frame clearance fell below 4.3 inches: " + clearance);
-        }
+        System.out.println("Passed eight-path geometry, headings, speed, pauses, FLOWER recovery, and registration checks.");
     }
 
     private static void checkFlowerExit(boolean stalled) {
@@ -97,73 +64,65 @@ public final class AutoPathRegression {
             Scheduler.schedule(route);
             assertStep(follower, 1);
             now[0] += 2_000_000_000L;
-            Scheduler.execute();
-            assertStep(follower, 1); // Travel time alone must not trigger the pause.
-            navigation.setPose(stalled
-                    ? poses.of(12.0657, 9.2715, 179.7546)
+            tickRoute();
+            assertStep(follower, 1);
+            arrive(follower, navigation);
+            assertStep(follower, 2);
+            navigation.setPose(stalled ? poses.of(8.2853, 9.5319, -89.8249)
                     : follower.currentPath().endPose());
             follower.atEnd = !stalled;
             int stopsBeforePause = drive.stops;
-            Scheduler.execute();
+            tickRoute();
             if (!follower.idle() || drive.stops <= stopsBeforePause) {
-                throw new AssertionError("Path-1 pause must start with the drivetrain stopped");
+                throw new AssertionError("Wall pause must stop the drivetrain");
             }
             now[0] += 999_000_000L;
-            Scheduler.execute();
-            if (follower.pathsStarted != 1) throw new AssertionError("Path 2 must wait one full second");
+            tickRoute();
+            if (follower.pathsStarted != 2) throw new AssertionError("Path 3 must wait one full second");
             now[0] += 1_000_000L;
-            Scheduler.execute();
+            tickRoute();
 
-            assertStep(follower, 2);
-            Pose path2End = follower.currentPath().endPose();
-            navigation.setPose(path2End);
-            follower.atEnd = true;
-            int stopsBeforePath2Pause = drive.stops;
-            Scheduler.execute();
-            if (!follower.idle() || drive.stops <= stopsBeforePath2Pause) {
-                throw new AssertionError("Path-2 pause must start with the drivetrain stopped");
+            for (int step = 3; step <= 5; step++) {
+                assertStep(follower, step);
+                arrive(follower, navigation);
             }
+            if (!follower.idle()) throw new AssertionError("Path 5 must end at a stopped shooting spot");
             now[0] += 3_999_000_000L;
-            Scheduler.execute();
-            if (follower.pathsStarted != 2) throw new AssertionError("Path 3 must wait four full seconds");
+            tickRoute();
+            if (follower.pathsStarted != 5) throw new AssertionError("Path 6 must wait four full seconds");
             now[0] += 1_000_000L;
-            Scheduler.execute();
-            assertStep(follower, 3);
-            assertPoint(follower.currentPath().get(0), path2End.x(), path2End.y());
-            assertHeading(follower.currentPath().heading(0), path2End.heading());
-            navigation.setPose(follower.currentPath().endPose());
-            follower.atEnd = true;
-            Scheduler.execute();
-            assertStep(follower, 4);
-            if (stalled) {
-                navigation.setPose(poses.of(46.88, 130.0, 90));
-                follower.atEnd = true; // Path projection alone cannot establish arrival at FLOWER.
-                Scheduler.execute();
-                now[0] += 3_900_000_000L;
-                Scheduler.execute();
-                assertStep(follower, 4);
+            tickRoute();
+            assertStep(follower, 6);
+            arrive(follower, navigation);
+            assertStep(follower, 7);
 
-                navigation.setPose(poses.of(46.88, 131.0, 90));
-                Scheduler.execute(); // Renew the window after genuine approach progress.
+            if (stalled) {
+                navigation.setPose(poses.of(46.51, 130.0, 90));
+                follower.atEnd = true; // Path projection alone cannot establish arrival at FLOWER.
+                tickRoute();
+                now[0] += 3_900_000_000L;
+                tickRoute();
+                assertStep(follower, 7);
+                navigation.setPose(poses.of(46.51, 131.0, 90));
+                tickRoute();
                 now[0] += 3_999_000_000L;
-                Scheduler.execute();
-                assertStep(follower, 4);
+                tickRoute();
+                assertStep(follower, 7);
                 int stopsBeforeEscape = drive.stops;
                 now[0] += 1_000_000L;
-                Scheduler.execute();
-                assertStep(follower, 5);
+                tickRoute();
+                assertStep(follower, 8);
                 if (drive.stops <= stopsBeforeEscape) throw new AssertionError("Stall must stop pushing");
-                assertPoint(follower.currentPath().get(0), 46.88, 131.0);
+                assertPoint(follower.currentPath().get(0), 46.51, 131.0);
             } else {
-                navigation.setPose(poses.of(46.7883, 140.2305, 90.572));
-                Scheduler.execute();
-                assertStep(follower, 5);
-                assertPoint(follower.currentPath().get(0), 46.7883, 140.2305);
+                arrive(follower, navigation);
+                assertStep(follower, 8);
+                assertPoint(follower.currentPath().get(0), 46.5109, 139.7571);
             }
-            assertPoint(follower.currentPath().get(1), 38.0943, 127.3583);
-            follower.atEnd = true;
-            Scheduler.execute();
-            if (Scheduler.isScheduled(route)) throw new AssertionError("Path 5 must finish the route");
+            assertPoint(follower.currentPath().get(1), 56.4722, 111.3911);
+            assertHeading(follower.currentPath().heading(.5), Math.PI / 2);
+            arrive(follower, navigation);
+            if (Scheduler.isScheduled(route)) throw new AssertionError("Path 8 must finish the route");
         } finally {
             Scheduler.cancel(route);
             follower.stop();
@@ -172,6 +131,17 @@ public final class AutoPathRegression {
         if (Constants.foresightConfig.maxPathSpeed.get() != originalSpeed) {
             throw new AssertionError("AutoPath speed must stay scoped to its paths");
         }
+    }
+
+    private static void arrive(Tracking follower, Navigation navigation) {
+        navigation.setPose(follower.currentPath().endPose());
+        follower.atEnd = true;
+        tickRoute();
+    }
+
+    private static void tickRoute() {
+        // A child group can finish one iteration before its parent advances.
+        for (int i = 0; i < 3; i++) Scheduler.execute();
     }
 
     private static void assertStep(Tracking follower, int step) {

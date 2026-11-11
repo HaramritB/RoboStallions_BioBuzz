@@ -171,6 +171,18 @@ heading, settled motion, unexpected path replacement, cancellation, and timeouts
 subsequent movements after failure. Stop clears follower state, writes zero drivetrain
 power, and cancels scheduler commands before reset.
 
+## Direct route: AutoPath
+
+**AutoPath** runs the five pasted Java paths in order using Pedro's follower and Pinpoint.
+It applies the supplied tangent, reverse tangent, and linear heading interpolations.
+The route has no added moves, speed overrides, waypoint checks, or custom time limits.
+Driver Station STOP ends the OpMode and zeros the drivetrain.
+
+This direct route uses (46.7883, 140.2305) as the path-4 **chassis center**. The measured
+footprint extends past the upper field wall there. The first path also requests a
+heading change near the lower wall. Use open space for the raw route or revise those
+clearances before a field run. The corrected field route is **BioBuzz Pedro Auto**.
+
 ## Earlier scoring integration
 
 This follow-up changes autonomous/BioBuzzAutoConfig.java (path-owned/timed intake settings,

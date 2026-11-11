@@ -20,6 +20,35 @@ public final class BioBuzzAutoConfig {
     // Initial test window, not a measured time to acquire four balls. Tune on the robot.
     public static final double FLOWER_INTAKE_SECONDS = 2.0;
     public static final double SHOOT_TIMEOUT_S = 7.0;
+    // Hard backstop for one timed volley to start feeding. AutoPath skips the volley and keeps
+    // driving if it is ever reached (broken flywheel/gate); it no longer ends the whole run.
+    public static final double SHOOT_SPINUP_TIMEOUT_S = 6.0;
+    // Continuous feed window AFTER the gate has finished opening; tune from robot trials.
+    public static final double SHOOT_BURST_SECONDS = 2.0;
+    public static final double SHOOT_READY_RPM_TOLERANCE = 50.0;
+    public static final double SHOOT_READY_STABLE_SECONDS = 0.30;
+    // Minimum time stopped at a shooting spot before feeding, so the turret settles after the chassis stops.
+    public static final double SHOOT_MIN_SPINUP_SECONDS = 0.30;
+    public static final double SHOOT_READY_MAX_SAMPLE_GAP_SECONDS = 0.15;
+    public static final int SHOOT_READY_MIN_SAMPLES = 5;
+    public static final double SHOOT_READY_TARGET_CHANGE_RPM = 25.0;
+    // Gate servo travel time: command OPEN, wait this long, THEN start intake + transmission.
+    // Feeding into a gate that is still moving scrubs speed off the first ball.
+    public static final double GATE_OPEN_WAIT_SECONDS = 0.25;
+    // No fresh aimed tag by this long after a volley starts: shoot at the calibrated-table RPM
+    // (latest filtered tag distance, or the 3150 RPM no-tag default) once the flywheel is stable.
+    public static final double SHOOT_AIM_GRACE_SECONDS = 2.0;
+    // Flywheel still outside the +/-50 RPM band by now (e.g. low battery): feed anyway if it is
+    // at least SHOOT_FORCE_MIN_RPM_FRACTION of target, instead of waiting for the hard backstop.
+    public static final double SHOOT_FORCE_FEED_SECONDS = 3.5;
+    public static final double SHOOT_FORCE_MIN_RPM_FRACTION = 0.85;
+    // Calibrated RPM uses the median of the last N fresh tag-distance frames (one bad frame cannot
+    // change the shot), and reuses that distance for at most DISTANCE_HOLD_SECONDS without a tag.
+    public static final int DISTANCE_FILTER_SAMPLES = 5;
+    public static final double DISTANCE_HOLD_SECONDS = 1.0;
+    // AutoPath path 1 drives over the four wall balls; 70% route speed bats them away.
+    public static final double PICKUP_SPEED_FRACTION = 0.35;
+    public static final double PICKUP_MAX_VELOCITY_IN_S = 18.0;
 
     /** Commands before driving, alongside each path, and after each verified arrival. */
     public static final class Plan {

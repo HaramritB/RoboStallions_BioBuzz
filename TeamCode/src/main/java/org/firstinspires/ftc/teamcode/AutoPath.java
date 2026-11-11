@@ -16,6 +16,7 @@ import java.util.function.LongSupplier;
 
 import static com.pedropathing.api.Paths.curve;
 import static com.pedropathing.api.Paths.line;
+import static com.pedropathing.ivy.commands.Commands.instant;
 import static com.pedropathing.ivy.commands.Commands.lazy;
 import static com.pedropathing.ivy.groups.Groups.parallel;
 import static com.pedropathing.ivy.groups.Groups.sequential;
@@ -47,6 +48,7 @@ public class AutoPath extends LinearOpMode {
         FlowerLever flowerLever = null;
         Command route = null;
         Robot.Alliance alliance = Robot.lastAlliance;
+        RuntimeException primaryFailure = null;
 
         try {
             follower.setPose(START);
@@ -55,6 +57,8 @@ public class AutoPath extends LinearOpMode {
                 mechanisms = BioBuzzAutoMechanisms.initialize(hardwareMap, alliance,
                         () -> -Math.toDegrees(follower.pose().heading()),
                         () -> -Math.toDegrees(follower.velocity().omega));
+                // A sensor glitch or slow volley is reported and skipped; it never ends the run.
+                mechanisms.setFaultTolerant(true);
                 mechanisms.manualIntake(false); // Motors idle; no INIT gate position command.
             }
             while (opModeInInit()) {
@@ -72,7 +76,12 @@ public class AutoPath extends LinearOpMode {
             waitForStart();
             if (!opModeIsActive()) return;
 
-            if (useMechanisms()) Robot.lastAlliance = alliance;
+            if (useMechanisms()) {
+                Robot.lastAlliance = alliance;
+                // Like TeleOp: flywheel at calibrated RPM and turret tracking for the whole run,
+                // so every volley starts warm and aimed instead of from zero after stopping.
+                mechanisms.keepShooterReady(true);
+            }
             mechanisms.observe();
             if (flowerLever != null) flowerLever.setDeployed(false);
             route = useMechanisms() ? route(follower, System::nanoTime, mechanisms, flowerLever)
@@ -82,15 +91,22 @@ public class AutoPath extends LinearOpMode {
                 follower.update();
                 mechanisms.update(); // Use the chassis sample from Pedro; no second Pinpoint update.
                 Scheduler.execute();
+                if (flowerLever != null) flowerLever.refresh(); // Re-enable PWM if the hub dropped it.
                 publish(follower, mechanisms, alliance);
                 idle();
             }
         } catch (RuntimeException error) {
+            primaryFailure = error;
             telemetry.addData("AutoPath failure", "%s: %s", error.getClass().getSimpleName(), error.getMessage());
             telemetry.update();
             requestOpModeStop();
+            throw error; // Let Driver Station show the original cause, not a cleanup exception.
         } finally {
-            stopAll(follower, mechanisms, route, flowerLever);
+            try { stopAll(follower, mechanisms, route, flowerLever); }
+            catch (RuntimeException cleanupError) {
+                if (primaryFailure != null) primaryFailure.addSuppressed(cleanupError);
+                else throw cleanupError;
+            }
         }
     }
 
@@ -103,7 +119,9 @@ public class AutoPath extends LinearOpMode {
             telemetry.addData("Turret zero", "INIT: point turret forward, then BACK to zero");
             telemetry.addData("Mechanisms", mechanisms.state());
             telemetry.addData("Shooter / aiming / gate", mechanisms.diagnostics());
+            telemetry.addData("Feed RPM: start / target / minimum", mechanisms.feedRpmTelemetry());
             telemetry.addData("Mechanism failure", mechanisms.failure().isEmpty() ? "none" : mechanisms.failure());
+            telemetry.addData("Mechanism warning", mechanisms.warning().isEmpty() ? "none" : mechanisms.warning());
         }
         Pose pose = follower.pose();
         telemetry.addData("X (in)", "%.2f", pose.x());
@@ -140,44 +158,45 @@ public class AutoPath extends LinearOpMode {
                 pauseDrive(follower, clock, PATH_2_PAUSE_NS),
                 follow(follower, atRouteSpeed(path3(transit.endPose()))),
                 flowerPickup, exit);
+        // The second intake cycle starts the moment volley 2 ends: intake running through path 3,
+        // the FLOWER approach, and the stopped pickup window.
         Command collectAtFlower = sequential(
-                intakeAlong(follower, mechanisms, flowerPickup),
+                intakeAlong(follower, mechanisms, sequential(
+                        follow(follower, atRouteSpeed(path3(transit.endPose()))), flowerPickup)),
                 // Stop pushing during pickup, including a recovered approach stall.
                 parallel(pauseDrive(follower, clock, 0), mechanisms.command(
                         BioBuzzAutoMechanisms.Action.intakeFor(BioBuzzAutoConfig.FLOWER_INTAKE_SECONDS,
                                 BioBuzzAutoConfig.COLLECTION_TIMEOUT_S), clock, AutoPath::mechanismFailure)));
-        if (flowerLever != null) collectAtFlower = flowerDuring(follower, mechanisms, flowerLever, collectAtFlower);
+        Command volley2 = stoppedShot(follower, clock, mechanisms, BioBuzzAutoConfig.STAGED_BALL_COUNT, PATH_2_PAUSE_NS);
+        // Flower stays retracted for the wall pickup, deploys on arrival at the 2nd shooting spot,
+        // and stays deployed for the rest of the route. Only STOP/cleanup retracts it.
+        if (flowerLever != null) volley2 = parallel(instant(() -> flowerLever.setDeployed(true)), volley2);
+        // Same line and arrival test as the drive-only route, but slow enough for the intake to
+        // grab each wall ball instead of batting it away at 70% route speed.
+        Command wallPickup = follow(follower, atPickupSpeed(path1())).setDone(() ->
+                follower.atParametricEnd() || follower.holding()
+                        || follower.pose().distance(POINT_1) <= PATH_1_ARRIVAL_IN);
         return sequential(
                 stoppedShot(follower, clock, mechanisms, BioBuzzAutoConfig.PRELOAD_BALL_COUNT, 0),
-                intakeAlong(follower, mechanisms, pickup),
-                pauseDrive(follower, clock, PATH_1_PAUSE_NS),
+                intakeAlong(follower, mechanisms, wallPickup),
+                // Keep intaking through the one-second stop: arrival is declared 3 in early, and the
+                // last wall ball is still being pulled in when the chassis stops.
+                parallel(pauseDrive(follower, clock, PATH_1_PAUSE_NS), mechanisms.command(
+                        BioBuzzAutoMechanisms.Action.intakeFor(PATH_1_PAUSE_NS / 1e9,
+                                BioBuzzAutoConfig.COLLECTION_TIMEOUT_S), clock, AutoPath::mechanismFailure)),
                 follow(follower, atRouteSpeed(transit)),
-                stoppedShot(follower, clock, mechanisms, BioBuzzAutoConfig.STAGED_BALL_COUNT, PATH_2_PAUSE_NS),
-                follow(follower, atRouteSpeed(path3(transit.endPose()))),
-                collectAtFlower,
+                volley2, // Flower deploys here and stays on.
+                collectAtFlower, // Path 3 + path 4 + FLOWER pickup.
                 exit,
                 stoppedShot(follower, clock, mechanisms, BioBuzzAutoConfig.FLOWER_BALL_COUNT, 0));
-    }
-
-    private static Command flowerDuring(Follower follower, BioBuzzAutoMechanisms mechanisms,
-                                         FlowerLever flower, Command pickup) {
-        boolean[] active = {false};
-        return Command.build().requiring(follower, mechanisms, flower)
-                .setStart(() -> { active[0] = true; flower.setDeployed(true); pickup.start(); })
-                .setExecute(() -> { flower.refresh(); pickup.execute(); }).setDone(pickup::done)
-                .setEnd(reason -> {
-                    if (!active[0]) return;
-                    active[0] = false;
-                    try { pickup.end(reason); }
-                    finally { flower.setDeployed(false); }
-                });
     }
 
     private static Command stoppedShot(Follower follower, LongSupplier clock, BioBuzzAutoMechanisms mechanisms,
                                        int count, long minimumPauseNs) {
         // Parallel waits for both children: retain the tested four-second stop even if shots finish early.
         return parallel(pauseDrive(follower, clock, minimumPauseNs), mechanisms.command(
-                BioBuzzAutoMechanisms.Action.shoot(count, BioBuzzAutoConfig.SHOOT_TIMEOUT_S),
+                BioBuzzAutoMechanisms.Action.shootFor(count, BioBuzzAutoConfig.SHOOT_BURST_SECONDS,
+                        BioBuzzAutoConfig.SHOOT_SPINUP_TIMEOUT_S),
                 clock, AutoPath::mechanismFailure));
     }
 
@@ -204,11 +223,13 @@ public class AutoPath extends LinearOpMode {
     }
 
     static void stopAll(Follower follower, BioBuzzAutoMechanisms mechanisms, Command route, FlowerLever flower) {
-        try { if (route != null) Scheduler.cancel(route); }
+        // Mark mechanisms closed before Ivy runs interruption callbacks. A normal STOP or
+        // cleanup after a sensor/aim failure is not a second failed shooting command.
+        try { mechanisms.stop(); }
         finally {
-            Scheduler.reset();
-            try { mechanisms.stop(); }
+            try { if (route != null) Scheduler.cancel(route); }
             finally {
+                Scheduler.reset();
                 try { if (flower != null) flower.stop(); }
                 finally { stopDrive(follower); }
             }
@@ -217,6 +238,11 @@ public class AutoPath extends LinearOpMode {
 
     private static Path atRouteSpeed(Path path) {
         return path.with(Constants.foresightConfig.maxPathSpeed.at(SPEED_FRACTION));
+    }
+
+    private static Path atPickupSpeed(Path path) {
+        return path.with(Constants.foresightConfig.maxPathSpeed.at(BioBuzzAutoConfig.PICKUP_SPEED_FRACTION),
+                Constants.foresightConfig.maxVelocityConstraint.at(BioBuzzAutoConfig.PICKUP_MAX_VELOCITY_IN_S));
     }
 
     private static Command pauseDrive(Follower follower, LongSupplier clock, long durationNs) {

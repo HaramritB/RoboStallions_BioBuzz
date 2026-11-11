@@ -19,63 +19,105 @@ There are no new navigation deadlines or drivetrain tuning/motor-direction chang
 1. INIT at the tested start pose. A selects BLUE, B selects RED for tag filtering; the route
    is not mirrored. With the turret physically pointing forward, BACK explicitly zeros it.
    INIT zeros mechanism motors and samples sensors; it does not position the gate.
-2. START: stop the drivetrain and shoot **four preloads** before path 1.
-3. Run intake alongside path 1. At its original arrival condition, stop intake and retain
-   the original **one-second** drive pause.
-4. Drive path 2, stop the drivetrain and shoot **four balls**. The original **four-second**
-   minimum pause runs concurrently with shooting. Path 3 waits for both; a slow volley may
-   extend the stop, and a failed volley aborts the route.
-5. Follow path 3 unchanged. Deploy the **flower servo to 0.38** and run intake throughout
-   the path-4 FLOWER approach. Keep the lever deployed through the pickup window. On arrival or
-   the existing four-second no-progress recovery, stop pushing and run intake for the
-   configured **two-second** FLOWER window. This is an intake attempt, not a stored-ball count.
-6. Retract the **flower servo to 0.03** before following path 5 from the same nominal or
-   recovered departure pose, stop, shoot **four balls**,
-   then clean up every mechanism and the camera as well as the drivetrain.
+2. START: the flywheel spins up to the calibrated RPM and the turret starts tracking, and both
+   stay on for the whole run (like TeleOp). Stop the drivetrain, wait for aimed calibrated
+   RPM, open the gate, wait for it to open, then run the **2-second feed window** for the
+   four preloads before path 1.
+3. Run intake alongside path 1 at the slower **pickup speed** (35% / 18 in/s instead of 70%),
+   so the intake grabs the four wall balls instead of batting them away. At the original
+   arrival condition, stop the drive but **keep intaking through the one-second pause**.
+4. Drive path 2 (flower still OFF). On arrival at the 2nd shooting spot, deploy the
+   **flower servo to 0.41**; it stays ON for the rest of the route. Stop the drivetrain and
+   run the same timed shooting window for the expected four-ball load. The original **four-second** minimum pause runs concurrently.
+   Path 3 waits for both. Missing sensor counts, a lost tag, a bad sensor sample or a
+   volley that cannot start are reported under **Mechanism warning**; the route keeps going.
+5. The moment volley 2 ends, start intake, then follow path 3 (geometry unchanged) and the
+   path-4 FLOWER approach with intake still on. On arrival or the existing four-second
+   no-progress recovery, stop pushing and run intake for the configured **two-second** FLOWER
+   window. This is an intake attempt, not a stored-ball count.
+6. With the flower still ON, follow path 5 from the same nominal or recovered departure
+   pose, stop, run the final timed shooting window for the expected
+   four-ball load, then clean up every mechanism (flower retracts to 0.095) and the camera as
+   well as the drivetrain.
 
 Mechanisms use Robot.initMechanismsOnly, keeping Pedro as the sole drive controller.
+Both full Robot and mechanism-only initialization select AUTO hub bulk caching and clear
+old cached reads. Shooter power is explicitly zeroed before applying the existing encoder
+mode/PIDF. This keeps a previous OpMode's manual cache or running output from carrying into
+INIT. No drive motor directions, distance calibration or PIDF gains are changed.
 Each active loop first updates Pedro, then supplies its CW-converted heading/turn rate to
 Robot.updateMechanismSensors. Robot.aimTurret(true, 0), distanceBasedShooterRpm and
 updateShooter(baseRpm) reuse TeleOp's aiming and measured RPM interpolation/PIDF.
 Collection uses Robot.updateManualFeeder with the calibrated gate closed. Shooting is a
 single continuous burst using the same manual feeder motor control:
 
-- Command calibrated CLOSED once while spinning up. Keep intake/transmission stopped.
-- On the first fresh, aimed, at-target-speed sample, command calibrated OPEN and start both
-  motors together in **gamepad 1 RIGHT-trigger** direction: intake -INTAKE_POWER and
-  transmission -TRANSMISSION_INDEX_POWER. There is no extra RPM-settle delay.
-- Hold the gate open and keep both motors running through all four balls, including normal
-  flywheel RPM dips. The old 300 ms per-ball gate timer is not used by autonomous shooting.
-- Count feeder presence-to-clear events only while the burst is feeding. On the fourth event,
-  close the gate and stop both motors before another feed command. Repeated empty samples
-  do not count additional balls. If the four events cannot be observed, the volley times out.
-- Loss of aiming/distance during an open burst aborts and closes the gate, rather than
-  reopening and cycling it. STOP, timeout and failures also close it and stop the motors.
+- Between volleys (driving, intake, pauses) the flywheel holds the calibrated RPM and the
+  turret tracks, with the gate closed. Volleys start warm and aimed; finishing a volley or
+  an intake stops only the gate/intake/transmission, never the flywheel.
+- Keep the gate CLOSED and intake/transmission stopped until ready: measured speed within
+  **50 RPM** of the calibrated target for **300 ms**, at least five samples, no sampling gap
+  over 150 ms, and at least **300 ms** stopped at the spot (turret settle). A speed dip,
+  overshoot, invalid aim/distance or target change over 25 RPM resets the stable window.
+- Fallbacks instead of aborting: with no fresh aimed tag after **2.0 s**
+  (SHOOT_AIM_GRACE_SECONDS), shoot at the calibrated-table RPM (last filtered distance, else
+  the 3150 no-tag default) once the flywheel is stable. If the flywheel still is not in the
+  band after **3.5 s** (e.g. low battery) but is at least 85% of target, feed anyway. If a
+  volley cannot start within **6 s** (broken flywheel/gate), skip it and continue the route.
+- **Gate first, then feed:** command calibrated OPEN with both motors still stopped, wait
+  **GATE_OPEN_WAIT_SECONDS = 0.25 s** for the servo to travel, then start both motors together
+  in **gamepad 1 RIGHT-trigger** direction: intake -INTAKE_POWER and transmission
+  -TRANSMISSION_INDEX_POWER. If the tag is lost while the gate is open, the turret holds
+  still instead of sweeping.
+- Once feeding starts, hold the gate open and both motors running for
+  **SHOOT_BURST_SECONDS = 2.0 seconds**, including normal flywheel RPM dips. The feed window
+  starts after the gate-open wait, not when spin-up begins.
+- At the end of that window, close the gate and stop the feed motors before another actuator
+  write, settle for 0.20 seconds, then continue the route. Ball-clear counts are advisory:
+  tightly packed balls may not produce four distinct sensor edges.
+- Losing the tag during the short feed window keeps feeding at the latched RPM and is counted
+  in telemetry ("aim lost N feed loops"); it no longer ends the autonomous. Invalid feeder
+  sensor samples are treated as "no ball" and reported. STOP closes the gate and stops
+  every motor. The diagnostic OpModes (BioBuzz Pedro Auto, mechanism test) keep the strict
+  abort-on-failure behavior.
 
 The shooter uses the same measured distance/RPM interpolation and tuned PIDF as TeleOp:
 **1.41 m -> 3150 RPM, 1.60 m -> 3150, 1.76 m -> 3200, 1.90 m -> 3250**. Interpolate between
-points and clamp beyond the measured endpoints, as in Robot.rpmForDistance. Motor targets
-and at-speed checks use that same target (the existing RPM tolerance is 100 RPM). Fresh,
-positive finite tag distance is required to begin feeding. No fixed 4000 RPM/color-based
-shooting target replaces the measured table.
+points and clamp beyond the measured endpoints, as in Robot.rpmForDistance. Auto uses its
+stricter 50-RPM stable-speed qualification; TeleOp's existing 100-RPM readiness tolerance is
+unchanged. Auto looks up the table with the **median of the last five fresh tag distances**,
+so one bad Limelight frame cannot change the shot, and holds that distance for up to 1 s of
+missing frames before using the 3150 no-tag default. Once the gate opens, latch that RPM for
+the stationary burst. No fixed 4000 RPM/color-based shooting target replaces the measured table.
 
-AutoPath maps the `flower` servo without moving it in INIT, retracts it at START, deploys
-it only for the path-4 approach and FLOWER pickup, and retracts it before path 5 and during
-STOP/failure cleanup. FlowerLever shares TeleOp's measured ON=0.38/OFF=0.03 positions and
+AutoPath maps the `flower` servo without moving it in INIT and retracts it at START. It stays
+OFF for the preloads, the wall pickup and path 2, deploys on arrival at the 2nd shooting spot,
+and stays ON through volley 2, paths 3-5 and the final volley. Only the end of the OpMode,
+STOP or a failure retracts it. FlowerLever shares TeleOp's ON=0.41/OFF=0.095 positions and
 PWM-enable/restore behavior. AutoPath (Drive Only) never maps or commands it.
 
 Scoring needs intake, transmission, turret, shooter, torqueservo1, **flower**, a working Limelight and
-the configured color/range feeder sensor. Missing devices, invalid sensor samples, invalid
-gate calibration, seven-second volley timeout and STOP abort and clean up outputs. Mechanism
-failure throws immediately out of Ivy so the next path cannot start in the same iteration.
+the configured color/range feeder sensor. Missing devices or invalid gate calibration fail at
+INIT. During the run, AutoPath reports invalid sensor samples, lost aim and skipped volleys
+under **Mechanism warning** and keeps driving; STOP cleans up every output.
 The drive-only entry does not require any of these mechanism devices.
+
+Shutdown closes the mechanism controller before cancelling Ivy commands, so normal STOP or
+cleanup does not throw `Mechanism command interrupted: SHOOT`. If a run fails, Driver Station
+gets the original exception; additional cleanup failures are attached without replacing it.
+Read `AutoPath failure` for the cause. Invalid sensor errors also include sampled controller
+diagnostics, including feeder distance, tag distance and aim error.
 
 Validate physical exits, collection yield and total match time on the robot. The mechanism
 integration preserves the route the team reports working; it does not establish new physical
 clearance. Use the **AutoPath** telemetry for alliance, mechanism state, RPM/aim/gate diagnostics
-and failures. Software regression tests cover both normal and recovered FLOWER departures,
+and failures. **Feed RPM: start / target / minimum** records the actual speed when feeding
+begins, its qualified target, and the lowest sampled speed during the burst. These values
+persist after the burst until a new one starts. If the start speed is correct but minimum
+speed falls severely, the remaining issue is speed recovery under feed load; record these
+values before changing calibrated speeds or PIDF. Software regression tests cover both normal and recovered FLOWER departures,
 all three volleys, the one-/four-second pauses, late/failed shots, fresh sensor failure,
-stop during intake, shot-limit ordering, flower deployment/retraction/PWM restoration, and
+stop during intake, feed-window output ordering, missing sensor counts, slow spin-up,
+flower deployment/retraction/PWM restoration, and
 cleanup even when a device close or flower retraction fails.
 
 ## Older entry: BioBuzz Pedro Auto
@@ -127,13 +169,12 @@ Flower Calibration remains a separate utility.
   calibrated CLOSED endpoint, including overrides, rather than writing a fixed constant.
 - Shooter PIDF remains 180/0/0/13.83. Auto reuses main's measured distance/RPM interpolation
   and target selection, not a new flywheel controller. Target distance must be finite/positive,
-  aiming fresh and within tolerance, and RPM ready before feeding. Feeding starts immediately
-  on readiness and remains continuous through normal RPM dips; loss of valid aiming aborts
-  the burst, closes the gate and stops feeding.
-- Shooting completion requires four observed feeder ball-clear events during continuous
-  feeding. Time alone cannot count a shot. The gate closes and motors stop on the fourth
-  exit; result settling does not continue feeding. Actual scoring in the goal still requires
-  observation on the robot.
+  aiming fresh and within tolerance, and stable measured RPM before feeding. Feeding starts
+  after stable-speed qualification and the gate-open wait, and remains continuous through
+  normal RPM dips and brief aim loss (AutoPath falls back after 2 s without a tag).
+- AutoPath completes a bounded timed feed attempt after readiness, with ball counts only
+  in telemetry. The separate counted stationary test still requires four feeder-clear events.
+  Neither mode can establish actual scoring in the goal without physical observation.
 
 Robot.initMechanismsOnly preserves main's mechanism initialization but never maps/configures
 drivetrain motors. The full autonomous supplies Pedro's fresh pose/rate to Robot's turret
@@ -157,11 +198,11 @@ Intake calls the same Robot.updateManualFeeder method as TeleOp's forward intake
 calibrated gate closed. The transmission indexes until the feeder sensor sees a ball and the
 intake continues running. Auto reads Limelight through Robot.updateMechanismSensors, uses
 Robot.aimTurret for target tracking and Robot.distanceBasedShooterRpm for flywheel speed.
-Pinpoint supplies the chassis pose. Ball sensing remains in the feeder/shooting interfaces. Shooting still requests four
-shots and requires its existing readiness and shot-clear verification. If fewer balls were
-acquired and four shots cannot be verified, the bounded shooting timeout fails the routine;
-this update changes intake completion, not the shooting failure policy. Verify pickup yield
-and actual scoring on the robot. Tune the FLOWER window and full-route timing physically.
+Pinpoint supplies the chassis pose. Ball sensing remains in the feeder/shooting interfaces.
+AutoPath now uses timed continuous shooting so missed individual ball-clear events do not
+block navigation after the load has left. The older counted stationary test keeps strict
+shot-clear verification for diagnostics. Verify pickup yield, feed-window duration and actual
+scoring on the robot. Tune the FLOWER window and full-route timing physically.
 
 ## Stationary test: BioBuzz Auto Mechanism Test
 

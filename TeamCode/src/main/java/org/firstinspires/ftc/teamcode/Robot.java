@@ -299,12 +299,7 @@ public class Robot {
     // =========================================
 
     public void init(HardwareMap hw, boolean resetEncoders) {
-
-        for (LynxModule hub : hw.getAll(LynxModule.class)) {
-            hub.setBulkCachingMode(
-                    LynxModule.BulkCachingMode.AUTO
-            );
-        }
+        configureBulkCaching(hw);
 
         frontLeft = hw.get(DcMotorEx.class, "frontleft");
         frontRight = hw.get(DcMotorEx.class, "frontright");
@@ -346,11 +341,19 @@ public class Robot {
 
     /** Maps only mechanisms; Pedro remains the sole drivetrain controller. */
     public void initMechanismsOnly(HardwareMap hw, boolean resetTurretEncoder) {
+        configureBulkCaching(hw);
         intake = hw.get(DcMotorEx.class, "intake");
         transmission = hw.get(DcMotorEx.class, "transmission");
         turret = hw.get(DcMotorEx.class, "turret");
         shooter = hw.get(DcMotorEx.class, "shooter");
         configureMechanisms(hw, resetTurretEncoder);
+    }
+
+    private void configureBulkCaching(HardwareMap hw) {
+        for (LynxModule hub : hw.getAll(LynxModule.class)) {
+            hub.setBulkCachingMode(LynxModule.BulkCachingMode.AUTO);
+            hub.clearBulkCache(); // Do not inherit a prior OpMode's manual/stale velocity cache.
+        }
     }
 
     protected SharedPreferences gatePreferences(HardwareMap hw) {
@@ -390,6 +393,7 @@ public class Robot {
         // SHOOTER: APPLY TUNED PIDF
         // =====================================
 
+        shooter.setPower(0);
         shooter.setDirection(
                 DcMotorSimple.Direction.FORWARD
         );

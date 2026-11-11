@@ -137,17 +137,45 @@ public final class MechanismIsolationRegression {
                 "Pedro mode cannot update Pinpoint again through Robot.updateSensors");
         check(sensorRobot.heading==-90 && sensorRobot.rate==-5,"Preserve main turret clockwise heading convention");
         continuousVolley();
+        timedContinuousVolley();
         calibratedRpm();
+        stableSpeedBeforeFeeding();
+        startupNeedsTarget();
+        noTagFallback();
+        forcedFeed();
         lostAim();
+        readyShooterBetweenCommands();
         System.out.println("Passed " + checks + " mechanism initialization/isolation/cleanup checks.");
     }
 
+    static final long STEP_NS=20_000_000L;
+    static final long GATE_WAIT_NS=Math.round(BioBuzzAutoConfig.GATE_OPEN_WAIT_SECONDS*1e9);
+
     static BioBuzzAutoMechanisms.RobotHardware shootingPort(MapFixture map) {
+        return shootingPort(map,System::nanoTime);
+    }
+
+    static BioBuzzAutoMechanisms.RobotHardware shootingPort(MapFixture map, java.util.function.LongSupplier clock) {
         Robot robot=new TestRobot() { @Override public void updateSensors() { } };
         robot.initMechanismsOnly(map,false);
         robot.targetFresh=true; robot.targetVisible=true; robot.targetTx=0;
         robot.targetDistanceMeters=1.90; robot.ballPresent=true; robot.ballDistanceCm=2;
-        return new BioBuzzAutoMechanisms.RobotHardware(robot);
+        return new BioBuzzAutoMechanisms.RobotHardware(robot,clock);
+    }
+
+    static double ticks(double rpm) { return rpm*Robot.SHOOTER_TICKS_PER_REV/60; }
+
+    /** Step until readiness commands the gate OPEN (motors must still be stopped then). */
+    static long openGate(BioBuzzAutoMechanisms.RobotHardware port,long[] now,Runnable tick) {
+        for(int i=0;i<250 && !port.robot.gateOpen;i++) { now[0]+=STEP_NS; tick.run(); }
+        check(port.robot.gateOpen,"Continuously sampled stable speed must open the gate");
+        return now[0];
+    }
+
+    /** Step until both feed motors run (after the gate-open wait). */
+    static void qualifySpeed(BioBuzzAutoMechanisms.RobotHardware port,long[] now,Runnable tick) {
+        for(int i=0;i<250 && !port.shootingBurstActive();i++) { now[0]+=STEP_NS; tick.run(); }
+        check(port.shootingBurstActive(),"Continuously sampled stable speed must qualify the burst");
     }
 
     static void continuousVolley() {
@@ -158,37 +186,46 @@ public final class MechanismIsolationRegression {
         double transmissionReference=manualMap.motors.get("transmission").power;
 
         MapFixture map=new MapFixture();
-        BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map);
-        BioBuzzAutoMechanisms mechanisms=new BioBuzzAutoMechanisms(port);
         long[] now={1_000_000_000L};
+        BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map,()->now[0]);
+        BioBuzzAutoMechanisms mechanisms=new BioBuzzAutoMechanisms(port);
         mechanisms.observe();
         com.pedropathing.ivy.Command volley=mechanisms.command(
                 BioBuzzAutoMechanisms.Action.shoot(4,7),()->now[0],reason->{throw new AssertionError(reason);});
+        Runnable tick=()->{ mechanisms.update(); volley.done(); };
         volley.start();
-        for(int i=0;i<3;i++) { mechanisms.update(); volley.done(); }
+        for(int i=0;i<3;i++) tick.run();
         check(map.gatePositions.size()==1 && map.gatePositions.get(0)==Robot.GATE_CLOSED,
                 "One calibrated CLOSED command before shooting; no cycling while spinning up");
         check(!port.robot.gateOpen && map.motors.get("intake").power==0 && map.motors.get("transmission").power==0,
                 "Gate closed and both feed motors stopped below target RPM");
-        map.motors.get("shooter").velocity=3250*Robot.SHOOTER_TICKS_PER_REV/60;
-        mechanisms.update(); volley.done();
-        check(port.robot.gateOpen && map.motors.get("intake").power==intakeReference
-                && map.motors.get("transmission").power==transmissionReference,
-                "First at-speed sample opens the gate and starts both motors in RT direction together");
+        map.motors.get("shooter").velocity=ticks(3250);
+        tick.run();
+        check(!port.robot.gateOpen,"A single in-band sample must not open the gate");
+        long opened=openGate(port,now,tick);
         check(map.gatePositions.size()==2 && map.gatePositions.get(1)==Robot.GATE_OPEN,
                 "One calibrated OPEN command starts the entire volley");
-        map.motors.get("shooter").velocity=2400*Robot.SHOOTER_TICKS_PER_REV/60;
-        now[0]+=500_000_000L; mechanisms.update(); volley.done();
+        check(map.motors.get("intake").power==0 && map.motors.get("transmission").power==0 && !port.shootingBurstActive(),
+                "The gate opens FIRST; intake and transmission stay stopped while it travels");
+        now[0]=opened+GATE_WAIT_NS-STEP_NS; tick.run();
+        check(map.motors.get("intake").power==0 && map.motors.get("transmission").power==0,
+                "Feed motors wait the full gate-open time");
+        now[0]=opened+GATE_WAIT_NS; tick.run();
+        check(port.shootingBurstActive() && map.motors.get("intake").power==intakeReference
+                        && map.motors.get("transmission").power==transmissionReference,
+                "After the gate has opened, both motors start together in RT direction");
+        map.motors.get("shooter").velocity=ticks(2400);
+        now[0]+=500_000_000L; tick.run();
         check(port.robot.gateOpen && port.robot.shotsFired==0 && map.gatePositions.size()==2,
                 "RPM dips and the old pulse duration cannot close the gate or fabricate a shot");
         check(map.motors.get("intake").power==intakeReference && map.motors.get("transmission").power==transmissionReference,
                 "Both feed motors stay running through RPM dips");
         for(int ball=1;ball<=4;ball++) {
-            port.robot.ballPresent=true; mechanisms.update(); volley.done();
-            port.robot.ballPresent=false; mechanisms.update(); volley.done();
+            port.robot.ballPresent=true; tick.run();
+            port.robot.ballPresent=false; tick.run();
             check(port.robot.shotsFired==ball,"Count one observed ball exit, not a timed gate pulse");
             if(ball<4) {
-                mechanisms.update(); volley.done();
+                tick.run();
                 check(port.robot.shotsFired==ball,"Repeated empty readings cannot count another ball");
                 check(port.robot.gateOpen && map.gatePositions.size()==2,
                         "Keep the gate open between balls without extra servo commands");
@@ -207,30 +244,238 @@ public final class MechanismIsolationRegression {
 
     static void calibratedRpm() {
         MapFixture map=new MapFixture();
-        BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map);
+        long[] now={1_000_000_000L};
+        BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map,()->now[0]);
         double[] distances={1.41,1.60,1.76,1.90,1.83};
         double[] rpm={3150,3150,3200,3250,3225};
         for(int i=0;i<distances.length;i++) {
-            port.robot.targetDistanceMeters=distances[i]; port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
+            port.robot.targetDistanceMeters=distances[i];
+            for(int frame=0;frame<BioBuzzAutoConfig.DISTANCE_FILTER_SAMPLES;frame++) {
+                now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
+            }
             check(Math.abs(port.robot.targetRpm-rpm[i])<1e-8,"Use calibrated/interpolated RPM at "+distances[i]+" m");
-            check(Math.abs(map.motors.get("shooter").commandedVelocity-rpm[i]*Robot.SHOOTER_TICKS_PER_REV/60)<1e-8,
+            check(Math.abs(map.motors.get("shooter").commandedVelocity-ticks(rpm[i]))<1e-8,
                     "Send that same calibrated target to the shooter motor");
         }
+        port.robot.targetDistanceMeters=1.41;
+        now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
+        check(Math.abs(port.robot.targetRpm-3225)<1e-8,"One outlier distance frame cannot change the calibrated RPM");
+        port.robot.targetDistanceMeters=1.83;
+        now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
+        port.robot.targetFresh=false; port.robot.targetDistanceMeters=Double.NaN;
+        now[0]+=500_000_000L; port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
+        check(Math.abs(port.robot.targetRpm-3225)<1e-8,"A brief tag dropout holds the last calibrated distance RPM");
+        now[0]+=(long)(BioBuzzAutoConfig.DISTANCE_HOLD_SECONDS*1e9); port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
+        check(port.robot.targetRpm==Robot.TELEOP_DEFAULT_RPM,"A stale distance falls back to TeleOp's no-tag table default");
+        port.close();
+    }
+
+    static void stableSpeedBeforeFeeding() {
+        MapFixture map=new MapFixture();
+        long[] now={1_000_000_000L};
+        BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map,()->now[0]);
+        Runnable shoot=()->port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
+        shoot.run();
+        // The old +/-100 RPM single-sample check would accept 3151 for a 3250 target.
+        map.motors.get("shooter").velocity=ticks(3151);
+        for(int i=0;i<25;i++) { now[0]+=STEP_NS; shoot.run(); }
+        check(!port.robot.gateOpen && map.motors.get("intake").power==0 && map.motors.get("transmission").power==0,
+                "A flywheel still 99 RPM below target cannot release balls");
+        map.motors.get("shooter").velocity=ticks(3250);
+        for(int i=0;i<10;i++) { now[0]+=STEP_NS; shoot.run(); }
+        check(!port.robot.gateOpen,"A brief crossing through target RPM is not stable readiness");
+        map.motors.get("shooter").velocity=ticks(3199);
+        now[0]+=STEP_NS; shoot.run();
+        map.motors.get("shooter").velocity=ticks(3351);
+        now[0]+=STEP_NS; shoot.run();
+        check(!port.robot.gateOpen,"RPM dips and overshoot reset the qualifying window");
+        map.motors.get("shooter").velocity=ticks(3250);
+        for(int i=0;i<14;i++) { now[0]+=STEP_NS; shoot.run(); }
+        check(!port.robot.gateOpen,"Require the complete stable-speed duration after a disturbance");
+        now[0]+=200_000_000L; shoot.run();
+        check(!port.robot.gateOpen,"An old sample followed by a long loop gap cannot qualify speed");
+        for(int i=0;i<14;i++) { now[0]+=STEP_NS; shoot.run(); }
+        check(!port.robot.gateOpen,"Rebuild the stable window from fresh samples after a gap");
+        // Move to 1.41 m (3150 RPM): the filtered target changes once most recent frames agree.
+        port.robot.targetDistanceMeters=1.41;
+        map.motors.get("shooter").velocity=ticks(3150);
+        long targetChanged=-1;
+        for(int i=0;i<40 && !port.robot.gateOpen;i++) {
+            now[0]+=STEP_NS; shoot.run();
+            if(targetChanged<0 && port.robot.targetRpm==3150) targetChanged=now[0];
+        }
+        check(targetChanged>0 && port.robot.gateOpen && port.robot.targetRpm==3150,
+                "Open only after sustained measured speed at the current calibrated target");
+        check((now[0]-targetChanged)/1e9>=BioBuzzAutoConfig.SHOOT_READY_STABLE_SECONDS-1e-9,
+                "Do not reuse stable time from the previous RPM target");
+        port.robot.targetDistanceMeters=1.90;
+        now[0]+=STEP_NS; shoot.run();
+        check(port.robot.targetRpm==3150 && Math.abs(map.motors.get("shooter").commandedVelocity-ticks(3150))<1e-8,
+                "Distance-frame jitter cannot change the qualified RPM target during a stationary burst");
+        map.motors.get("shooter").velocity=ticks(2400);
+        now[0]+=STEP_NS; shoot.run();
+        check(port.robot.gateOpen && port.diagnostics().contains("feed-start RPM 3150/3150")
+                        && port.diagnostics().contains("min burst RPM 2400"),
+                "Keep the gate open during feeding and report starting speed versus load-induced speed loss");
+        port.stopOutputs();
+        port.robot.targetDistanceMeters=1.41;
+        map.motors.get("shooter").velocity=ticks(3150);
+        long restarted=now[0]+STEP_NS;
+        now[0]=restarted; shoot.run();
+        check(!port.robot.gateOpen,"A new run/volley cannot reuse the previous readiness latch");
+        for(int i=0;i<2;i++) {
+            now[0]+=100_000_000L; shoot.run();
+            check(!port.robot.gateOpen,"Even a warm flywheel must satisfy the fresh-start minimum settle interval");
+        }
+        for(int i=0;i<5 && !port.robot.gateOpen;i++) { now[0]+=100_000_000L; shoot.run(); }
+        check(port.robot.gateOpen && (now[0]-restarted)/1e9>=BioBuzzAutoConfig.SHOOT_MIN_SPINUP_SECONDS,
+                "A repeated run can qualify with its own new stable samples");
+        port.close();
+    }
+
+    static void timedContinuousVolley() {
+        MapFixture map=new MapFixture();
+        long[] now={1_000_000_000L};
+        BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map,()->now[0]);
+        BioBuzzAutoMechanisms mechanisms=new BioBuzzAutoMechanisms(port);
+        mechanisms.observe();
+        com.pedropathing.ivy.Command volley=mechanisms.command(
+                BioBuzzAutoMechanisms.Action.shootFor(4,2,10),()->now[0],reason->{throw new AssertionError(reason);});
+        volley.start(); mechanisms.update(); volley.done();
+        now[0]+=9_500_000_000L; mechanisms.update(); volley.done();
+        check(!port.robot.gateOpen && map.motors.get("intake").power==0,
+                "A stalled flywheel (0 RPM) is never force-fed and gets its spin-up allowance without consuming feed time");
+        map.motors.get("shooter").velocity=ticks(3250);
+        mechanisms.update(); volley.done();
+        qualifySpeed(port,now,()->{ mechanisms.update(); volley.done(); });
+        check(port.robot.gateOpen && map.motors.get("intake").power==-Robot.INTAKE_POWER
+                && map.motors.get("transmission").power==-Robot.TRANSMISSION_INDEX_POWER,
+                "Timed feed starts after speed qualification and the gate wait, in RT direction");
+        // Keep the feeder reading occupied throughout: four separate ball edges cannot be counted.
+        now[0]+=1_999_000_000L; mechanisms.update(); volley.done();
+        check(port.robot.gateOpen && port.robot.shotsFired==0,
+                "Continuous feed remains active for its full duration without fabricating ball counts");
+        now[0]+=1_000_000L; mechanisms.update(); volley.done();
+        check(!port.robot.gateOpen && map.motors.get("intake").power==0 && map.motors.get("transmission").power==0,
+                "End timed feed with no further actuator output even if the feeder cannot distinguish all four balls");
+        now[0]+=210_000_000L; mechanisms.update();
+        check(volley.done(),"A completed timed burst does not throw the old overall mechanism timeout");
+        volley.end(com.pedropathing.ivy.behaviors.EndCondition.NATURALLY); mechanisms.stop();
+        check(map.gatePositions.equals(java.util.Arrays.asList(Robot.GATE_CLOSED,Robot.GATE_OPEN,Robot.GATE_CLOSED)),
+                "Uncounted timed volley still commands the gate closed/open/closed once each");
+    }
+
+    static void startupNeedsTarget() {
+        MapFixture map=new MapFixture();
+        long[] now={1_000_000_000L};
+        BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map,()->now[0]);
+        port.robot.targetFresh=false; port.robot.targetDistanceMeters=Double.NaN;
+        map.motors.get("shooter").velocity=ticks(Robot.TELEOP_DEFAULT_RPM);
+        port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
+        now[0]+=1_000_000_000L; port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
+        check(!port.robot.gateOpen && map.motors.get("intake").power==0 && map.motors.get("transmission").power==0,
+                "Within the aim grace period, an unaimed shooter waits for the tag");
+        port.robot.targetFresh=true; port.robot.targetDistanceMeters=1.90;
+        map.motors.get("shooter").velocity=ticks(3250);
+        port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
+        qualifySpeed(port,now,()->port.control(BioBuzzAutoMechanisms.Kind.SHOOT));
+        check(port.robot.gateOpen && port.diagnostics().contains("(aimed)"),
+                "Fresh aimed distance and stable calibrated RPM allow feeding");
+        port.close();
+    }
+
+    static void noTagFallback() {
+        MapFixture map=new MapFixture();
+        long[] now={1_000_000_000L};
+        BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map,()->now[0]);
+        port.robot.targetFresh=false; port.robot.targetVisible=false; port.robot.targetDistanceMeters=Double.NaN;
+        map.motors.get("shooter").velocity=ticks(Robot.TELEOP_DEFAULT_RPM);
+        long began=now[0];
+        port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
+        long opened=openGate(port,now,()->port.control(BioBuzzAutoMechanisms.Kind.SHOOT));
+        check((opened-began)/1e9>=BioBuzzAutoConfig.SHOOT_AIM_GRACE_SECONDS,
+                "Wait the full aim grace period for the HIVE tag before a no-tag volley");
+        check(port.robot.targetRpm==Robot.TELEOP_DEFAULT_RPM && port.diagnostics().contains("calibrated fallback"),
+                "With no tag, shoot at TeleOp's calibrated no-tag RPM instead of ending the autonomous");
+        port.close();
+    }
+
+    static void forcedFeed() {
+        MapFixture map=new MapFixture();
+        long[] now={1_000_000_000L};
+        BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map,()->now[0]);
+        // Low battery: the flywheel holds 120 RPM under its 3250 target, outside the +/-50 band.
+        map.motors.get("shooter").velocity=ticks(3130);
+        long began=now[0];
+        port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
+        long opened=openGate(port,now,()->port.control(BioBuzzAutoMechanisms.Kind.SHOOT));
+        check((opened-began)/1e9>=BioBuzzAutoConfig.SHOOT_FORCE_FEED_SECONDS && port.diagnostics().contains("forced"),
+                "A flywheel that cannot settle in band is fed at the force time instead of timing out");
+        qualifySpeed(port,now,()->port.control(BioBuzzAutoMechanisms.Kind.SHOOT));
+        check(map.motors.get("intake").power==-Robot.INTAKE_POWER,"Forced volleys still wait for the gate before feeding");
         port.close();
     }
 
     static void lostAim() {
         MapFixture map=new MapFixture();
-        BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map);
-        map.motors.get("shooter").velocity=3250*Robot.SHOOTER_TICKS_PER_REV/60;
+        long[] now={1_000_000_000L};
+        BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map,()->now[0]);
+        map.motors.get("shooter").velocity=ticks(3250);
         port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
-        check(port.robot.gateOpen,"Ready shooter starts burst immediately");
-        port.robot.targetFresh=false;
-        try { port.control(BioBuzzAutoMechanisms.Kind.SHOOT); throw new AssertionError("Lost aim must abort the burst"); }
-        catch(IllegalStateException expected) {
-            check(!port.robot.gateOpen && map.motors.get("intake").power==0 && map.motors.get("transmission").power==0,
-                    "Loss of aiming aborts instead of cycling the gate and restarting mid-volley");
-        }
+        qualifySpeed(port,now,()->port.control(BioBuzzAutoMechanisms.Kind.SHOOT));
+        check(port.robot.gateOpen,"Qualified shooter starts the continuous burst");
+        port.robot.targetFresh=false; port.robot.targetDistanceMeters=Double.NaN;
+        for(int i=0;i<50;i++) { now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.SHOOT); } // One full second.
+        check(port.robot.gateOpen && map.motors.get("intake").power==-Robot.INTAKE_POWER
+                        && map.motors.get("transmission").power==-Robot.TRANSMISSION_INDEX_POWER,
+                "Losing the tag mid-burst keeps feeding the short volley instead of aborting the autonomous");
+        check(port.robot.targetRpm==3250 && map.gatePositions.size()==2,
+                "Hold the latched calibrated RPM without cycling the gate");
+        check(port.diagnostics().contains("aim lost 50 feed loops"),"Report aim loss during the burst");
         port.close();
+    }
+
+    static void readyShooterBetweenCommands() {
+        MapFixture map=new MapFixture();
+        long[] now={1_000_000_000L};
+        BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map,()->now[0]);
+        BioBuzzAutoMechanisms mechanisms=new BioBuzzAutoMechanisms(port);
+        mechanisms.setFaultTolerant(true);
+        mechanisms.observe();
+        mechanisms.manualIntake(false);
+        check(map.gatePositions.isEmpty(),"INIT idle still sends no gate command");
+        mechanisms.keepShooterReady(true);
+        mechanisms.update();
+        check(port.robot.shooterOn && Math.abs(map.motors.get("shooter").commandedVelocity-ticks(3250))<1e-8,
+                "Ready mode spins the flywheel at the calibrated table RPM between commands");
+        check(!port.robot.gateOpen && map.motors.get("intake").power==0 && map.motors.get("transmission").power==0,
+                "Ready mode never opens the gate or feeds");
+        mechanisms.manualIntake(true); now[0]+=STEP_NS; mechanisms.update();
+        check(map.motors.get("intake").power==Robot.INTAKE_POWER && port.robot.shooterOn,
+                "Intake runs while the flywheel stays ready");
+        List<String> shooterTrace=map.motors.get("shooter").trace;
+        int before=shooterTrace.size();
+        mechanisms.manualIntake(false);
+        check(map.motors.get("intake").power==0 && !shooterTrace.subList(before,shooterTrace.size()).contains("setPower:0.0"),
+                "Stopping intake does not shut the flywheel down");
+        map.motors.get("shooter").velocity=ticks(3250);
+        com.pedropathing.ivy.Command volley=mechanisms.command(
+                BioBuzzAutoMechanisms.Action.shootFor(4,BioBuzzAutoConfig.SHOOT_BURST_SECONDS,BioBuzzAutoConfig.SHOOT_SPINUP_TIMEOUT_S),
+                ()->now[0],reason->{throw new AssertionError(reason);});
+        volley.start();
+        long began=now[0];
+        qualifySpeed(port,now,()->{ mechanisms.update(); volley.done(); });
+        check((now[0]-began)/1e9<BioBuzzAutoConfig.SHOOT_MIN_SPINUP_SECONDS+BioBuzzAutoConfig.GATE_OPEN_WAIT_SECONDS+0.1,
+                "A warm, aimed flywheel feeds right after the settle and gate-open waits");
+        before=shooterTrace.size();
+        now[0]+=Math.round(BioBuzzAutoConfig.SHOOT_BURST_SECONDS*1e9); mechanisms.update(); volley.done();
+        check(!port.robot.gateOpen && map.motors.get("intake").power==0 && map.motors.get("transmission").power==0
+                        && !shooterTrace.subList(before,shooterTrace.size()).contains("setPower:0.0") && port.robot.shooterOn,
+                "Ending the burst closes the gate and stops feeding while the flywheel stays ready");
+        now[0]+=210_000_000L; mechanisms.update();
+        check(volley.done(),"Ready-mode volley completes normally");
+        volley.end(com.pedropathing.ivy.behaviors.EndCondition.NATURALLY);
+        mechanisms.stop();
+        check(map.motors.get("shooter").power==0 && map.motors.get("turret").power==0,"STOP shuts the ready flywheel and turret down");
     }
 }

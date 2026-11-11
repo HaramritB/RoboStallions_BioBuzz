@@ -34,6 +34,11 @@ public final class BioBuzzAutoRoutine {
     private boolean scheduled;
     public final int pathCount;
 
+    static BioBuzzAutoRoutine driveOnly(Follower follower, BioBuzzAutoPaths paths, LongSupplier clock) {
+        return new BioBuzzAutoRoutine(follower, paths, BioBuzzAutoPaths.PATH_COUNT,
+                new BioBuzzAutoMechanisms(), BioBuzzAutoConfig.plan(false), clock);
+    }
+
     public BioBuzzAutoRoutine(Follower follower, BioBuzzAutoPaths paths, int pathCount,
                              BioBuzzAutoMechanisms mechanisms, BioBuzzAutoConfig.Plan plan) {
         this(follower,paths,pathCount,mechanisms,plan,System::nanoTime);

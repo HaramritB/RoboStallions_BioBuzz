@@ -5,10 +5,10 @@ This branch integrates the mechanism controllers from main commit
 follow-up is based on `cd5952fb199036fdc5fb02c911faa41724a37dab`. Only PradhyunAuto is published.
 Main is not modified. The disabled legacy encoder Auto is preserved.
 
-**BioBuzz Pedro Auto is selectable and defaults to the full five-path scoring routine.**
-The team confirmed that drivetrain, localization and mechanisms are tested; stale component
-approval flags were removed. INIT initializes hardware without driving; START schedules once.
-Live hardware, localization, arrival, timeout, failure and Stop protections remain.
+**BioBuzz Pedro Auto runs all five fixed paths with drivetrain and Pinpoint only.**
+INIT initializes localization without driving. START begins the inward move before path 1.
+There is no gamepad mode or alliance selection. The OpMode does not initialize shooting,
+intake, the gate, turret, Limelight, or the feeder color/range sensor.
 
 The team measured 427.284 mm from the back to the front of the intake guard, 448.7 mm
 side to side, and 213.642 mm from the tracked center to the intake tip. The runtime offset
@@ -16,7 +16,9 @@ is 8.411102 inches forward with the centered-intake assumption of zero lateral o
 This places the FLOWER chassis center at (46.872269, 131.819817) inches, heading 90.572°.
 Path 5 starts at that same pose. The original visualizer JSON remains the route source.
 
-## Confirmed routine
+## Scoring sequence retained for future integration
+
+This plan is inactive in BioBuzz Pedro Auto.
 
 1. After START, hold the starting pose and shoot **4 preloaded balls before path 1**.
    Move inward to y = 14.447 in, turn to 179.7546°, then return to the original path-1
@@ -144,38 +146,30 @@ departure, where the measured length includes the intake guard. Physical contact
 tracking error and full-run timing require a robot trial. The checked-in audit is the raw
 export audit, with the measured offset and heading alignment applied at runtime.
 
-## Full autonomous: BioBuzz Pedro Auto
+## Field test: BioBuzz Pedro Auto
 
-The OpMode is enabled and default INIT selection is FULL ROUTE, all five paths with mechanisms.
-The measured INTAKE_TIP_FORWARD_IN is already configured. INIT reports the corrected center
-and runs live hardware and localization checks. Set INTAKE_TIP_LEFT_IN if the intake mouth has
-a lateral offset from center, with positive values toward the robot's left.
+1. Remove any configured REV Color/Range Sensor entry if that sensor is absent. Leave
+   Pinpoint and the built-in IMU configured.
+2. Place the robot center at **(57.6323, 9.0657) inches** with its front facing **+Y (90°)**.
+3. Select **BioBuzz Pedro Auto** in Driver Station and tap **INIT**. Confirm
+   **FIXED ROUTE (drive only)**, Pinpoint READY, Localization ready true, and Failure none.
+4. Tap **START**. Expect the inward move, alignment turn, return to the path-1 entry,
+   paths 1 and 2, the in-place turn, then paths 3, 4, and 5. Keep a person at STOP and
+   observe the narrow lower-wall clearance and the FLOWER approach/departure.
+5. If the route stops early, record Status, Route segment, Pinpoint, and Failure telemetry.
 
-A/B chooses BLUE/RED targeting during INIT. Place the robot at (57.6323,9.0657), facing +Y (90°),
-load four preloads, verify live readiness/targeting, then START. The routine shoots preloads,
-intakes during path 1, shoots after path 2, turns before path 3, intakes at FLOWER, and shoots
-after path 5. The FLOWER lever is never deployed. An empty/incomplete shooting volley still
-fails its existing bounded verification, as documented above.
-
-Y toggles FULL ROUTE vs a first-path movement-only test. D-pad +/- selects controlled first N
-movement-only paths; N>=3 includes the turn. First-N tests omit all mechanisms and retain the
-slow path policy. The controlled path-1 test includes the same inward alignment. Tests including paths 4/5 use
-the measured FLOWER correction.
-
-Each waypoint requires <=2 in position error, <=3 deg heading error, <=2 in/s speed and
-<=8 deg/s turn rate, sustained .20 s. Path deadlines 15 s, turn 5 s, whole run 27 s. Full scoring retains the speed constraints
-from the existing tested Constants/Foresight configuration. The 12 in/s and .25 modeled speed
-limits apply only to movement-only controlled tests. Path skipping remains disabled for verified
-waypoint transitions. These are velocity requests, not hard motor-power caps. Full-route timing with three volleys must be measured and tuned to
-fit the competition period; increasing the deadline does not solve an overlong route.
+The fixed route uses the existing controlled-test velocity constraints of 12 in/s and a
+0.25 modeled speed fraction. Each waypoint requires <=2 in position error, <=3 degrees
+heading error, <=2 in/s speed and <=8 degrees/s turn rate, sustained 0.20 s. Path deadlines
+are 15 s, turn deadlines 5 s, and the run deadline 27 s. Path skipping is disabled.
+Verify physical tracking and total elapsed time on the field.
 
 Fresh Pinpoint READY and finite pose/velocity are checked before navigation output. Arrival,
-heading, settled motion, unexpected path replacement, cancellation, timeouts and mechanism
-failures latch failure and block subsequent actions. Follower.stop only clears state in Pedro
-3.0.2, so cleanup also calls drivetrain.stop and independent raw zero fallbacks. Mechanisms
-stop independently even if one write fails. Scheduler commands are cancelled before reset.
+heading, settled motion, unexpected path replacement, cancellation, and timeouts prevent
+subsequent movements after failure. Stop clears follower state, writes zero drivetrain
+power, and cancels scheduler commands before reset.
 
-## Changed files in this update
+## Earlier scoring integration
 
 This follow-up changes autonomous/BioBuzzAutoConfig.java (path-owned/timed intake settings,
 no inventory gate), autonomous/BioBuzzAutoMechanisms.java (remove stored counts, add bounded
@@ -207,7 +201,7 @@ All Java paths below begin TeamCode/src/main/java/org/firstinspires/ftc/teamcode
 | TeamCode/tests/run_autonomous.py | Compile modified/new production OpModes and run added test |
 | TeamCode/AUTONOMOUS.md | This current operational handoff |
 
-## Validation of this update
+## Earlier scoring validation
 
 The measured update passed source/API compilation and the hardware-free Java and route tests
 using official FTC 12.0.0 AARs, the Android API 30 jar and tagged PedroPathing 3.0.2/Ivy 1.1.1

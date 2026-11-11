@@ -69,6 +69,7 @@ public final class BioBuzzAutoMechanisms {
     private long activeStart;
     private double activeTimeout;
     private double activeIntakeDuration;
+    private long shotLimit;
     private String failure="";
 
     public BioBuzzAutoMechanisms() { this(null); }
@@ -128,7 +129,14 @@ public final class BioBuzzAutoMechanisms {
         observe();
         if (hardware != null && !closed && request != Kind.NONE) {
             if (!validObservation()) throw new IllegalStateException("Mechanism sensor sample unavailable/nonfinite");
-            hardware.control(request);
+            if (request == Kind.SHOOT && observation.shotsFired >= shotLimit) {
+                // Stop before control can open the gate for another feed cycle.
+                // The command still verifies the shot count and ball-clear events.
+                request = Kind.NONE;
+                hardware.stopOutputs();
+            } else {
+                hardware.control(request);
+            }
         }
     }
 
@@ -160,6 +168,7 @@ public final class BioBuzzAutoMechanisms {
                     stableSince[0]=-1;
                     clearTransitions[0]=0;
                     baseline[0]=observation.shotsFired;
+                    shotLimit=(long) baseline[0]+action.count;
                     previousBall[0]=observation.ballPresent;
                     request=action.kind;
                 })

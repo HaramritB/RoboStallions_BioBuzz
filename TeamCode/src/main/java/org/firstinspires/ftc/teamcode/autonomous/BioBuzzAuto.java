@@ -146,7 +146,7 @@ public class BioBuzzAuto extends OpMode {
     public void start() {
         if (started || safeStopRequested) return;
         started = true;
-        autoStart = System.nanoTime();
+        autoStart = nanoTime();
         try {
             if (!BioBuzzAutoConfig.blockers(selectedPaths, fullRoute).isEmpty() || follower == null) {
                 throw new IllegalStateException("Configuration blocked: " + BioBuzzAutoConfig.blockers(selectedPaths, fullRoute));
@@ -162,7 +162,7 @@ public class BioBuzzAuto extends OpMode {
             prepareMechanisms();
             mechanisms.observe();
             BioBuzzAutoConfig.Plan plan = BioBuzzAutoConfig.plan(fullRoute);
-            routine = new BioBuzzAutoRoutine(follower, paths, selectedPaths, mechanisms, plan);
+            routine = new BioBuzzAutoRoutine(follower, paths, selectedPaths, mechanisms, plan, this::nanoTime);
             routine.start();
             diagnostic = "Running " + (fullRoute ? "full route" : "controlled route test") + ": " + selectedPaths + " paths";
         } catch (RuntimeException error) {
@@ -251,8 +251,12 @@ public class BioBuzzAuto extends OpMode {
         }
     }
 
+    protected long nanoTime() {
+        return System.nanoTime();
+    }
+
     private double elapsedSeconds() {
-        return autoStart == 0 ? 0 : (System.nanoTime() - autoStart) / 1e9;
+        return autoStart == 0 ? 0 : (nanoTime() - autoStart) / 1e9;
     }
 
     private static String describe(RuntimeException error) {

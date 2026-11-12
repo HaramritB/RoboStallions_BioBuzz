@@ -127,8 +127,8 @@ public final class AutoPathMechanismRegression {
                     && hardware.output==BioBuzzAutoMechanisms.Kind.NONE,"Cleanup stops all outputs despite interrupted commands");
             check(!Scheduler.isScheduled(route),"Cleanup clears route scheduling");
             if(!lever.failRetract && !lever.commands.isEmpty()) check(lever.position==FlowerLever.RETRACTED_POSITION
-                            && FlowerLever.RETRACTED_POSITION==0.0,
-                    "End of the OpMode, STOP and failures retract the flower lever to OFF=0");
+                            && FlowerLever.RETRACTED_POSITION==0.30,
+                    "End of the OpMode, STOP and failures retract the flower lever to OFF=0.30");
         }
     }
     static final double SPEED=0.70;
@@ -159,8 +159,8 @@ public final class AutoPathMechanismRegression {
         try {
             f.toSecondShotApproach();
             f.arrive(); f.drain();
-            check(f.lever.position==0.32 && f.lever.pwm,
-                    "Deploy the flower to ON=0.32 on arrival at the 2nd shooting spot");
+            check(f.lever.position==0.60 && f.lever.pwm,
+                    "Deploy the flower to ON=0.60 on arrival at the 2nd shooting spot");
             f.volley();
             check(f.follower.pathsStarted==5 && f.follower.idle(),"An early volley cannot shorten the four-second path-5 stop");
             f.advance(4-BioBuzzAutoConfig.SHOOT_BURST_SECONDS-.211);

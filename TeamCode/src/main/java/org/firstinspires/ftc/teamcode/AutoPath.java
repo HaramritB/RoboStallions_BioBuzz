@@ -314,7 +314,7 @@ public class AutoPath extends LinearOpMode {
     }
 
     static Path path1() {
-        return curve(START, POSES.of(30.9563, 74.1493, 0), POINT_1).linear(START, POINT_1);
+        return curve(START, POSES.of(37.8335, 44.6525, 0), POINT_1).linear(START, POINT_1);
     }
 
     static Path path2() {
@@ -330,7 +330,7 @@ public class AutoPath extends LinearOpMode {
     }
 
     static Path path5() {
-        return curve(POINT_4, POSES.of(12.3536, 107.7844, 0), POINT_5).linear(POINT_4, POINT_5);
+        return curve(POINT_4, POSES.of(5.9643, 105.7087, 0), POINT_5).linear(POINT_4, POINT_5);
     }
 
     static Path path6() {

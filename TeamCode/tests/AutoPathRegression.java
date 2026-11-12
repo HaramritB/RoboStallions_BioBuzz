@@ -41,9 +41,9 @@ public final class AutoPathRegression {
         assertHeading(paths[4].heading(0), -Math.PI / 2);
         assertHeading(paths[4].heading(1), Math.PI / 2);
         for (int i = 5; i < paths.length; i++) assertHeading(paths[i].heading(.5), Math.PI / 2);
-        assertPoint(paths[0].get(.5), (56 + 2 * 30.9563 + 8.2575) / 4, (8 + 2 * 74.1493 + 16.1386) / 4);
-        assertPoint(paths[4].get(.5), (26.4473 + 2 * 12.3536 + 56.5176) / 4,
-                (15.5231 + 2 * 107.7844 + 111.2149) / 4);
+        assertPoint(paths[0].get(.5), (56 + 2 * 37.8335 + 8.2575) / 4, (8 + 2 * 44.6525 + 16.1386) / 4);
+        assertPoint(paths[4].get(.5), (26.4473 + 2 * 5.9643 + 56.5176) / 4,
+                (15.5231 + 2 * 105.7087 + 111.2149) / 4);
         assertPoint(paths[7].get(.5), (46.5109 + 2 * 43.558 + 56.4722) / 4,
                 (139.7571 + 2 * 106.1367 + 111.3911) / 4);
         checkFlowerExit(false);

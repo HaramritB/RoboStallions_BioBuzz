@@ -114,11 +114,15 @@ public final class MechanismIsolationRegression {
         BioBuzzAutoMechanisms.RobotHardware intakePort=new BioBuzzAutoMechanisms.RobotHardware(new TestRobot());
         intakePort.robot.initMechanismsOnly(intakeMap,false);
         intakePort.control(BioBuzzAutoMechanisms.Kind.COLLECT);
-        check(intakeMap.motors.get("intake").power==Robot.INTAKE_POWER,"Intake request runs the existing motor interface");
+        check(intakeMap.motors.get("intake").power==-Robot.INTAKE_POWER
+                        && intakeMap.motors.get("transmission").power==-Robot.TRANSMISSION_INDEX_POWER,
+                "Collecting runs intake AND transmission in the shooting-feed (gamepad 1 RT) direction");
         check(intakeMap.motors.get("shooter").power==0 && intakeMap.motors.get("turret").power==0,"Collection cannot run shooter or turret");
         intakePort.robot.ballPresent=true;
         intakePort.control(BioBuzzAutoMechanisms.Kind.COLLECT);
-        check(intakeMap.motors.get("intake").power==Robot.INTAKE_POWER,"Feeder presence does not stop open-loop intake motor");
+        check(intakeMap.motors.get("intake").power==-Robot.INTAKE_POWER
+                        && intakeMap.motors.get("transmission").power==-Robot.TRANSMISSION_INDEX_POWER,
+                "A ball at the feeder sensor does not stop collection; the closed gate holds the stack");
         check(!intakeMap.lookups.contains("flower"),"Autonomous mechanisms never map the flower lever");
         check(intakePort.robot.gateController.command==Robot.GATE_CLOSED,"Collection uses main's calibrated gate controller");
         intakePort.robot.gateController.closedPosition=.67;
@@ -145,6 +149,7 @@ public final class MechanismIsolationRegression {
         forcedFeed();
         lostAim();
         readyShooterBetweenCommands();
+        alwaysOnIntake();
         System.out.println("Passed " + checks + " mechanism initialization/isolation/cleanup checks.");
     }
 
@@ -435,6 +440,47 @@ public final class MechanismIsolationRegression {
         port.close();
     }
 
+    static void alwaysOnIntake() {
+        MapFixture map=new MapFixture();
+        long[] now={1_000_000_000L};
+        BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map,()->now[0]);
+        BioBuzzAutoMechanisms mechanisms=new BioBuzzAutoMechanisms(port);
+        mechanisms.setFaultTolerant(true);
+        mechanisms.observe();
+        mechanisms.keepShooterReady(true); mechanisms.keepIntakeRunning(true);
+        mechanisms.update();
+        double in=-Robot.INTAKE_POWER, tx=-Robot.TRANSMISSION_INDEX_POWER;
+        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==tx && !port.robot.gateOpen,
+                "With no command, the always-on intake collects inward against the closed gate");
+        map.motors.get("shooter").velocity=ticks(3250);
+        com.pedropathing.ivy.Command volley=mechanisms.command(
+                BioBuzzAutoMechanisms.Action.shootFor(4,BioBuzzAutoConfig.SHOOT_BURST_SECONDS,BioBuzzAutoConfig.SHOOT_SPINUP_TIMEOUT_S),
+                ()->now[0],reason->{throw new AssertionError(reason);});
+        Runnable tick=()->{ mechanisms.update(); volley.done(); };
+        volley.start(); now[0]+=STEP_NS; tick.run();
+        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==tx && !port.robot.gateOpen,
+                "During spin-up the intake keeps running with the gate closed");
+        long opened=openGate(port,now,tick);
+        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==0,
+                "While the gate opens, the intake runs but the transmission waits");
+        now[0]=opened+GATE_WAIT_NS; tick.run();
+        check(port.shootingBurstActive() && map.motors.get("intake").power==in && map.motors.get("transmission").power==tx,
+                "Once the gate is open, both feed the shot inward");
+        long burstEnd=now[0]+Math.round(BioBuzzAutoConfig.SHOOT_BURST_SECONDS*1e9);
+        now[0]=burstEnd; tick.run();
+        check(!port.robot.gateOpen && map.motors.get("intake").power==in && map.motors.get("transmission").power==0,
+                "The burst closes the gate; the intake stays on and the transmission waits for the gate to close");
+        now[0]=burstEnd+GATE_WAIT_NS; tick.run();
+        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==tx,
+                "After the gate has closed, collecting resumes immediately");
+        now[0]+=210_000_000L; mechanisms.update();
+        check(volley.done(),"The volley still completes normally");
+        volley.end(com.pedropathing.ivy.behaviors.EndCondition.NATURALLY);
+        check(map.motors.get("intake").power==in,"Ending the volley command does not stop the always-on intake");
+        mechanisms.stop();
+        check(map.motors.get("intake").power==0 && map.motors.get("transmission").power==0,"STOP still stops the intake");
+    }
+
     static void readyShooterBetweenCommands() {
         MapFixture map=new MapFixture();
         long[] now={1_000_000_000L};
@@ -451,7 +497,7 @@ public final class MechanismIsolationRegression {
         check(!port.robot.gateOpen && map.motors.get("intake").power==0 && map.motors.get("transmission").power==0,
                 "Ready mode never opens the gate or feeds");
         mechanisms.manualIntake(true); now[0]+=STEP_NS; mechanisms.update();
-        check(map.motors.get("intake").power==Robot.INTAKE_POWER && port.robot.shooterOn,
+        check(map.motors.get("intake").power==-Robot.INTAKE_POWER && port.robot.shooterOn,
                 "Intake runs while the flywheel stays ready");
         List<String> shooterTrace=map.motors.get("shooter").trace;
         int before=shooterTrace.size();

@@ -27,7 +27,7 @@ public final class AutoPathRegression {
         assertRegistered(BioBuzzAuto.class, "BioBuzz Auto"); // Replaced by the teammate's Pedro route.
         Path[] paths = {AutoPath.path1(), AutoPath.path2(), AutoPath.path3(), AutoPath.path4(),
                 AutoPath.path5(), AutoPath.path6(), AutoPath.path7(), AutoPath.path8()};
-        double[][] xy = {{56, 8}, {8.2575, 16.1386}, {8.2853, 7.0319}, {8.2939, 15.6271},
+        double[][] xy = {{56, 8}, {8.2575, 16.1386}, {7.994, 0}, {8.2939, 15.6271},
                 {26.4473, 15.5231}, {56.5176, 111.2149}, {46.5038, 110.9216},
                 {46.5109, 139.7571}, {56.4722, 111.3911}};
         for (int i = 0; i < paths.length; i++) {
@@ -35,15 +35,15 @@ public final class AutoPathRegression {
             assertPoint(paths[i].get(1), xy[i + 1][0], xy[i + 1][1]);
         }
         assertHeading(paths[0].heading(.5), Math.toRadians(270));
-        assertHeading(paths[1].heading(.5), Math.atan2(7.0319 - 16.1386, 8.2853 - 8.2575));
-        assertHeading(paths[2].heading(.5), Math.atan2(15.6271 - 7.0319, 8.2939 - 8.2853) + Math.PI);
+        assertHeading(paths[1].heading(.5), Math.atan2(0 - 16.1386, 7.994 - 8.2575));
+        assertHeading(paths[2].heading(.5), Math.atan2(15.6271 - 0, 8.2939 - 7.994) + Math.PI);
         assertHeading(paths[3].heading(.5), -Math.PI / 2);
         assertHeading(paths[4].heading(0), -Math.PI / 2);
         assertHeading(paths[4].heading(1), Math.PI / 2);
         for (int i = 5; i < paths.length; i++) assertHeading(paths[i].heading(.5), Math.PI / 2);
-        assertPoint(paths[0].get(.5), (56 + 2 * 30.9563 + 8.2575) / 4, (8 + 2 * 74.1493 + 16.1386) / 4);
-        assertPoint(paths[4].get(.5), (26.4473 + 2 * 12.3536 + 56.5176) / 4,
-                (15.5231 + 2 * 107.7844 + 111.2149) / 4);
+        assertPoint(paths[0].get(.5), (56 + 2 * 37.8335 + 8.2575) / 4, (8 + 2 * 44.6525 + 16.1386) / 4);
+        assertPoint(paths[4].get(.5), (26.4473 + 2 * 5.9643 + 56.5176) / 4,
+                (15.5231 + 2 * 105.7087 + 111.2149) / 4);
         assertPoint(paths[7].get(.5), (46.5109 + 2 * 43.558 + 56.4722) / 4,
                 (139.7571 + 2 * 106.1367 + 111.3911) / 4);
         checkFlowerExit(false);
@@ -68,9 +68,26 @@ public final class AutoPathRegression {
             assertStep(follower, 1);
             arrive(follower, navigation);
             assertStep(follower, 2);
-            navigation.setPose(stalled ? poses.of(8.2853, 9.5319, -89.8249)
-                    : follower.currentPath().endPose());
-            follower.atEnd = !stalled;
+            // No early cutoff: 2.5 in short of point 2 the robot keeps driving.
+            navigation.setPose(poses.of(8.0348, 2.4997, -90.9351));
+            follower.atEnd = false;
+            tickRoute();
+            if (follower.idle() || follower.pathsStarted != 2) {
+                throw new AssertionError("Path 2 must drive all the way to point 2, not stop 3 in early");
+            }
+            if (stalled) {
+                // Safety: balls block the robot short of point 2 and it stops making progress.
+                navigation.setPose(poses.of(8.1313, 8.41, -90.9351));
+                follower.atEnd = false;
+                tickRoute();
+                now[0] += 999_000_000L;
+                tickRoute();
+                if (follower.idle()) throw new AssertionError("Keep pressing into the wall until the stall window ends");
+                now[0] += 1_000_000L;
+            } else {
+                navigation.setPose(follower.currentPath().endPose());
+                follower.atEnd = true;
+            }
             int stopsBeforePause = drive.stops;
             tickRoute();
             if (!follower.idle() || drive.stops <= stopsBeforePause) {

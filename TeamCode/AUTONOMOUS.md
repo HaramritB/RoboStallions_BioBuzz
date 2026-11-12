@@ -19,13 +19,17 @@ speeds so it rehearses the real run.
 
 1. INIT at (56, 8), heading 270°. A selects BLUE and B selects RED for tag filtering.
    With the turret physically pointing forward, BACK zeros it.
-2. Shoot the four preloads at START before driving. The flywheel and turret stay active.
-3. Intake on paths 1–2 and through the one-second stop at the wall after path 2. Path 2 ends
-   within 3 in of its target, or after 1 s without 0.25 in of progress if balls block the
-   robot farther out, so the wall can never hang the route.
+2. Shoot the four preloads at START before driving. The flywheel and turret stay active, and
+   the **intake runs inward the entire time** from START to the end of the route (same
+   direction as the feed), including during volleys. The transmission pauses only for the
+   0.25 s while the gate opens or closes, so it never pushes balls into a moving gate.
+3. Collect on paths 1–2 and through the one-second stop at the wall after path 2. Path 2 drives
+   all the way to (7.994, 0) and ends on Pedro's end-of-path signal; there is no early
+   stop. As a safety net, if balls block the robot first, it continues after 1 s without 0.25 in
+   of progress, so the wall can never hang the route.
 4. Follow paths 3–5 to the second shooting spot. At path 5's endpoint, deploy the flower
    lever and shoot, with a four-second minimum stop.
-5. Intake on paths 6–7 and for two seconds at FLOWER. The existing four-second
+5. Collect on paths 6–7 and for two seconds at FLOWER. The existing four-second
    no-progress recovery uses the measured departure pose if path 7 stalls.
 6. Follow path 8, shoot the final volley, and clean up the mechanisms and drivetrain.
 
@@ -37,7 +41,9 @@ INIT. No drive motor directions, distance calibration or PIDF gains are changed.
 Each active loop first updates Pedro, then supplies its CW-converted heading/turn rate to
 Robot.updateMechanismSensors. Robot.aimTurret(true, 0), distanceBasedShooterRpm and
 updateShooter(baseRpm) reuse TeleOp's aiming and measured RPM interpolation/PIDF.
-Collection uses Robot.updateManualFeeder with the calibrated gate closed. Shooting is a
+Collection uses Robot.updateManualFeeder with the calibrated gate closed, in the **same
+gamepad 1 RIGHT-trigger direction as the shooting feed** (intake -1, transmission -0.6), so
+balls stack against the closed gate. Shooting is a
 single continuous burst using the same manual feeder motor control:
 
 - Between volleys (driving, intake, pauses) the flywheel holds the calibrated RPM and the
@@ -78,7 +84,7 @@ so one bad Limelight frame cannot change the shot, and holds that distance for u
 missing frames before using the 3150 no-tag default. Once the gate opens, latch that RPM for
 the stationary burst. No fixed 4000 RPM/color-based shooting target replaces the measured table.
 
-AutoPath maps the `flower` servo without moving it in INIT and retracts it at START. It stays
+AutoPath commands the `flower` servo OFF as soon as INIT is pressed (and again at START). It stays
 OFF through the end of path 5, deploys at the second shooting spot,
 and stays ON through volley 2, paths 6–8 and the final volley. Only the end of the OpMode,
 STOP or a failure retracts it. FlowerLever shares TeleOp's ON=0.32/OFF=0 positions and
@@ -183,9 +189,9 @@ holding the waypoint for FLOWER_INTAKE_SECONDS (initial test value 2.0 s), with 
 10-second hard timeout. Timed intake stops outputs before the first control update at/after
 the duration; a delay is an intake attempt, not proof of inventory. No FLOWER lever is used.
 
-Intake calls the same Robot.updateManualFeeder method as TeleOp's forward intake, with the
-calibrated gate closed. The transmission indexes until the feeder sensor sees a ball and the
-intake continues running. Auto reads Limelight through Robot.updateMechanismSensors, uses
+Intake calls the same Robot.updateManualFeeder method as TeleOp's gamepad 1 RIGHT trigger,
+with the calibrated gate closed: intake and transmission both run inward and stack the balls
+against the gate. Shooting then opens the gate and runs the same direction. Auto reads Limelight through Robot.updateMechanismSensors, uses
 Robot.aimTurret for target tracking and Robot.distanceBasedShooterRpm for flywheel speed.
 Pinpoint supplies the chassis pose. Ball sensing remains in the feeder/shooting interfaces.
 AutoPath now uses timed continuous shooting so missed individual ball-clear events do not
@@ -279,8 +285,8 @@ power, and cancels scheduler commands before reset.
 ## Direct route: AutoPath
 
 **AutoPath** and **AutoPath (Drive Only)** follow the same eight-segment geometry and
-heading profiles and speeds. The wall stop accepts a Pinpoint pose within 3 inches of the
-path-2 target, or a 1-second stall. The second shooting stop is after path 5. Path 7 targets (46.5109, 139.7571);
+heading profiles and speeds. Path 2 runs to its end at (7.994, 0), with a 1-second
+no-progress safety stop. The second shooting stop is after path 5. Path 7 targets (46.5109, 139.7571);
 if the approach stalls for four seconds without 0.25 inch of new progress, path 8 starts
 from the measured pose. Scoring retains the two-second stopped intake window before
 departure. Verify wall and FLOWER contact and total run time on the field.

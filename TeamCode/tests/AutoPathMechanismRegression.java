@@ -32,7 +32,7 @@ public final class AutoPathMechanismRegression {
                 });
     }
     static final class Hardware implements BioBuzzAutoMechanisms.Hardware {
-        boolean ball=true, valid=true, failClose, feedReady=true, ready;
+        boolean ball=true, valid=true, failClose, feedReady=true, ready, intakeAlways;
         int shots, controls, shootControls, closes, fullStops;
         BioBuzzAutoMechanisms.Kind output=BioBuzzAutoMechanisms.Kind.NONE;
         @Override public BioBuzzAutoMechanisms.Observation observe() {
@@ -45,8 +45,10 @@ public final class AutoPathMechanismRegression {
         }
         @Override public boolean shootingBurstActive() { return output==BioBuzzAutoMechanisms.Kind.SHOOT; }
         @Override public void setShooterIdle(boolean spinning) { ready=spinning; }
+        @Override public void setIntakeAlways(boolean running) { intakeAlways=running; }
+        boolean intakeOn() { return intakeAlways || output!=BioBuzzAutoMechanisms.Kind.NONE; }
         @Override public void stopFeed() { output=BioBuzzAutoMechanisms.Kind.NONE; }
-        @Override public void stopOutputs() { fullStops++; ready=false; output=BioBuzzAutoMechanisms.Kind.NONE; }
+        @Override public void stopOutputs() { fullStops++; ready=false; intakeAlways=false; output=BioBuzzAutoMechanisms.Kind.NONE; }
         @Override public void close() {
             closes++; stopOutputs();
             if(failClose) throw new IllegalStateException("simulated mechanism close failure");
@@ -67,12 +69,19 @@ public final class AutoPathMechanismRegression {
             Scheduler.reset();
             mechanisms.setFaultTolerant(matchPolicy); // AutoPath INIT policy.
             mechanisms.observe();
+            flower.setDeployed(false); // Mirrors AutoPath INIT: flower OFF as soon as INIT is pressed.
+            check(lever.commands.equals(java.util.Collections.singletonList(FlowerLever.RETRACTED_POSITION)) && lever.pwm,
+                    "INIT commands the flower OFF (0) with PWM enabled");
             route=AutoPath.route(follower,()->now,mechanisms,flower);
             check(follower.pathsStarted==0 && hardware.controls==0,"Construction cannot activate drive or mechanisms");
-            check(lever.commands.isEmpty(),"Mapping flower and building the route cannot move the servo in INIT");
+            check(lever.commands.size()==1,"Building the route does not move the flower again");
         }
         // Mirrors AutoPath START: flywheel ready + turret tracking, retract flower, schedule route.
-        void start() { mechanisms.keepShooterReady(true); flower.setDeployed(false); Scheduler.schedule(route); tick(); }
+        void start() {
+            mechanisms.keepShooterReady(true); mechanisms.keepIntakeRunning(true);
+            flower.setDeployed(false); Scheduler.schedule(route); tick();
+            check(hardware.intakeAlways && hardware.intakeOn(),"START turns the intake on for the whole route");
+        }
         void tick() { mechanisms.update(); Scheduler.execute(); flower.refresh(); } // Same order as the AutoPath loop.
         // Nested Ivy groups settle child completion and parent advancement on separate loops.
         void drain() { for(int i=0;i<3;i++) tick(); }
@@ -112,8 +121,8 @@ public final class AutoPathMechanismRegression {
                     "Keep the one-second wall pause with intake");
             advance(.001); drain();
             for (int path=3; path<=5; path++) {
-                check(follower.pathsStarted==path && hardware.output!=BioBuzzAutoMechanisms.Kind.COLLECT,
-                        "Transit to the second shot with intake stopped on path "+path);
+                check(follower.pathsStarted==path && hardware.intakeOn(),
+                        "The intake keeps running during transit on path "+path);
                 checkSpeed(SPEED,"Path "+path+" runs at 70%");
                 if (path<5) { arrive(); drain(); }
             }
@@ -191,7 +200,7 @@ public final class AutoPathMechanismRegression {
             check(f.lever.position==FlowerLever.DEPLOYED_POSITION,"Keep the lever deployed throughout the FLOWER pickup window");
             f.advance(.001);
             f.drain();
-            check(f.follower.pathsStarted==8 && f.hardware.output==BioBuzzAutoMechanisms.Kind.NONE,"Path 8 follows timed pickup, with intake stopped");
+            check(f.follower.pathsStarted==8 && f.hardware.intakeOn(),"Path 8 follows the timed pickup with the intake still running");
             check(f.lever.position==FlowerLever.DEPLOYED_POSITION,"The flower stays ON through path 8");
             if(stalled) check(f.follower.currentPath().get(0).distance(PoseFactory.degrees().of(46.88,131.0,90))<1e-8,
                     "Stall recovery still rebases path 8 to the actual departure point");
@@ -199,9 +208,10 @@ public final class AutoPathMechanismRegression {
             f.arrive();
             check(f.follower.idle() && Scheduler.isScheduled(f.route),"Path-8 arrival stops the drive and waits for final shooting");
             check(f.lever.position==FlowerLever.DEPLOYED_POSITION,"The flower stays ON for the final volley");
+            check(f.hardware.intakeOn() && f.hardware.fullStops==0,"The intake is still on at the final shooting spot");
             f.volley();
             check(f.hardware.shots==12 && !Scheduler.isScheduled(f.route),"All three four-shot volleys finish the scoring route");
-            check(f.lever.position==FlowerLever.DEPLOYED_POSITION && f.lever.commands.lastIndexOf(FlowerLever.RETRACTED_POSITION)==0,
+            check(f.lever.position==FlowerLever.DEPLOYED_POSITION && f.lever.commands.lastIndexOf(FlowerLever.RETRACTED_POSITION)<f.lever.commands.indexOf(FlowerLever.DEPLOYED_POSITION),
                     "Once deployed, the flower is never retracted again during the route");
         } finally { f.close(false); }
         check(Constants.foresightConfig.maxPathSpeed.get()==originalSpeed,"Path speed scopes restore after scoring");
@@ -211,8 +221,8 @@ public final class AutoPathMechanismRegression {
         try {
             f.start(); f.volley(); f.tick(); f.arrive(); f.drain();
             check(f.follower.pathsStarted==2,"Test reaches the wall approach");
-            // Balls jam the intake 5 in short of POINT_2: outside the 3-in arrival radius.
-            f.nav.setPose(PoseFactory.degrees().of(8.2853,12.0319,-89.8249)); f.tick();
+            // Balls jam the intake 12 in short of POINT_2.
+            f.nav.setPose(PoseFactory.degrees().of(8.1905,12.0319,-90.9351)); f.tick();
             int stops=f.drive.stops;
             f.advance(.999);
             check(f.follower.pathsStarted==2 && !f.follower.idle(),"Keep pushing while the wall stall window runs");

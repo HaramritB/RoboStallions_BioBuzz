@@ -22,6 +22,7 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
         robot.init(hardwareMap, false);
         Servo flower = hardwareMap.get(Servo.class, "flower");
         boolean flowerOn = false;
+        commandFlower(flower, false); // Flower OFF as soon as INIT is pressed.
         // Override any alliance inherited from Auto or a previously run OpMode.
         robot.alliance = teleOpAlliance();
         Robot.lastAlliance = robot.alliance;
@@ -41,6 +42,10 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
             }
 
             robot.updateSensors();
+            // Keep the INIT OFF command powered if the hub dropped the servo PWM.
+            if (flower instanceof PwmControl && !((PwmControl) flower).isPwmEnabled()) {
+                commandFlower(flower, false);
+            }
 
             telemetry.addLine("===== BIOBUZZ INIT =====");
 
@@ -78,7 +83,7 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
             robot.addVisionTelemetry(telemetry);
             robot.addGateTelemetry(telemetry);
             addPollenLedTelemetry(robot);
-            telemetry.addData("Flower", "OFF at START (%.2f); gamepad 2 RB toggles ON/OFF", FLOWER_OFF);
+            telemetry.addData("Flower", "OFF from INIT (%.2f); gamepad 2 RB toggles ON/OFF", FLOWER_OFF);
 
             telemetry.update();
         }

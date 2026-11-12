@@ -68,6 +68,8 @@ public final class BioBuzzAutoMechanisms {
         default void stopFeed() { stopOutputs(); }
         /** Keep the flywheel at calibrated RPM and the turret tracking while no feed is requested. */
         default void setShooterIdle(boolean spinning) { }
+        /** Run the intake inward for the whole run, not only during collect commands. */
+        default void setIntakeAlways(boolean running) { }
         void close();
     }
 
@@ -78,6 +80,7 @@ public final class BioBuzzAutoMechanisms {
     private boolean commandActive;
     private boolean faultTolerant;
     private boolean shooterReady;
+    private boolean intakeAlways;
     private LongSupplier activeClock;
     private long activeStart;
     private double activeTimeout;
@@ -138,6 +141,16 @@ public final class BioBuzzAutoMechanisms {
         }
     }
 
+    /**
+     * AutoPath: keep the intake running inward from START to the end of the route, including
+     * between pickups and during volleys. Collecting and feeding use the same direction.
+     */
+    public void keepIntakeRunning(boolean running) {
+        if (closed) return;
+        intakeAlways=running;
+        if (hardware!=null) hardware.setIntakeAlways(running);
+    }
+
     /** Stationary operator-held test only; mutually exclusive with any command. */
     public void manualIntake(boolean running) {
         if (closed && !running) return; // An end callback may run after emergency shutdown.
@@ -189,7 +202,7 @@ public final class BioBuzzAutoMechanisms {
             }
         }
         observe();
-        if (hardware != null && !closed && (request != Kind.NONE || shooterReady)) {
+        if (hardware != null && !closed && (request != Kind.NONE || shooterReady || intakeAlways)) {
             if (!validObservation()) throw new IllegalStateException("Mechanism sensor sample unavailable/nonfinite");
             if (request == Kind.SHOOT && activeShotDuration==0 && observation.shotsFired >= shotLimit) {
                 // The fourth observed exit ends the burst before another feed motor write.
@@ -325,6 +338,7 @@ public final class BioBuzzAutoMechanisms {
         closed=true;
         commandActive=false;
         shooterReady=false;
+        intakeAlways=false;
         request=Kind.NONE;
         if (hardware != null) hardware.close();
     }
@@ -360,7 +374,8 @@ public final class BioBuzzAutoMechanisms {
     public String state() {
         if (hardware == null) return "DISABLED - no mapped actions";
         if (closed) return "STOPPED";
-        return shooterReady ? request.name() + " (flywheel ready, turret tracking)" : request.name();
+        String mode=(shooterReady ? ", flywheel ready, turret tracking" : "") + (intakeAlways ? ", intake always on" : "");
+        return mode.isEmpty() ? request.name() : request.name() + " (" + mode.substring(2) + ")";
     }
     public String failure() { return failure; }
     /** Non-fatal problems the fault-tolerant route continued through. Empty when none. */
@@ -369,12 +384,22 @@ public final class BioBuzzAutoMechanisms {
     /** Reuses existing Robot controllers. This adapter never calls Robot.drive(), init() or stop(). */
     static final class RobotHardware implements Hardware {
         private enum Phase { IDLE, SPINUP, GATE_OPENING, FEEDING }
+        /**
+         * The one inward direction (TeleOp gamepad 1 RIGHT trigger) for BOTH collecting and
+         * feeding shots: intake -1, transmission -0.6. Only the gate differs (closed = collect and
+         * stack balls against it, open = shoot). Collecting must never run the opposite way.
+         */
+        static final double INWARD_INTAKE_POWER = -Robot.INTAKE_POWER;
+        static final double INWARD_TRANSMISSION_POWER = -Robot.TRANSMISSION_INDEX_POWER;
 
         final Robot robot;
         private final LongSupplier clock;
         DoubleSupplier headingCw, turnRateCw;
         private Phase phase=Phase.IDLE;
         private boolean idleSpin;
+        private boolean intakeAlways;
+        private boolean gateCommandOpen;
+        private long gateMovedAt=-1;
         private boolean previousBurstBall;
         private long gateOpenedAt=-1;
         private double burstBaseRpm=Double.NaN;
@@ -406,6 +431,7 @@ public final class BioBuzzAutoMechanisms {
         }
         @Override public boolean shootingBurstActive() { return phase==Phase.FEEDING; }
         @Override public void setShooterIdle(boolean spinning) { idleSpin=spinning; }
+        @Override public void setIntakeAlways(boolean running) { intakeAlways=running; }
 
         @Override public Observation observe() {
             if (headingCw==null) robot.updateSensors();
@@ -488,16 +514,40 @@ public final class BioBuzzAutoMechanisms {
                 if (phase!=Phase.SPINUP && Double.isFinite(measuredRpm)) {
                     minBurstRpm=Double.isFinite(minBurstRpm) ? Math.min(minBurstRpm,measuredRpm) : measuredRpm;
                 }
-                robot.gateOpen=phase!=Phase.SPINUP;
-                // Gate CLOSED while spinning up, OPEN alone while it travels, then both RT-direction motors.
-                robot.updateManualFeeder(false,phase==Phase.FEEDING ? -Robot.INTAKE_POWER : 0);
+                // Gate CLOSED while spinning up, OPEN while it travels, then both RT-direction motors.
+                // With the intake always on, it also runs through spin-up and the gate wait.
+                boolean feeding=phase==Phase.FEEDING;
+                driveFeeder(now,phase!=Phase.SPINUP,
+                        feeding || intakeAlways ? INWARD_INTAKE_POWER : 0,
+                        feeding || (intakeAlways && phase==Phase.SPINUP) ? INWARD_TRANSMISSION_POWER : 0);
             } else {
                 resetShot();
-                robot.gateOpen=false;
-                // Same forward intake, gate-closed indexing and ball sensor behavior as TeleOp.
-                robot.updateManualFeeder(false,request==Kind.COLLECT ? Robot.INTAKE_POWER : 0);
+                // Collect in the same direction as the shot, gate closed: balls stack against the gate.
+                boolean collecting=request==Kind.COLLECT || (intakeAlways && request==Kind.NONE);
+                driveFeeder(now,false,collecting ? INWARD_INTAKE_POWER : 0,
+                        collecting ? INWARD_TRANSMISSION_POWER : 0);
             }
             robot.updateLed();
+        }
+
+        /** Calibrated gate plus both feed motors; the transmission never pushes balls into a moving gate. */
+        private void driveFeeder(long now, boolean open, double intakePower, double transmissionPower) {
+            boolean calibrated=robot.gateCalibrated();
+            open&=calibrated;
+            if (open!=gateCommandOpen) { gateCommandOpen=open; gateMovedAt=now; }
+            boolean gateMoving=gateMovedAt>=0 && (now-gateMovedAt)/1e9<BioBuzzAutoConfig.GATE_OPEN_WAIT_SECONDS;
+            robot.gateOpen=open;
+            if (calibrated) robot.gateController.commandSaved(open);
+            robot.intake.setPower(intakePower);
+            robot.transmission.setPower(calibrated && !gateMoving ? transmissionPower : 0);
+        }
+
+        private void closeGate(RuntimeException[] first) {
+            if (gateCommandOpen) gateMovedAt=clock.getAsLong();
+            gateCommandOpen=false;
+            robot.gateOpen=false;
+            // No INIT gate write. Commands require separately verified gate hardware/sequence.
+            attempt(() -> { if (used && robot.gateController!=null) robot.gateController.commandSaved(false); },first);
         }
 
         private void recordDistance(double meters, long now) {
@@ -550,19 +600,23 @@ public final class BioBuzzAutoMechanisms {
         }
 
         @Override public void stopFeed() {
-            if (!idleSpin) { stopOutputs(); return; }
+            if (!idleSpin && !intakeAlways) { stopOutputs(); return; }
             resetShot();
-            robot.gateOpen=false;
             RuntimeException[] first={null};
-            attempt(() -> { if (robot.intake!=null) robot.intake.setPower(0); },first);
+            if (!idleSpin) {
+                robot.shooterOn=false;
+                attempt(() -> { if (robot.turret!=null) robot.turret.setPower(0); },first);
+                attempt(() -> { if (robot.shooter!=null) robot.shooter.setPower(0); },first);
+            }
+            // An always-on intake keeps spinning; the transmission waits for the gate to close.
+            attempt(() -> { if (robot.intake!=null) robot.intake.setPower(intakeAlways ? INWARD_INTAKE_POWER : 0); },first);
             attempt(() -> { if (robot.transmission!=null) robot.transmission.setPower(0); },first);
-            attempt(() -> { if (used && robot.gateController!=null) robot.gateController.commandSaved(false); },first);
+            closeGate(first);
             if (first[0]!=null) throw first[0];
         }
 
         @Override public void stopOutputs() {
             robot.shooterOn=false;
-            robot.gateOpen=false;
             resetShot();
             distanceCount=distanceNext=0; lastDistanceAt=-1;
             RuntimeException[] first={null};
@@ -570,12 +624,11 @@ public final class BioBuzzAutoMechanisms {
             attempt(() -> { if (robot.shooter!=null) robot.shooter.setPower(0); },first);
             attempt(() -> { if (robot.intake!=null) robot.intake.setPower(0); },first);
             attempt(() -> { if (robot.transmission!=null) robot.transmission.setPower(0); },first);
-            // No INIT gate write. Commands require separately verified gate hardware/sequence.
-            attempt(() -> { if (used && robot.gateController!=null) robot.gateController.commandSaved(false); },first);
+            closeGate(first);
             if (first[0]!=null) throw first[0];
         }
         @Override public void close() {
-            idleSpin=false;
+            idleSpin=false; intakeAlways=false;
             try { stopOutputs(); }
             finally { if (robot.Limelight!=null) robot.Limelight.stop(); }
         }

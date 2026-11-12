@@ -26,8 +26,8 @@ import static com.pedropathing.ivy.pedro.PedroCommands.follow;
 @Autonomous(name = "AutoPath", group = "Autonomous")
 public class AutoPath extends LinearOpMode {
     private static final double SPEED_FRACTION = 0.70;
-    private static final double WALL_ARRIVAL_IN = 3.0;
-    // Path 2 aims ~1.4 in past the wall; if balls stop the robot farther out, continue after this.
+    // Path 2 drives all the way to point 2 (Pedro's end of path); there is no early-arrival radius.
+    // Safety only: if balls or the wall stop the robot first, continue after this long without progress.
     private static final long WALL_STALL_NS = 1_000_000_000L;
     private static final long WALL_PAUSE_NS = 1_000_000_000L;
     private static final long SECOND_SHOT_PAUSE_NS = 4_000_000_000L;
@@ -37,8 +37,8 @@ public class AutoPath extends LinearOpMode {
     private static final PoseFactory POSES = PoseFactory.degrees();
     private static final Pose START = POSES.of(56, 8, 270);
     private static final Pose POINT_1 = POSES.of(8.2575, 16.1386, 270);
-    private static final Pose POINT_2 = POSES.of(8.2853, 7.0319, -89.8249);
-    private static final Pose POINT_3 = POSES.of(8.2939, 15.6271, -90.0571);
+    private static final Pose POINT_2 = POSES.of(7.994, 0, -90.9351);
+    private static final Pose POINT_3 = POSES.of(8.2939, 15.6271, -91.0991);
     private static final Pose POINT_4 = POSES.of(26.4473, 15.5231, -90);
     private static final Pose POINT_5 = POSES.of(56.5176, 111.2149, 90);
     private static final Pose POINT_6 = POSES.of(46.5038, 110.9216, 90);
@@ -59,6 +59,7 @@ public class AutoPath extends LinearOpMode {
             follower.setPose(START);
             if (useMechanisms()) {
                 flowerLever = new FlowerLever(hardwareMap.get(Servo.class, "flower"));
+                flowerLever.setDeployed(false); // Flower OFF as soon as INIT is pressed.
                 mechanisms = BioBuzzAutoMechanisms.initialize(hardwareMap, alliance,
                         () -> -Math.toDegrees(follower.pose().heading()),
                         () -> -Math.toDegrees(follower.velocity().omega));
@@ -75,6 +76,7 @@ public class AutoPath extends LinearOpMode {
                 }
                 follower.localizer.update(); // Read only; never run the drive controller in INIT.
                 mechanisms.observe();
+                if (flowerLever != null) flowerLever.refresh(); // Keep the INIT OFF command powered.
                 publish(follower, mechanisms, alliance);
                 idle();
             }
@@ -86,6 +88,8 @@ public class AutoPath extends LinearOpMode {
                 // Like TeleOp: flywheel at calibrated RPM and turret tracking for the whole run,
                 // so every volley starts warm and aimed instead of from zero after stopping.
                 mechanisms.keepShooterReady(true);
+                // Intake runs inward from START to the end of the route (same direction as the feed).
+                mechanisms.keepIntakeRunning(true);
             }
             mechanisms.observe();
             if (flowerLever != null) flowerLever.setDeployed(false);
@@ -147,7 +151,7 @@ public class AutoPath extends LinearOpMode {
     static Command route(Follower follower, LongSupplier clock, BioBuzzAutoMechanisms mechanisms, FlowerLever flowerLever) {
         // Every segment runs at 70% except the two that drive into balls: path 2 (into the wall
         // balls) and path 7 (FLOWER intake). Drive-only uses the same speeds so it rehearses the run.
-        Approach wall = new Approach(POINT_2, WALL_ARRIVAL_IN, WALL_STALL_NS);
+        Approach wall = new Approach(POINT_2, 0, WALL_STALL_NS);
         Approach flower = new Approach(POINT_7, FLOWER_ARRIVAL_IN, FLOWER_STALL_NS);
         Command wallPickup = sequential(
                 follow(follower, atRouteSpeed(path1())),
@@ -178,8 +182,8 @@ public class AutoPath extends LinearOpMode {
         return sequential(
                 stoppedShot(follower, clock, mechanisms, BioBuzzAutoConfig.PRELOAD_BALL_COUNT, 0),
                 intakeAlong(follower, mechanisms, wallPickup),
-                // Keep intaking through the one-second stop: arrival is declared 3 in early, and the
-                // last wall ball is still being pulled in when the chassis stops.
+                // Keep intaking through the one-second stop: the last wall ball is still being pulled
+                // in when the chassis stops against the wall.
                 parallel(pauseDrive(follower, clock, WALL_PAUSE_NS), mechanisms.command(
                         BioBuzzAutoMechanisms.Action.intakeFor(WALL_PAUSE_NS / 1e9,
                                 BioBuzzAutoConfig.COLLECTION_TIMEOUT_S), clock, AutoPath::mechanismFailure)),
@@ -314,7 +318,7 @@ public class AutoPath extends LinearOpMode {
     }
 
     static Path path1() {
-        return curve(START, POSES.of(30.9563, 74.1493, 0), POINT_1).linear(START, POINT_1);
+        return curve(START, POSES.of(37.8335, 44.6525, 0), POINT_1).linear(START, POINT_1);
     }
 
     static Path path2() {
@@ -330,7 +334,7 @@ public class AutoPath extends LinearOpMode {
     }
 
     static Path path5() {
-        return curve(POINT_4, POSES.of(12.3536, 107.7844, 0), POINT_5).linear(POINT_4, POINT_5);
+        return curve(POINT_4, POSES.of(5.9643, 105.7087, 0), POINT_5).linear(POINT_4, POINT_5);
     }
 
     static Path path6() {

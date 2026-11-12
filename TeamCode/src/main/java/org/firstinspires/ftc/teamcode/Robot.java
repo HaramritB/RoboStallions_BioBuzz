@@ -84,10 +84,18 @@ public class Robot {
     public static final double TURRET_DEADBAND_DEG = 1.0;
 
     public static final double TURRET_MAX_POWER = 0.6;
+    public static final double TURRET_STALL_MIN_POWER = 0.10;
+    public static final double TURRET_STALL_SPEED_TICKS_S = 5.0;
+    public static final long TURRET_STALL_MS = 250;
+    public static final int TURRET_SNAG_CLEARANCE_TICKS = 10;
+    public static final double TURRET_SNAG_BACKOFF_POWER = 0.12;
     public static final double TURRET_SEARCH_POWER = 0.15;
     public static final double TURRET_TRACK_MAX_POWER = 0.22;
     // Initial velocity feedforward from nominal no-load turret speed; tune on the robot.
     public static final double TURRET_KV = 1.0 / (1150.0 * 6.0 / TURRET_MOTOR_REVS_PER_TURRET_REV);
+    // Convert Pinpoint heading and turn rate to the turret's clockwise-positive convention.
+    // Flip the sign if compensation follows the chassis turn. Set to zero to disable.
+    public static final double TURRET_PINPOINT_HEADING_SCALE = -1.0;
     public static final double TURRET_ROTATION_DEADBAND_DEG_S = 2.0;
     public static final long TURRET_REACQUIRE_MS = 400;
     public static final double TURRET_RETURN_MAX_POWER = 0.35;
@@ -99,9 +107,8 @@ public class Robot {
     // Preserve your latest camera/motor sign correction.
     public static final double TURRET_VISION_POWER_SIGN = -1.0;
 
-    // -1 automatically locks one matching tag; it does not average a changing tag group.
+    // -1 averages the horizontal offsets of all visible matching tags.
     public static final int TURRET_AIM_TAG_ID = -1;
-    public static final long TURRET_TAG_SWITCH_DELAY_MS = 250;
 
     public static final double AIM_TOLERANCE_DEG = 3.0;
 
@@ -236,7 +243,6 @@ public class Robot {
     private boolean tagEverSeen;
 
     private final ElapsedTime sinceTagSeen = new ElapsedTime();
-    private final AimTagLock aimTagLock = new AimTagLock();
     private Alliance visionAlliance;
 
     public final TurretGains turretGains = new TurretGains();
@@ -252,6 +258,13 @@ public class Robot {
 
     private double turretRequestedPower;
     private double turretAppliedPower;
+    private final ElapsedTime turretStallTimer = new ElapsedTime();
+    private boolean turretStallPending;
+    private boolean turretStalled;
+    private int turretMinTicks = TURRET_MIN_TICKS;
+    private int turretMaxTicks = TURRET_MAX_TICKS;
+    private int turretRecoveryDirection;
+    private boolean turretBackingOff;
     private String turretPowerLimit = "none";
 
     private boolean visionConnected;
@@ -460,14 +473,20 @@ public class Robot {
     private void updateHeading() {
         chassisHeadingDegrees = Double.NaN;
         chassisTurnRateDegrees = Double.NaN;
+        if (TURRET_PINPOINT_HEADING_SCALE == 0.0) {
+            headingStatus = "DISABLED";
+            return;
+        }
         if (pinpoint == null) return;
 
         pinpoint.update();
         headingStatus = pinpoint.getDeviceStatus().toString();
         if (pinpoint.getDeviceStatus() != GoBildaPinpointDriver.DeviceStatus.READY) return;
 
-        double heading = -pinpoint.getHeading(UnnormalizedAngleUnit.DEGREES);
-        double turnRate = -pinpoint.getHeadingVelocity(UnnormalizedAngleUnit.DEGREES);
+        double heading = TURRET_PINPOINT_HEADING_SCALE
+                * pinpoint.getHeading(UnnormalizedAngleUnit.DEGREES);
+        double turnRate = TURRET_PINPOINT_HEADING_SCALE
+                * pinpoint.getHeadingVelocity(UnnormalizedAngleUnit.DEGREES);
         if (Double.isFinite(heading) && Double.isFinite(turnRate)) {
             chassisHeadingDegrees = heading;
             chassisTurnRateDegrees = turnRate;
@@ -519,12 +538,12 @@ public class Robot {
         targetDistanceTagId = -1;
         targetFaceAngleDegrees = Double.NaN;
         if (visionAlliance != alliance) {
-            aimTagLock.reset();
             turretAim.cancelReturn();
             visionAlliance = alliance;
             tagEverSeen = false;
         }
-        aimTagLock.beginFrame();
+        double txSum = 0;
+        int firstMatchingId = -1;
 
         if (result != null
                 && result.getFiducialResults() != null) {
@@ -556,7 +575,8 @@ public class Robot {
                     if (Double.isFinite(
                             tag.getTargetXDegrees())) {
 
-                        aimTagLock.consider(tag.getFiducialId(), tag.getTargetXDegrees());
+                        txSum += tag.getTargetXDegrees();
+                        if (firstMatchingId < 0) firstMatchingId = tag.getFiducialId();
                         visionUsableMatches++;
                     }
                 }
@@ -586,17 +606,8 @@ public class Robot {
 
         boolean seenNow = "MATCHING TAG VISIBLE".equals(visionDebug);
         if (seenNow) {
-            int selectedId = aimTagLock.finishFrame(System.nanoTime() / 1e6);
-            if (selectedId < 0) {
-                seenNow = false;
-                visionDebug = "LOCKED TAG TEMPORARILY LOST: ID " + aimTagLock.lockedId;
-            } else {
-                targetId = selectedId;
-                targetTx = aimTagLock.selectedTx;
-            }
-        }
-
-        if (seenNow) {
+            targetId = firstMatchingId;
+            targetTx = txSum / visionUsableMatches;
             targetFrameTimestamp = result.getTimestamp();
             if (!Double.isFinite(targetFrameTimestamp) || targetFrameTimestamp == 0) {
                 targetFrameTimestamp = result.getControlHubTimeStamp();
@@ -604,19 +615,22 @@ public class Robot {
             targetFrameAgeMs = visionResultAgeMs + result.getCaptureLatency()
                     + result.getTargetingLatency() + result.getParseLatency();
             for (LLResultTypes.FiducialResult tag : result.getFiducialResults()) {
-                if (tag.getFiducialId() != targetId) continue;
+                if (!isOurHiveTag(tag.getFiducialId()) || !Double.isFinite(tag.getTargetXDegrees())) continue;
                 Pose3D cameraPose = tag.getTargetPoseCameraSpace();
-                if (cameraPose != null) {
-                    Position position = cameraPose.getPosition().toUnit(DistanceUnit.METER);
-                    targetDistanceMeters = cameraToTagDistanceMeters(position.x, position.y, position.z);
-                    if (Double.isFinite(targetDistanceMeters)) targetDistanceTagId = targetId;
-                }
+                if (cameraPose == null) continue;
+                Position position = cameraPose.getPosition().toUnit(DistanceUnit.METER);
+                double distance = cameraToTagDistanceMeters(position.x, position.y, position.z);
+                if (!Double.isFinite(distance)
+                        || (Double.isFinite(targetDistanceMeters) && distance >= targetDistanceMeters)) continue;
+
+                targetDistanceMeters = distance;
+                targetDistanceTagId = tag.getFiducialId();
+                targetFaceAngleDegrees = Double.NaN;
                 Pose3D cameraInTagSpace = tag.getCameraPoseTargetSpace();
                 if (cameraInTagSpace != null) {
-                    Position position = cameraInTagSpace.getPosition().toUnit(DistanceUnit.METER);
-                    targetFaceAngleDegrees = tagFaceAngleDegrees(position.x, position.z);
+                    Position cameraPosition = cameraInTagSpace.getPosition().toUnit(DistanceUnit.METER);
+                    targetFaceAngleDegrees = tagFaceAngleDegrees(cameraPosition.x, cameraPosition.z);
                 }
-                break;
             }
 
             tagEverSeen = true;
@@ -724,7 +738,7 @@ public class Robot {
         }
 
         if (Double.isFinite(targetDistanceMeters)) {
-            telemetry.addData("LL tag distance", "ID %d: %.2f m / %.1f in (locked aim tag)",
+            telemetry.addData("LL tag distance", "ID %d: %.2f m / %.1f in (nearest matching tag)",
                     targetDistanceTagId, targetDistanceMeters, targetDistanceMeters / 0.0254);
         } else {
             telemetry.addData("LL tag distance", "unavailable (no fresh matching tag pose)");
@@ -786,7 +800,7 @@ public class Robot {
                 turretPowerLimit
         );
         telemetry.addData("Turret encoder", "%d ticks (soft limits %d to %d)",
-                turret.getCurrentPosition(), TURRET_MIN_TICKS, TURRET_MAX_TICKS);
+                turret.getCurrentPosition(), turretMinTicks, turretMaxTicks);
         telemetry.addData("Heading compensation", "%s; CW heading=%.1f rate=%.1f deg/s",
                 headingStatus, chassisHeadingDegrees, chassisTurnRateDegrees);
         telemetry.addData("Aim target", aimTargetLabel());
@@ -930,7 +944,7 @@ public class Robot {
 
         double power;
 
-        if (autoAim && Limelight != null) {
+        if (autoAim && (Limelight != null || Double.isFinite(chassisHeadingDegrees))) {
 
             power = turretAim.update(
                     turretDegrees(),
@@ -966,8 +980,8 @@ public class Robot {
         double error =
                 Range.clip(
                         degrees,
-                        TURRET_MIN_DEG,
-                        TURRET_MAX_DEG
+                        turretAim.minDeg,
+                        turretAim.maxDeg
                 ) - turretDegrees();
 
         double power =
@@ -995,25 +1009,91 @@ public class Robot {
         int ticks = turret.getCurrentPosition();
 
         turretPowerLimit = "none";
+        if (turretRecoveryDirection != 0) {
+            power = turretRecoveryPower(ticks);
+        }
 
-        if (ticks >= TURRET_MAX_TICKS && power > 0) {
+        if (ticks >= turretMaxTicks && power > 0) {
 
             power = 0;
             turretPowerLimit = "RIGHT ENCODER LIMIT";
 
         } else if (
-                ticks <= TURRET_MIN_TICKS && power < 0
+                ticks <= turretMinTicks && power < 0
         ) {
 
             power = 0;
             turretPowerLimit = "LEFT ENCODER LIMIT";
         }
 
+        // Use the command after soft limits so an intentional stop does not count as a stall.
+        double velocity = turret.getVelocity();
+        boolean stalledUnderPower = Math.abs(power) >= TURRET_STALL_MIN_POWER
+                && Double.isFinite(velocity) && Math.abs(velocity) <= TURRET_STALL_SPEED_TICKS_S;
+        if (!stalledUnderPower) {
+            turretStallPending = false;
+        } else if (!turretStallPending) {
+            turretStallPending = true;
+            turretStallTimer.reset();
+        } else if (turretStallTimer.milliseconds() >= TURRET_STALL_MS) {
+            turretStallPending = false;
+            if (turretRecoveryDirection != 0 || !beginTurretRecovery(ticks, power)) {
+                turretStalled = true;
+                turretRecoveryDirection = 0;
+            }
+            power = 0;
+        }
+        if (turretStalled) {
+            power = 0;
+            turretPowerLimit = "STALL - CHECK TURRET AND WIRING";
+            turretAimState = "STALL STOP";
+        }
+
         turretAppliedPower = power;
         turret.setPower(power);
     }
 
+    private boolean beginTurretRecovery(int ticks, double stalledPower) {
+        int newMin = stalledPower < 0 ? Math.max(turretMinTicks, ticks + TURRET_SNAG_CLEARANCE_TICKS)
+                : turretMinTicks;
+        int newMax = stalledPower > 0 ? Math.min(turretMaxTicks, ticks - TURRET_SNAG_CLEARANCE_TICKS)
+                : turretMaxTicks;
+        if (newMax - newMin <= TURRET_SNAG_CLEARANCE_TICKS) return false;
+
+        turretMinTicks = newMin;
+        turretMaxTicks = newMax;
+        turretAim.minDeg = newMin / TURRET_TICKS_PER_DEG;
+        turretAim.maxDeg = newMax / TURRET_TICKS_PER_DEG;
+        turretAim.cancelReturn();
+        turretRecoveryDirection = stalledPower > 0 ? -1 : 1;
+        turretBackingOff = true;
+        turretAimState = "SNAG BACKOFF";
+        return true;
+    }
+
+    private double turretRecoveryPower(int ticks) {
+        boolean movingRight = turretRecoveryDirection > 0;
+        if (turretBackingOff && (movingRight ? ticks >= turretMinTicks : ticks <= turretMaxTicks)) {
+            turretBackingOff = false;
+            turretStallPending = false;
+        }
+        if (movingRight ? ticks >= turretMaxTicks : ticks <= turretMinTicks) {
+            turretRecoveryDirection = 0;
+            turretAim.cancelReturn();
+            turretAimState = "SNAG RECOVERY COMPLETE";
+            return 0;
+        }
+        turretAimState = turretBackingOff ? "SNAG BACKOFF" : "SNAG RECOVERY SWEEP";
+        return turretRecoveryDirection * (turretBackingOff ? TURRET_SNAG_BACKOFF_POWER : TURRET_SEARCH_POWER);
+    }
+
+    public boolean isTurretStalled() {
+        return turretStalled;
+    }
+
     public void zeroTurret() {
+        // Preserve the encoder reference for limits learned during this OpMode.
+        if (turretStalled || turretMinTicks != TURRET_MIN_TICKS || turretMaxTicks != TURRET_MAX_TICKS) return;
 
         turretAim.cancelReturn();
         turret.setPower(0);
@@ -1029,7 +1109,9 @@ public class Robot {
 
     public boolean aimedAtTarget() {
 
-        return !turretAim.returning
+        return !turretStalled
+                && turretRecoveryDirection == 0
+                && !turretAim.returning
                 && targetVisible
                 && Math.abs(
                 targetTx - TURRET_AIM_OFFSET_DEG
@@ -1044,7 +1126,7 @@ public class Robot {
 
         return TURRET_AIM_TAG_ID >= 0
                 ? "TAG " + TURRET_AIM_TAG_ID
-                : aimTagLock.lockedId >= 0 ? "LOCKED TAG " + aimTagLock.lockedId : "AUTO TAG LOCK";
+                : "GROUP MEAN (" + visionUsableMatches + " tags)";
     }
 
     public double turretAimErrorDegrees() {
@@ -1079,61 +1161,14 @@ public class Robot {
         }
     }
 
-    /** Keeps changes in the number/order of visible tags from moving the aim point. */
-    static final class AimTagLock {
-        private int lockedId = -1;
-        private double lastSeenMs = Double.NEGATIVE_INFINITY;
-        private int bestId;
-        private double bestTx;
-        private double lockedTx;
-        private double selectedTx = Double.NaN;
-
-        void beginFrame() {
-            bestId = -1;
-            bestTx = Double.NaN;
-            lockedTx = Double.NaN;
-        }
-
-        void consider(int id, double tx) {
-            if (id < 0 || !Double.isFinite(tx)) return;
-            if (id == lockedId) lockedTx = tx;
-            if (bestId < 0 || Math.abs(tx) < Math.abs(bestTx)
-                    || (Math.abs(tx) == Math.abs(bestTx) && id < bestId)) {
-                bestId = id;
-                bestTx = tx;
-            }
-        }
-
-        int finishFrame(double nowMs) {
-            selectedTx = Double.NaN;
-            if (Double.isFinite(lockedTx)) {
-                selectedTx = lockedTx;
-                lastSeenMs = nowMs;
-            } else if (bestId >= 0 && (lockedId < 0
-                    || nowMs - lastSeenMs >= TURRET_TAG_SWITCH_DELAY_MS)) {
-                lockedId = bestId;
-                selectedTx = bestTx;
-                lastSeenMs = nowMs;
-            }
-            return Double.isFinite(selectedTx) ? lockedId : -1;
-        }
-
-        void reset() {
-            lockedId = -1;
-            lastSeenMs = Double.NEGATIVE_INFINITY;
-            selectedTx = Double.NaN;
-            beginFrame();
-        }
-    }
-
     // =========================================
     // TURRET AIM CONTROLLER
     // =========================================
 
     static final class TurretAimController {
 
-        private final double minDeg;
-        private final double maxDeg;
+        private double minDeg;
+        private double maxDeg;
         private final DoubleSupplier clockMs;
         private final TurretGains gains;
         private int searchDirection = 1;
@@ -1189,6 +1224,10 @@ public class Robot {
 
             double nowMs = clockMs.getAsDouble();
             boolean headingAvailable = Double.isFinite(heading);
+            if (headingAvailable && !Double.isFinite(lastTargetAngle)) {
+                // With no tag observation yet, hold the direction the turret starts at.
+                lastTargetAngle = angle;
+            }
             if (headingAvailable && Double.isFinite(lastHeading)
                     && Double.isFinite(lastTargetAngle)) {
                 // Subtract chassis rotation even when there is no new camera frame.
@@ -1223,15 +1262,24 @@ public class Robot {
             }
 
             double goal = nearestReachableAngle(lastTargetAngle, angle);
-            boolean tracking = cameraUsable && Double.isFinite(goal)
+            boolean recentObservation = cameraUsable
                     && nowMs - lastObservationMs < TURRET_REACQUIRE_MS;
-            if (tracking) {
-                lastTargetAngle = goal;
+            if (headingAvailable || (recentObservation && Double.isFinite(goal))) {
+                boolean atFieldHoldLimit = !Double.isFinite(goal);
+                if (atFieldHoldLimit) {
+                    // Keep the field target so it can be recovered when chassis rotation allows it.
+                    double nearestEquivalent = lastTargetAngle
+                            + 360.0 * Math.rint((angle - lastTargetAngle) / 360.0);
+                    goal = Math.max(minDeg, Math.min(maxDeg, nearestEquivalent));
+                } else {
+                    lastTargetAngle = goal;
+                }
                 double trackingError = goal - angle;
                 // A full turn may be needed to unwind near a cable limit. Never wrap the encoder.
                 returning = Math.abs(trackingError) > 180;
                 state = returning ? (trackingError > 0 ? "UNWIND RIGHT" : "UNWIND LEFT")
-                        : visible ? "TRACK" : "REACQUIRE LAST TAG";
+                        : atFieldHoldLimit ? "FIELD HOLD LIMIT"
+                        : visible ? "TRACK" : recentObservation ? "REACQUIRE LAST TAG" : "FIELD HOLD";
                 double feedforward = Math.abs(rate) >= TURRET_ROTATION_DEADBAND_DEG_S
                         ? -rate * gains.kV : 0;
                 double velocity = Double.isFinite(turretVelocity) ? turretVelocity : 0;
@@ -1248,7 +1296,7 @@ public class Robot {
                         returning ? TURRET_RETURN_MAX_POWER : TURRET_TRACK_MAX_POWER));
             }
 
-            // Search automatically before the first detection and after an expired target.
+            // Without heading, search before the first detection and after an expired target.
             // Reverse near either endpoint instead of latching a return to the far endpoint.
             if (angle >= maxDeg - TURRET_RETURN_MARGIN_DEG) searchDirection = -1;
             if (angle <= minDeg + TURRET_RETURN_MARGIN_DEG) searchDirection = 1;

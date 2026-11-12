@@ -44,7 +44,7 @@ public class BioBuzzAuto extends LinearOpMode {
 
             robot.updateSensors();            telemetry.addData("Alliance", "%s   (X = blue, B = red)", robot.alliance);
             telemetry.addData("Start delay", "%.0f s   (dpad up / down)", startDelayS);
-            telemetry.addData("HIVE tag", robot.targetVisible ? "ID " + robot.targetId : "not visible");
+            telemetry.addData("HIVE tag", robot.targetVisible ? robot.aimTargetLabel() : "not visible");
             telemetry.addData("Ball at gate", robot.ballColor);
             robot.addGateTelemetry(telemetry);
             telemetry.update();
@@ -131,7 +131,7 @@ public class BioBuzzAuto extends LinearOpMode {
 
         telemetry.addData("Step", step);
         telemetry.addData("HIVE tag", robot.targetVisible
-                ? String.format("ID %d   tx %.1f deg", robot.targetId, robot.targetTx)
+                ? String.format("%s   tx %.1f deg", robot.aimTargetLabel(), robot.targetTx)
                 : "not visible, gate locked");
         telemetry.addData("Shooter", "%.0f / %.0f rpm", robot.shooterRpm(), robot.targetRpm);
         telemetry.addData("Ball", robot.ballColor);

@@ -172,7 +172,7 @@ public class RobotTest extends LinearOpMode {
 
             telemetry.addLine("--- Sensors ---");
             telemetry.addData("Limelight", robot.Limelight == null ? "not in config"
-                    : robot.targetVisible ? String.format("tag %d   tx %.1f deg", robot.targetId, robot.targetTx)
+                    : robot.targetVisible ? String.format("%s   tx %.1f deg", robot.aimTargetLabel(), robot.targetTx)
                     : "no HIVE tag for " + robot.alliance);
             telemetry.addData("Color sensor", robot.colorSensor == null ? "not in config"
                     : String.format("%s   hue %.0f   %.1f cm", robot.ballColor, robot.ballHue, robot.ballDistanceCm));

@@ -2,6 +2,7 @@
 package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+import com.qualcomm.robotcore.hardware.Gamepad;
 import com.qualcomm.robotcore.hardware.PwmControl;
 import com.qualcomm.robotcore.hardware.Servo;
 
@@ -10,14 +11,22 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
 
     static final double SLOW_MODE_SCALE = 0.4;
     static final double STICK_DEADBAND = 0.1;
-    static final double FLOWER_ON = 0.38;
-    static final double FLOWER_OFF = 0.03;
+    static final double SINGLE_CONTROLLER_TURRET_JOG_POWER = 0.15;
+    static final double FLOWER_ON = 0.32;
+    static final double FLOWER_OFF = 0.0;
 
     protected abstract Robot.Alliance teleOpAlliance();
+
+    protected boolean singleController() {
+        return false;
+    }
 
     @Override
     public final void runOpMode() {
 
+        boolean single = singleController();
+        Gamepad operator = single ? gamepad1 : gamepad2;
+        int operatorNumber = single ? 1 : 2;
         Robot robot = new Robot();
         robot.init(hardwareMap, false);
         Servo flower = hardwareMap.get(Servo.class, "flower");
@@ -36,7 +45,7 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
 
         while (opModeInInit()) {
 
-            if (gamepad2.backWasPressed()) {
+            if (operator.backWasPressed()) {
                 robot.zeroTurret();
             }
 
@@ -49,7 +58,7 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
             telemetry.addData(
                     "HIVE Tag",
                     robot.targetVisible
-                            ? "ID " + robot.targetId
+                            ? robot.aimTargetLabel()
                             : "NOT VISIBLE"
             );
 
@@ -78,7 +87,7 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
             robot.addVisionTelemetry(telemetry);
             robot.addGateTelemetry(telemetry);
             addPollenLedTelemetry(robot);
-            telemetry.addData("Flower", "OFF at START (%.2f); gamepad 2 RB toggles ON/OFF", FLOWER_OFF);
+            telemetry.addData("Flower", "OFF at START (%.2f); gamepad %d RB toggles ON/OFF", FLOWER_OFF, operatorNumber);
 
             telemetry.update();
         }
@@ -95,8 +104,8 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
 
                 robot.updateSensors();
 
-                // Controller 2 right bumper toggles the flower lever once per press.
-                if (gamepad2.rightBumperWasPressed()) {
+                // The operator right bumper toggles the flower lever once per press.
+                if (operator.rightBumperWasPressed()) {
                     flowerOn = !flowerOn;
                     commandFlower(flower, flowerOn);
                 }
@@ -139,10 +148,10 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
                 // =====================================
 
                 boolean wantShoot =
-                        gamepad2.right_trigger > 0.5;
+                        !single && operator.right_trigger > 0.5;
 
                 // A toggles shooter ON/OFF
-                if (gamepad2.aWasPressed()) {
+                if (operator.aWasPressed()) {
                     robot.shooterOn = !robot.shooterOn;
                 }
 
@@ -152,11 +161,11 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
                 }
 
                 // RPM trim
-                if (gamepad2.dpadUpWasPressed()) {
+                if (operator.dpadUpWasPressed()) {
                     robot.rpmTrim += Robot.RPM_TRIM_STEP;
                 }
 
-                if (gamepad2.dpadDownWasPressed()) {
+                if (operator.dpadDownWasPressed()) {
                     robot.rpmTrim -= Robot.RPM_TRIM_STEP;
                 }
 
@@ -164,19 +173,22 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
                 // DRIVER 2: TURRET
                 // =====================================
 
-                if (gamepad2.yWasPressed()) {
+                if (operator.yWasPressed()) {
                     autoAim = !autoAim;
                 }
 
                 // Only re-zero while pointing forward
-                if (gamepad2.backWasPressed()) {
+                if (!single && operator.backWasPressed()) {
                     robot.zeroTurret();
                 }
 
-                double manualTurret =
-                        gamepad2.right_stick_x;
+                double manualTurret = operator.right_stick_x;
+                if (single) {
+                    int jogDirection = (operator.dpad_right ? 1 : 0) - (operator.dpad_left ? 1 : 0);
+                    manualTurret = jogDirection * SINGLE_CONTROLLER_TURRET_JOG_POWER;
+                }
 
-                if (gamepad2.b) {
+                if (operator.b) {
 
                     robot.turretToAngle(0);
 
@@ -202,7 +214,7 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
                 // =====================================
 
                 boolean toggleGate =
-                        gamepad2.xWasPressed();
+                        operator.xWasPressed();
 
                 boolean gateWasOpen = robot.gateOpen;
 
@@ -262,8 +274,8 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
                 );
 
                 telemetry.addData(
-                        "Tag ID",
-                        robot.targetId
+                        "Aim target",
+                        robot.aimTargetLabel()
                 );
 
                 if (robot.targetFresh) {
@@ -421,8 +433,8 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
                         robot.ballDistanceCm
                 );
                 addPollenLedTelemetry(robot);
-                telemetry.addData("Flower", "%s (%.2f); gamepad 2 RB toggles",
-                        flowerOn ? "ON" : "OFF", flowerOn ? FLOWER_ON : FLOWER_OFF);
+                telemetry.addData("Flower", "%s (%.2f); gamepad %d RB toggles",
+                        flowerOn ? "ON" : "OFF", flowerOn ? FLOWER_ON : FLOWER_OFF, operatorNumber);
 
                 telemetry.addData(
                         "Gate",
@@ -436,6 +448,9 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
                         robot.shotsFired
                 );
 
+                if (robot.isTurretStalled()) {
+                    telemetry.addLine("Turret stalled. Check wiring and restart OpMode to reset.");
+                }
                 telemetry.update();
             }
 

@@ -70,8 +70,8 @@ public final class BioBuzzAutoMechanisms {
         default void setShooterIdle(boolean spinning) { }
         /** Run the intake inward for the whole run, not only during collect commands. */
         default void setIntakeAlways(boolean running) { }
-        /** Sweep the turret for the HIVE until a tag is first seen, then hold/track. */
-        default void setSearchUntilTagSeen(boolean search) { }
+        /** Sweep the turret for the HIVE whenever the tag has been lost, instead of holding a bearing. */
+        default void setSearchWhenTagLost(boolean search) { }
         void close();
     }
 
@@ -154,11 +154,12 @@ public final class BioBuzzAutoMechanisms {
     }
 
     /**
-     * AutoPath: the turret sweeps for the HIVE until it first sees a tag. Main's turret otherwise
-     * holds its starting direction whenever heading is known and would never find a tag behind it.
+     * AutoPath: the turret sweeps for the HIVE whenever it has not seen a tag for 400 ms. Main's
+     * turret otherwise holds the last field bearing, which points the wrong way at the 2nd and 3rd
+     * shooting spots (the HIVE is ~160 degrees away from where it was seen at START).
      */
-    public void searchForTagUntilSeen(boolean search) {
-        if (hardware!=null && !closed) hardware.setSearchUntilTagSeen(search);
+    public void searchForTagWhenLost(boolean search) {
+        if (hardware!=null && !closed) hardware.setSearchWhenTagLost(search);
     }
 
     /** Stationary operator-held test only; mutually exclusive with any command. */
@@ -442,7 +443,7 @@ public final class BioBuzzAutoMechanisms {
         @Override public boolean shootingBurstActive() { return phase==Phase.FEEDING; }
         @Override public void setShooterIdle(boolean spinning) { idleSpin=spinning; }
         @Override public void setIntakeAlways(boolean running) { intakeAlways=running; }
-        @Override public void setSearchUntilTagSeen(boolean search) { robot.setTurretSearchUntilTagSeen(search); }
+        @Override public void setSearchWhenTagLost(boolean search) { robot.setTurretSearchWhenTagLost(search); }
 
         @Override public Observation observe() {
             if (headingCw==null) robot.updateSensors();
@@ -526,11 +527,15 @@ public final class BioBuzzAutoMechanisms {
                     minBurstRpm=Double.isFinite(minBurstRpm) ? Math.min(minBurstRpm,measuredRpm) : measuredRpm;
                 }
                 // Gate CLOSED while spinning up, OPEN while it travels, then both RT-direction motors.
-                // With the intake always on, it also runs through spin-up and the gate wait.
+                // With the intake always on, the roller keeps running, but the transmission stops
+                // packing balls into the closed gate, then briefly backs them off while it opens.
                 boolean feeding=phase==Phase.FEEDING;
+                boolean relieving=intakeAlways && phase==Phase.GATE_OPENING
+                        && (now-gateOpenedAt)/1e9<BioBuzzAutoConfig.GATE_RELIEF_SECONDS;
                 driveFeeder(now,phase!=Phase.SPINUP,
                         feeding || intakeAlways ? INWARD_INTAKE_POWER : 0,
-                        feeding || (intakeAlways && phase==Phase.SPINUP) ? INWARD_TRANSMISSION_POWER : 0);
+                        feeding ? INWARD_TRANSMISSION_POWER
+                                : relieving ? -Math.signum(INWARD_TRANSMISSION_POWER)*BioBuzzAutoConfig.GATE_RELIEF_TRANSMISSION_POWER : 0);
             } else {
                 resetShot();
                 // Collect in the same direction as the shot, gate closed: balls stack against the gate.
@@ -550,7 +555,9 @@ public final class BioBuzzAutoMechanisms {
             robot.gateOpen=open;
             if (calibrated) robot.gateController.commandSaved(open);
             robot.intake.setPower(intakePower);
-            robot.transmission.setPower(calibrated && !gateMoving ? transmissionPower : 0);
+            // While the gate moves, never push balls INTO it; backing them off is allowed.
+            boolean intoGate=transmissionPower!=0 && Math.signum(transmissionPower)==Math.signum(INWARD_TRANSMISSION_POWER);
+            robot.transmission.setPower(calibrated && !(gateMoving && intoGate) ? transmissionPower : 0);
         }
 
         private void closeGate(RuntimeException[] first) {

@@ -21,8 +21,11 @@ speeds so it rehearses the real run.
    With the turret physically pointing forward, BACK zeros it.
 2. Shoot the four preloads at START before driving. The flywheel and turret stay active, and
    the **intake runs inward the entire time** from START to the end of the route (same
-   direction as the feed), including during volleys. The transmission pauses only for the
-   0.25 s while the gate opens or closes, so it never pushes balls into a moving gate.
+   direction as the feed), including during volleys. While driving, the transmission stacks
+   balls against the closed gate. For each volley it stops during spin-up, briefly backs the
+   balls off the gate (0.10 s outward) as the gate opens, and never pushes balls into a moving
+   gate. The **turret sweeps for the HIVE whenever it has not seen a tag for 400 ms**, so it
+   re-finds the HIVE on the way to the 2nd and 3rd spots instead of holding the old bearing.
 3. Collect on paths 1–2 and through the one-second stop at the wall after path 2. Path 2 drives
    all the way to (7.994, 0) and ends on Pedro's end-of-path signal; there is no early
    stop. As a safety net, if balls block the robot first, it continues after 1 s without 0.25 in
@@ -58,8 +61,9 @@ single continuous burst using the same manual feeder motor control:
   the 3150 no-tag default) once the flywheel is stable. If the flywheel still is not in the
   band after **3.5 s** (e.g. low battery) but is at least 85% of target, feed anyway. If a
   volley cannot start within **6 s** (broken flywheel/gate), skip it and continue the route.
-- **Gate first, then feed:** command calibrated OPEN with both motors still stopped, wait
-  **GATE_OPEN_WAIT_SECONDS = 0.25 s** for the servo to travel, then start both motors together
+- **Gate first, then feed:** command calibrated OPEN, wait **GATE_OPEN_WAIT_SECONDS = 0.25 s**
+  for the servo to travel (AutoPath backs the transmission outward for the first
+  **GATE_RELIEF_SECONDS = 0.10 s** to unload the gate), then start both motors together
   in **gamepad 1 RIGHT-trigger** direction: intake -INTAKE_POWER and transmission
   -TRANSMISSION_INDEX_POWER. If the tag is lost while the gate is open, the turret holds
   still instead of sweeping.

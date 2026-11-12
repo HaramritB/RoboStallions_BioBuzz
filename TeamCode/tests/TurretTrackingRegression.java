@@ -103,9 +103,13 @@ public final class TurretTrackingRegression {
                 "Above the positive limit, recovery must move inward");
 
         Aim auto = new Aim();
-        auto.controller.searchUntilFirstTag = true;
+        auto.controller.searchWhenTagLost = true;
         check(auto.update(0, false, Double.NaN, 0, 0, 0) > 0,
                 "AutoPath opt-in sweeps for the HIVE before the first tag even with heading");
+        check(auto.update(0, true, 10, 1, 0, 0) > 0, "AutoPath opt-in tracks a seen tag");
+        auto.now += 401;
+        near(auto.update(10, false, Double.NaN, 1, 0, 0), Robot.TURRET_SEARCH_POWER,
+                "AutoPath opt-in sweeps again once the tag is lost, instead of holding a stale bearing");
 
         aim = new Aim();
         double rightTagError = -8 * Robot.TURRET_VISION_POWER_SIGN;

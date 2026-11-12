@@ -52,7 +52,7 @@ public final class AutoPathRegression {
         System.out.println("Passed eight-path geometry, headings, speed, pauses, FLOWER recovery, and registration checks.");
     }
 
-    /** AutoPath's turret sweeps until the first tag, even though the heading is known. */
+    /** AutoPath's turret sweeps whenever the tag is lost, even though the heading is known. */
     private static void checkAutoTurretSearch() {
         double[] now = {0};
         Robot.TurretAimController aim = new Robot.TurretAimController(
@@ -61,7 +61,7 @@ public final class AutoPathRegression {
         if (held != 0) throw new AssertionError("Default (TeleOp) turret holds its start direction, no sweep");
         Robot.TurretAimController auto = new Robot.TurretAimController(
                 Robot.TURRET_MIN_DEG, Robot.TURRET_MAX_DEG, () -> now[0], new Robot.TurretGains());
-        auto.searchUntilFirstTag = true;
+        auto.searchWhenTagLost = true;
         if (Math.abs(auto.update(0, false, Double.NaN, 0, true, 90, 0, 0, 0)) < Robot.TURRET_SEARCH_POWER - 1e-9) {
             throw new AssertionError("Autonomous turret must sweep for the HIVE before the first tag");
         }
@@ -69,10 +69,14 @@ public final class AutoPathRegression {
         if (auto.update(20, true, 10, 1, true, 90, 0, 0, 0) <= 0) {
             throw new AssertionError("A seen tag to the right must be tracked");
         }
-        now[0] = 5000; // Tag long gone: main's field hold applies, no more sweeping.
+        now[0] = 300; // Brief dropout: keep reacquiring the last tag.
+        if (auto.update(25, false, Double.NaN, 1, true, 90, 0, 0, 0) <= 0) {
+            throw new AssertionError("A brief tag dropout keeps tracking toward the last tag");
+        }
+        now[0] = 5000; // Tag gone (e.g. robot drove to the 2nd shooting spot): sweep to find it again.
         double after = auto.update(30, false, Double.NaN, 1, true, 90, 0, 0, 0);
-        if (after != 0) {
-            throw new AssertionError("After the first tag, the turret holds that field bearing (main's behavior), no sweep");
+        if (Math.abs(Math.abs(after) - Robot.TURRET_SEARCH_POWER) > 1e-9) {
+            throw new AssertionError("Once the tag is lost, AutoPath's turret sweeps instead of holding a stale bearing");
         }
     }
 

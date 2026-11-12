@@ -1164,9 +1164,13 @@ public class Robot {
         return turretAim.lastTargetAngle - turretDegrees();
     }
 
-    /** Autonomous: sweep for the HIVE until a tag is first seen. TeleOp leaves this off. */
-    public void setTurretSearchUntilTagSeen(boolean search) {
-        turretAim.searchUntilFirstTag = search;
+    /**
+     * Autonomous: sweep for the HIVE whenever no tag has been seen for TURRET_REACQUIRE_MS,
+     * instead of holding the old field bearing (which points the wrong way after the robot moves
+     * across the field). TeleOp leaves this off and keeps the field hold.
+     */
+    public void setTurretSearchWhenTagLost(boolean search) {
+        turretAim.searchWhenTagLost = search;
     }
 
     public void resetTurretAim() {
@@ -1203,12 +1207,11 @@ public class Robot {
 
     static final class TurretAimController {
 
-        /** Autonomous only: sweep for the HIVE until the first tag observation, then hold/track. */
-        boolean searchUntilFirstTag;
-
-        private boolean awaitingFirstTag() {
-            return searchUntilFirstTag && lastObservationMs == Double.NEGATIVE_INFINITY;
-        }
+        /**
+         * Autonomous only: track a tag while it was seen within TURRET_REACQUIRE_MS, otherwise sweep.
+         * A held field bearing goes stale once the robot drives to a different shooting spot.
+         */
+        boolean searchWhenTagLost;
 
         private double minDeg;
         private double maxDeg;
@@ -1267,7 +1270,7 @@ public class Robot {
 
             double nowMs = clockMs.getAsDouble();
             boolean headingAvailable = Double.isFinite(heading);
-            if (headingAvailable && !Double.isFinite(lastTargetAngle) && !awaitingFirstTag()) {
+            if (headingAvailable && !Double.isFinite(lastTargetAngle) && !searchWhenTagLost) {
                 // With no tag observation yet, hold the direction the turret starts at.
                 lastTargetAngle = angle;
             }
@@ -1307,7 +1310,7 @@ public class Robot {
             double goal = nearestReachableAngle(lastTargetAngle, angle);
             boolean recentObservation = cameraUsable
                     && nowMs - lastObservationMs < TURRET_REACQUIRE_MS;
-            boolean fieldHold = headingAvailable && !awaitingFirstTag();
+            boolean fieldHold = headingAvailable && !searchWhenTagLost;
             if (fieldHold || (recentObservation && Double.isFinite(goal))) {
                 boolean atFieldHoldLimit = !Double.isFinite(goal);
                 if (atFieldHoldLimit) {
@@ -1340,7 +1343,7 @@ public class Robot {
                         returning ? TURRET_RETURN_MAX_POWER : TURRET_TRACK_MAX_POWER));
             }
 
-            // Without heading (or in autonomous before the first tag), search for the HIVE.
+            // Without heading (or in autonomous once the tag is lost), search for the HIVE.
             // Reverse near either endpoint instead of latching a return to the far endpoint.
             if (angle >= maxDeg - TURRET_RETURN_MARGIN_DEG) searchDirection = -1;
             if (angle <= minDeg + TURRET_RETURN_MARGIN_DEG) searchDirection = 1;

@@ -458,11 +458,15 @@ public final class MechanismIsolationRegression {
                 ()->now[0],reason->{throw new AssertionError(reason);});
         Runnable tick=()->{ mechanisms.update(); volley.done(); };
         volley.start(); now[0]+=STEP_NS; tick.run();
-        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==tx && !port.robot.gateOpen,
-                "During spin-up the intake keeps running with the gate closed");
+        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==0 && !port.robot.gateOpen,
+                "During spin-up the intake roller runs, but the transmission stops packing balls into the closed gate");
         long opened=openGate(port,now,tick);
-        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==0,
-                "While the gate opens, the intake runs but the transmission waits");
+        double relief=-Math.signum(tx)*BioBuzzAutoConfig.GATE_RELIEF_TRANSMISSION_POWER;
+        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==relief,
+                "As the gate starts opening, the transmission briefly backs balls OFF the gate");
+        now[0]=opened+Math.round(BioBuzzAutoConfig.GATE_RELIEF_SECONDS*1e9); tick.run();
+        check(port.robot.gateOpen && map.motors.get("intake").power==in && map.motors.get("transmission").power==0,
+                "After the back-off, the transmission waits for the gate to finish opening");
         now[0]=opened+GATE_WAIT_NS; tick.run();
         check(port.shootingBurstActive() && map.motors.get("intake").power==in && map.motors.get("transmission").power==tx,
                 "Once the gate is open, both feed the shot inward");

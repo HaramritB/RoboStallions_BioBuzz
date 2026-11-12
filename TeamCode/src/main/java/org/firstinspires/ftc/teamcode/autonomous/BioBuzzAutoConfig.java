@@ -35,6 +35,11 @@ public final class BioBuzzAutoConfig {
     // Gate servo travel time: command OPEN, wait this long, THEN start intake + transmission.
     // Feeding into a gate that is still moving scrubs speed off the first ball.
     public static final double GATE_OPEN_WAIT_SECONDS = 0.25;
+    // With the intake always on (AutoPath), the transmission has been packing balls against the
+    // closed gate. For the first part of the gate-open wait, run it briefly OUTWARD to take that
+    // load off the gate so the servo can open freely. Set the seconds to 0 to disable.
+    public static final double GATE_RELIEF_SECONDS = 0.10;
+    public static final double GATE_RELIEF_TRANSMISSION_POWER = 0.30;
     // No fresh aimed tag by this long after a volley starts: shoot at the calibrated-table RPM
     // (latest filtered tag distance, or the 3150 RPM no-tag default) once the flywheel is stable.
     public static final double SHOOT_AIM_GRACE_SECONDS = 2.0;

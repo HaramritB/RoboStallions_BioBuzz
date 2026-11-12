@@ -15,7 +15,7 @@ use the measured defaults; loading them sends no position command during INIT.
 The configured gate servo remains named `torqueservo1`.
 
 In both competition TeleOps, **gamepad 2 right bumper** toggles the flower lever
-**ON=0.15 / OFF=0.095** using the Servo named **`flower`**. It moves to OFF at
+**ON=0.60 / OFF=0.30** using the Servo named **`flower`**. It moves to OFF at
 START, holds its position with PWM enabled while TeleOp runs, and displays its
 commanded state. No flower position is commanded during INIT. These measured
 values are fixed TeleOp constants; calibration preferences do not override them.
@@ -136,7 +136,7 @@ the target position, not servo torque or supply power.
 
 Flower calibration values use separate preferences (`biobuzz_flower_calibration_v1`,
 keys `on` and `off`) and do not change gate calibration. Competition TeleOp uses
-the confirmed **ON=0.41 / OFF=0.095** constants; saving a new calibration pair does
+the configured **ON=0.60 / OFF=0.30** constants; saving a new calibration pair does
 not automatically change those competition endpoints.
 
 ## Pollen indicator setup

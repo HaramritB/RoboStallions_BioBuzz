@@ -24,6 +24,12 @@ public final class TurretTrackingRegression {
         return field.getDouble(controller);
     }
 
+    private static String text(Object controller, String name) throws Exception {
+        Field field = controller.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return (String) field.get(controller);
+    }
+
     private static final class Aim {
         double now = 1000;
         final Robot.TurretAimController controller;
@@ -56,6 +62,7 @@ public final class TurretTrackingRegression {
                         case "getCurrentPosition": return ticks;
                         case "setPower": power = (double) args[0]; return null;
                         case "getPower": return power;
+                        case "getVelocity": return power * 1000; // Freely moving: never a stall.
                         case "setMode": return null;
                         default: throw new AssertionError("Unexpected motor call: " + method.getName());
                     }
@@ -73,17 +80,32 @@ public final class TurretTrackingRegression {
         check(Robot.TURRET_MAX_DEG - Robot.TURRET_MIN_DEG > 360,
                 "Measured multi-turn travel must remain available");
 
+        // Current design (main's turret commit): with a known heading the turret holds its field
+        // bearing and never sweeps; it searches only when the heading is unavailable (NaN).
         Aim aim = new Aim();
-        check(aim.update(0, false, Double.NaN, 0, 0, 0) > 0,
-                "Auto aim must search before any manual alignment or tag detection");
-        check(aim.update(Robot.TURRET_MAX_DEG - 1, false, Double.NaN, 0, 0, 0) < 0,
+        near(aim.update(0, false, Double.NaN, 0, 0, 0), 0,
+                "With heading and no tag yet, hold the starting direction instead of sweeping");
+        check(text(aim.controller, "state").equals("FIELD HOLD"), "No-tag hold reports FIELD HOLD");
+        check(aim.update(0, false, Double.NaN, 0, 10, 0) < 0,
+                "Field hold counter-rotates the turret when the chassis turns CW");
+
+        aim = new Aim();
+        double none = Double.NaN;
+        check(aim.update(0, false, Double.NaN, 0, none, 0) > 0,
+                "Without heading, auto aim searches before any tag detection");
+        check(aim.update(Robot.TURRET_MAX_DEG - 1, false, Double.NaN, 0, none, 0) < 0,
                 "Search must reverse before the positive limit");
-        check(aim.update(Robot.TURRET_MIN_DEG + 1, false, Double.NaN, 0, 0, 0) > 0,
+        check(aim.update(Robot.TURRET_MIN_DEG + 1, false, Double.NaN, 0, none, 0) > 0,
                 "Search must reverse before the negative limit");
-        check(aim.update(Robot.TURRET_MIN_DEG - 2, false, Double.NaN, 0, 0, 0) > 0,
+        check(aim.update(Robot.TURRET_MIN_DEG - 2, false, Double.NaN, 0, none, 0) > 0,
                 "Below the negative limit, recovery must move inward");
-        check(aim.update(Robot.TURRET_MAX_DEG + 2, false, Double.NaN, 0, 0, 0) < 0,
+        check(aim.update(Robot.TURRET_MAX_DEG + 2, false, Double.NaN, 0, none, 0) < 0,
                 "Above the positive limit, recovery must move inward");
+
+        Aim auto = new Aim();
+        auto.controller.searchUntilFirstTag = true;
+        check(auto.update(0, false, Double.NaN, 0, 0, 0) > 0,
+                "AutoPath opt-in sweeps for the HIVE before the first tag even with heading");
 
         aim = new Aim();
         double rightTagError = -8 * Robot.TURRET_VISION_POWER_SIGN;
@@ -103,8 +125,11 @@ public final class TurretTrackingRegression {
         near(aim.update(-10, false, Double.NaN, 1, 10, 0), 0,
                 "Reaching the compensated angle must stop correction");
         aim.now += 301;
-        near(aim.update(-10, false, Double.NaN, 1, 10, 0), Robot.TURRET_SEARCH_POWER,
-                "Expired observations must release tracking and resume search");
+        near(aim.update(-10, false, Double.NaN, 1, 10, 0), 0,
+                "With heading, an expired observation keeps holding the field bearing (no sweep)");
+        check(text(aim.controller, "state").equals("FIELD HOLD"), "Expired target reports FIELD HOLD");
+        near(aim.update(-10, false, Double.NaN, 1, Double.NaN, 0), Robot.TURRET_SEARCH_POWER,
+                "Without heading, an expired observation releases tracking and resumes search");
 
         aim = new Aim();
         aim.update(0, true, 0, 1, 0, 0);
@@ -112,7 +137,8 @@ public final class TurretTrackingRegression {
         check(aim.update(0, true, 0, 1, 10, 0) < 0,
                 "Heading compensation must work between duplicate camera frames too");
         aim.now += 301;
-        near(aim.update(0, true, 0, 1, 10, 0), Robot.TURRET_SEARCH_POWER,
+        check(aim.update(0, true, 0, 1, 10, 0) < 0, "Keep holding the compensated bearing");
+        near(aim.controller.observationAgeMs(), 401,
                 "Duplicate visible frames must not extend the observation timeout");
 
         aim = new Aim();
@@ -134,8 +160,10 @@ public final class TurretTrackingRegression {
         near(aim.controller.observationAgeMs(), 100, "Frame latency counts toward target age");
         aim = new Aim();
         aim.controller.update(0, true, 15, 1, true, 0, 0, 0, 300);
-        check(Double.isNaN(field(aim.controller, "lastTargetAngle")),
-                "Frames older than the latency budget must not create a tracking goal");
+        near(field(aim.controller, "lastTargetAngle"), 0,
+                "A frame older than the latency budget creates no goal; the turret holds its start direction");
+        check(Double.isInfinite(aim.controller.observationAgeMs()),
+                "A stale frame is not counted as an observation");
 
         aim = new Aim();
         aim.update(190, true, 10, 1, 0, 0);
@@ -143,8 +171,12 @@ public final class TurretTrackingRegression {
                 "A target beyond the cable limit must select its legal equivalent angle");
         check(aim.update(190, true, 10, 1, 0, 0) < 0, "Unwind toward that equivalent angle");
         aim = new Aim(-150, 150);
-        check(aim.update(149, true, 30, 1, 0, 0) < 0,
-                "An unreachable target must not push outward against the positive limit");
+        check(aim.update(149, true, 30, 1, 0, 0) > 0,
+                "An unreachable target moves only up to the nearest legal limit");
+        near(aim.update(150, false, Double.NaN, 1, 0, 0), 0,
+                "At the positive limit the turret never pushes outward");
+        check(text(aim.controller, "state").equals("FIELD HOLD LIMIT"),
+                "An out-of-reach field target reports FIELD HOLD LIMIT");
 
         aim = new Aim();
         check(aim.update(0, true, 10, 1, Double.NaN, Double.NaN) > 0,
@@ -152,11 +184,15 @@ public final class TurretTrackingRegression {
         aim.update(0, false, Double.NaN, 1, 120, 0);
         near(field(aim.controller, "lastTargetAngle"), 10,
                 "Heading recovery must not apply an unknown accumulated heading jump");
-        near(aim.controller.update(0, true, 0, 2, false, 120, 0, 0, 0),
-                Robot.TURRET_SEARCH_POWER, "Unusable camera must release the old target");
+        near(aim.controller.update(0, true, 0, 2, false, 120, 0, 0, 0), Robot.TURRET_TRACK_MAX_POWER,
+                "With heading, an unusable camera keeps holding the last field bearing");
+        near(aim.controller.update(0, true, 0, 3, false, Double.NaN, 0, 0, 0), Robot.TURRET_SEARCH_POWER,
+                "Without heading, an unusable camera releases the old target and searches");
         aim.controller.cancelReturn();
-        check(aim.update(0, false, Double.NaN, 1, 120, 0) > 0,
-                "Manual override must discard the previous automatic goal");
+        near(aim.update(0, false, Double.NaN, 1, 120, 0), 0,
+                "Manual override discards the old goal; the turret holds where it was left");
+        near(field(aim.controller, "lastTargetAngle"), 0,
+                "After an override the held bearing is the current angle, not the old target");
         near(aim.update(Double.NaN, false, Double.NaN, 0, 0, 0), 0, "Reject invalid encoders");
         near(aim.update(0, true, Double.NaN, 1, 0, 0), 0, "Reject invalid visual corrections");
 

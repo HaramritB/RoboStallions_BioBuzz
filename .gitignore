@@ -79,3 +79,10 @@ lint/generated/
 lint/outputs/
 lint/tmp/
 # lint/reports/
+
+# Python route generation and hardware-free test caches
+__pycache__/
+*.py[cod]
+
+# Backups made by the conflict-checked autonomous patch installer
+/validation/autonomous-backups/

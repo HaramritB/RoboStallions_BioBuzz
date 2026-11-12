@@ -26,4 +26,6 @@ android {
 
 dependencies {
     implementation project(':FtcRobotController')
+    // Ivy 1.1.1 targets Pedro 3; keep the existing PedroPathing 3.0.2 dependency.
+    implementation 'com.pedropathing.ivy:pedro:1.1.1'
 }

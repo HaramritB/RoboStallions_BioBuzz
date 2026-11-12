@@ -63,34 +63,8 @@ public final class TurretTrackingRegression {
     }
 
     public static void main(String[] args) throws Exception {
-        Robot.AimTagLock lock = new Robot.AimTagLock();
-        lock.beginFrame();
-        lock.consider(41, 15);
-        lock.consider(38, -1);
-        lock.consider(39, 8);
-        lock.consider(40, -12);
-        check(lock.finishFrame(1000) == 38, "Initial lock chooses a tag near the crosshair");
-        near(field(lock, "selectedTx"), -1, "Use one tag offset, not the four-tag mean");
-        lock.beginFrame();
-        lock.consider(40, -12);
-        lock.consider(38, -1);
-        lock.consider(39, 0.1);
-        check(lock.finishFrame(1100) == 38, "Tag count/order changes must retain the same aim ID");
-        near(field(lock, "selectedTx"), -1, "Dropping a fourth tag must not move the aim point");
-        lock.beginFrame();
-        lock.consider(39, 0.1);
-        check(lock.finishFrame(1200) < 0, "Do not switch IDs during a brief selected-tag dropout");
-        check(Double.isNaN(field(lock, "selectedTx")), "Missing locked tag must not provide a fresh TX");
-        lock.beginFrame();
-        lock.consider(38, -1);
-        check(lock.finishFrame(1250) == 38, "Reappearing selected tag recovers its original lock");
-        lock.beginFrame();
-        lock.consider(39, 0.1);
-        check(lock.finishFrame(1501) == 39, "Sustained loss must allow another alliance tag");
-        lock.reset();
-        lock.consider(42, Double.NaN);
-        lock.consider(43, 2);
-        check(lock.finishFrame(1600) == 43, "Reset discards the old ID and ignores nonfinite offsets");
+        // Main's turret update replaced the single-tag AimTagLock with averaging all visible
+        // alliance tags inside Robot.updateVision, so the old lock-selection checks were removed.
 
         near(Robot.TURRET_MOTOR_TICKS_PER_REV, 145.0909090909091, "1150 RPM encoder ratio");
         near(Robot.TURRET_TICKS_PER_DEG, 2.8212121212121213, "12:84 external gearing");

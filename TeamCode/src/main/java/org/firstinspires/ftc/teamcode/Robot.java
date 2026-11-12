@@ -32,7 +32,7 @@ import java.util.function.DoubleSupplier;
 public class Robot {
 
     public static final String CODE_VERSION =
-            "BIOBUZZ-GATE-CALIBRATION-2026-11-08";
+            "BIOBUZZ-FLOWER-ON0.32-OFF0-2026-11-11";
 
     public enum Alliance { RED, BLUE }
     public enum BallColor { NONE, YELLOW, RED, BLUE }
@@ -312,12 +312,7 @@ public class Robot {
     // =========================================
 
     public void init(HardwareMap hw, boolean resetEncoders) {
-
-        for (LynxModule hub : hw.getAll(LynxModule.class)) {
-            hub.setBulkCachingMode(
-                    LynxModule.BulkCachingMode.AUTO
-            );
-        }
+        configureBulkCaching(hw);
 
         frontLeft = hw.get(DcMotorEx.class, "frontleft");
         frontRight = hw.get(DcMotorEx.class, "frontright");
@@ -354,6 +349,31 @@ public class Robot {
             m.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         }
 
+        configureMechanisms(hw, resetEncoders);
+    }
+
+    /** Maps only mechanisms; Pedro remains the sole drivetrain controller. */
+    public void initMechanismsOnly(HardwareMap hw, boolean resetTurretEncoder) {
+        configureBulkCaching(hw);
+        intake = hw.get(DcMotorEx.class, "intake");
+        transmission = hw.get(DcMotorEx.class, "transmission");
+        turret = hw.get(DcMotorEx.class, "turret");
+        shooter = hw.get(DcMotorEx.class, "shooter");
+        configureMechanisms(hw, resetTurretEncoder);
+    }
+
+    private void configureBulkCaching(HardwareMap hw) {
+        for (LynxModule hub : hw.getAll(LynxModule.class)) {
+            hub.setBulkCachingMode(LynxModule.BulkCachingMode.AUTO);
+            hub.clearBulkCache(); // Do not inherit a prior OpMode's manual/stale velocity cache.
+        }
+    }
+
+    protected SharedPreferences gatePreferences(HardwareMap hw) {
+        return hw.appContext.getSharedPreferences(GATE_PREFERENCES, Context.MODE_PRIVATE);
+    }
+
+    private void configureMechanisms(HardwareMap hw, boolean resetEncoders) {
         // Intake
 
         intake.setDirection(DcMotorSimple.Direction.FORWARD);
@@ -386,6 +406,7 @@ public class Robot {
         // SHOOTER: APPLY TUNED PIDF
         // =====================================
 
+        shooter.setPower(0);
         shooter.setDirection(
                 DcMotorSimple.Direction.FORWARD
         );
@@ -411,7 +432,7 @@ public class Robot {
 
         gate = hw.get(Servo.class, "torqueservo1");
         gateController = new GateController(gate,
-                hw.appContext.getSharedPreferences(GATE_PREFERENCES, Context.MODE_PRIVATE));
+                gatePreferences(hw));
         if (!gateController.calibrated()) gateController.release();
         led = hw.tryGet(Servo.class, "led");
         if (led != null) {
@@ -465,6 +486,16 @@ public class Robot {
 
     public void updateSensors() {
         updateHeading();
+        updateVision();
+        updateBall();
+        updateLed();
+    }
+
+    /** Reuses Pedro's fresh chassis state (Robot turret convention is clockwise degrees). */
+    public void updateMechanismSensors(double clockwiseDegrees, double clockwiseDegreesPerSecond) {
+        chassisHeadingDegrees = clockwiseDegrees;
+        chassisTurnRateDegrees = clockwiseDegreesPerSecond;
+        headingStatus = "PEDRO LOCALIZATION";
         updateVision();
         updateBall();
         updateLed();
@@ -1133,6 +1164,11 @@ public class Robot {
         return turretAim.lastTargetAngle - turretDegrees();
     }
 
+    /** Autonomous: sweep for the HIVE until a tag is first seen. TeleOp leaves this off. */
+    public void setTurretSearchUntilTagSeen(boolean search) {
+        turretAim.searchUntilFirstTag = search;
+    }
+
     public void resetTurretAim() {
         turretAim.cancelReturn();
     }
@@ -1166,6 +1202,13 @@ public class Robot {
     // =========================================
 
     static final class TurretAimController {
+
+        /** Autonomous only: sweep for the HIVE until the first tag observation, then hold/track. */
+        boolean searchUntilFirstTag;
+
+        private boolean awaitingFirstTag() {
+            return searchUntilFirstTag && lastObservationMs == Double.NEGATIVE_INFINITY;
+        }
 
         private double minDeg;
         private double maxDeg;
@@ -1224,7 +1267,7 @@ public class Robot {
 
             double nowMs = clockMs.getAsDouble();
             boolean headingAvailable = Double.isFinite(heading);
-            if (headingAvailable && !Double.isFinite(lastTargetAngle)) {
+            if (headingAvailable && !Double.isFinite(lastTargetAngle) && !awaitingFirstTag()) {
                 // With no tag observation yet, hold the direction the turret starts at.
                 lastTargetAngle = angle;
             }
@@ -1264,7 +1307,8 @@ public class Robot {
             double goal = nearestReachableAngle(lastTargetAngle, angle);
             boolean recentObservation = cameraUsable
                     && nowMs - lastObservationMs < TURRET_REACQUIRE_MS;
-            if (headingAvailable || (recentObservation && Double.isFinite(goal))) {
+            boolean fieldHold = headingAvailable && !awaitingFirstTag();
+            if (fieldHold || (recentObservation && Double.isFinite(goal))) {
                 boolean atFieldHoldLimit = !Double.isFinite(goal);
                 if (atFieldHoldLimit) {
                     // Keep the field target so it can be recovered when chassis rotation allows it.
@@ -1296,7 +1340,7 @@ public class Robot {
                         returning ? TURRET_RETURN_MAX_POWER : TURRET_TRACK_MAX_POWER));
             }
 
-            // Without heading, search before the first detection and after an expired target.
+            // Without heading (or in autonomous before the first tag), search for the HIVE.
             // Reverse near either endpoint instead of latching a return to the far endpoint.
             if (angle >= maxDeg - TURRET_RETURN_MARGIN_DEG) searchDirection = -1;
             if (angle <= minDeg + TURRET_RETURN_MARGIN_DEG) searchDirection = 1;

@@ -1,0 +1,325 @@
+{
+  "version": "2.0.0",
+  "timestamp": "2026-11-10T05:09:52.667217Z",
+  "startPoint": {
+    "x": 57.6323,
+    "y": 9.0657,
+    "headingDeg": 90,
+    "name": "start",
+    "locked": false
+  },
+  "lines": [
+    {
+      "kind": "atomic",
+      "id": "biobuzz-path-1",
+      "name": "Path 1",
+      "endPoint": {
+        "x": 9.5657,
+        "y": 9.2715,
+        "name": "point1"
+      },
+      "controlPoints": [],
+      "heading": {
+        "type": "linear",
+        "startDeg": 90,
+        "endDeg": 179.7546
+      },
+      "color": "#4e79a7",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 0,
+      "waitBeforeName": "",
+      "waitAfterName": ""
+    },
+    {
+      "kind": "atomic",
+      "id": "biobuzz-path-2",
+      "name": "Path 2",
+      "endPoint": {
+        "x": 32.2934,
+        "y": 127.6559,
+        "name": "point2"
+      },
+      "controlPoints": [
+        {
+          "x": 40.923,
+          "y": 34.4143
+        }
+      ],
+      "heading": {
+        "type": "linear",
+        "startDeg": 179.7546,
+        "endDeg": -84.7123
+      },
+      "color": "#f28e2b",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 0,
+      "waitBeforeName": "",
+      "waitAfterName": ""
+    },
+    {
+      "kind": "atomic",
+      "id": "biobuzz-path-3",
+      "name": "Path 3",
+      "endPoint": {
+        "x": 46.9373,
+        "y": 125.3042,
+        "name": "point3"
+      },
+      "controlPoints": [
+        {
+          "x": 40.2631,
+          "y": 108.1664
+        }
+      ],
+      "heading": {
+        "type": "linear",
+        "startDeg": 0,
+        "endDeg": 90
+      },
+      "color": "#59a14f",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 0,
+      "waitBeforeName": "",
+      "waitAfterName": ""
+    },
+    {
+      "kind": "atomic",
+      "id": "biobuzz-path-4",
+      "name": "Path 4",
+      "endPoint": {
+        "x": 46.7883,
+        "y": 140.2305,
+        "name": "point4"
+      },
+      "controlPoints": [],
+      "heading": {
+        "type": "linear",
+        "startDeg": 90,
+        "endDeg": 90.572
+      },
+      "color": "#edc948",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 0,
+      "waitBeforeName": "",
+      "waitAfterName": ""
+    },
+    {
+      "kind": "atomic",
+      "id": "biobuzz-path-5",
+      "name": "Path 5",
+      "endPoint": {
+        "x": 38.0943,
+        "y": 127.3583,
+        "name": "point5"
+      },
+      "controlPoints": [
+        {
+          "x": 45.4429,
+          "y": 110.0765
+        }
+      ],
+      "heading": {
+        "type": "linear",
+        "startDeg": 90.572,
+        "endDeg": -66.9637
+      },
+      "color": "#b07aa1",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 0,
+      "waitBeforeName": "",
+      "waitAfterName": ""
+    }
+  ],
+  "shapes": [
+    {
+      "id": "biobuzz-red-hive",
+      "name": "Red HIVE",
+      "vertices": [
+        {
+          "x": 46,
+          "y": 50
+        },
+        {
+          "x": 48.6,
+          "y": 50
+        },
+        {
+          "x": 48.6,
+          "y": 91.4
+        },
+        {
+          "x": 46,
+          "y": 91.4
+        }
+      ],
+      "color": "#dc2626",
+      "fillColor": "#ff6b6b"
+    },
+    {
+      "id": "biobuzz-blue-hive",
+      "name": "Blue HIVE",
+      "vertices": [
+        {
+          "x": 96.5,
+          "y": 91.4
+        },
+        {
+          "x": 93.9,
+          "y": 91.4
+        },
+        {
+          "x": 93.9,
+          "y": 50
+        },
+        {
+          "x": 96.5,
+          "y": 50
+        }
+      ],
+      "color": "#2563eb",
+      "fillColor": "#60a5fa"
+    },
+    {
+      "id": "biobuzz-flower-top",
+      "name": "Scoring-Side FLOWER",
+      "vertices": [
+        {
+          "x": 43.4,
+          "y": 141.5
+        },
+        {
+          "x": 50.1,
+          "y": 141.5
+        },
+        {
+          "x": 50.1,
+          "y": 139.4
+        },
+        {
+          "x": 46.75,
+          "y": 137.7
+        },
+        {
+          "x": 43.4,
+          "y": 139.4
+        }
+      ],
+      "color": "#dc2626",
+      "fillColor": "#ff6b6b"
+    },
+    {
+      "id": "biobuzz-flower-right",
+      "name": "Blue Alliance FLOWER",
+      "vertices": [
+        {
+          "x": 141.5,
+          "y": 98.1
+        },
+        {
+          "x": 139.4,
+          "y": 98.1
+        },
+        {
+          "x": 137.7,
+          "y": 94.75
+        },
+        {
+          "x": 139.4,
+          "y": 91.4
+        },
+        {
+          "x": 141.5,
+          "y": 91.4
+        }
+      ],
+      "color": "#2563eb",
+      "fillColor": "#60a5fa"
+    },
+    {
+      "id": "biobuzz-flower-bottom",
+      "name": "Audience-Side FLOWER",
+      "vertices": [
+        {
+          "x": 91.15,
+          "y": 0
+        },
+        {
+          "x": 97.8,
+          "y": 0
+        },
+        {
+          "x": 97.8,
+          "y": 2.1
+        },
+        {
+          "x": 94.5,
+          "y": 3.8
+        },
+        {
+          "x": 91.15,
+          "y": 2.1
+        }
+      ],
+      "color": "#2563eb",
+      "fillColor": "#60a5fa"
+    },
+    {
+      "id": "biobuzz-flower-left",
+      "name": "Red Alliance FLOWER",
+      "vertices": [
+        {
+          "x": 0,
+          "y": 50.35
+        },
+        {
+          "x": 2.1,
+          "y": 50.35
+        },
+        {
+          "x": 3.8,
+          "y": 47
+        },
+        {
+          "x": 2.1,
+          "y": 43.65
+        },
+        {
+          "x": 0,
+          "y": 43.65
+        }
+      ],
+      "color": "#dc2626",
+      "fillColor": "#ff6b6b"
+    }
+  ],
+  "sequence": [
+    {
+      "kind": "path",
+      "lineId": "biobuzz-path-1"
+    },
+    {
+      "kind": "path",
+      "lineId": "biobuzz-path-2"
+    },
+    {
+      "kind": "path",
+      "lineId": "biobuzz-path-3"
+    },
+    {
+      "kind": "path",
+      "lineId": "biobuzz-path-4"
+    },
+    {
+      "kind": "path",
+      "lineId": "biobuzz-path-5"
+    }
+  ],
+  "fieldPoints": [],
+  "robot": {},
+  "activePaths": []
+}

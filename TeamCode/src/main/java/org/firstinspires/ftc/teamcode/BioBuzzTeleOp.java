@@ -12,8 +12,8 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
     static final double SLOW_MODE_SCALE = 0.4;
     static final double STICK_DEADBAND = 0.1;
     static final double SINGLE_CONTROLLER_TURRET_JOG_POWER = 0.15;
-    static final double FLOWER_ON = 0.32;
-    static final double FLOWER_OFF = 0.0;
+    static final double FLOWER_ON = FlowerLever.DEPLOYED_POSITION;
+    static final double FLOWER_OFF = FlowerLever.RETRACTED_POSITION;
 
     protected abstract Robot.Alliance teleOpAlliance();
 
@@ -31,6 +31,7 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
         robot.init(hardwareMap, false);
         Servo flower = hardwareMap.get(Servo.class, "flower");
         boolean flowerOn = false;
+        commandFlower(flower, false); // Flower OFF as soon as INIT is pressed.
         // Override any alliance inherited from Auto or a previously run OpMode.
         robot.alliance = teleOpAlliance();
         Robot.lastAlliance = robot.alliance;
@@ -50,6 +51,10 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
             }
 
             robot.updateSensors();
+            // Keep the INIT OFF command powered if the hub dropped the servo PWM.
+            if (flower instanceof PwmControl && !((PwmControl) flower).isPwmEnabled()) {
+                commandFlower(flower, false);
+            }
 
             telemetry.addLine("===== BIOBUZZ INIT =====");
 
@@ -87,7 +92,7 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
             robot.addVisionTelemetry(telemetry);
             robot.addGateTelemetry(telemetry);
             addPollenLedTelemetry(robot);
-            telemetry.addData("Flower", "OFF at START (%.2f); gamepad %d RB toggles ON/OFF", FLOWER_OFF, operatorNumber);
+            telemetry.addData("Flower", "OFF from INIT (%.2f); gamepad %d RB toggles ON/OFF", FLOWER_OFF, operatorNumber);
 
             telemetry.update();
         }
@@ -467,8 +472,7 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
     }
 
     private void commandFlower(Servo flower, boolean on) {
-        flower.setPosition(on ? FLOWER_ON : FLOWER_OFF);
-        if (flower instanceof PwmControl) ((PwmControl) flower).setPwmEnable();
+        FlowerLever.command(flower, on);
     }
 
     private void addShooterDistanceTelemetry(Robot robot) {

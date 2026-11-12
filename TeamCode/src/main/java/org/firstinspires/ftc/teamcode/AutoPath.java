@@ -27,10 +27,12 @@ import static com.pedropathing.ivy.pedro.PedroCommands.follow;
 public class AutoPath extends LinearOpMode {
     private static final double SPEED_FRACTION = 0.70;
     private static final double WALL_ARRIVAL_IN = 3.0;
+    // Path 2 aims ~1.4 in past the wall; if balls stop the robot farther out, continue after this.
+    private static final long WALL_STALL_NS = 1_000_000_000L;
     private static final long WALL_PAUSE_NS = 1_000_000_000L;
     private static final long SECOND_SHOT_PAUSE_NS = 4_000_000_000L;
     private static final double FLOWER_ARRIVAL_IN = 1.0;
-    private static final double FLOWER_PROGRESS_IN = 0.25;
+    private static final double APPROACH_PROGRESS_IN = 0.25;
     private static final long FLOWER_STALL_NS = 4_000_000_000L;
     private static final PoseFactory POSES = PoseFactory.degrees();
     private static final Pose START = POSES.of(56, 8, 270);
@@ -143,25 +145,20 @@ public class AutoPath extends LinearOpMode {
     }
 
     static Command route(Follower follower, LongSupplier clock, BioBuzzAutoMechanisms mechanisms, FlowerLever flowerLever) {
-        FlowerApproach flower = new FlowerApproach();
-        Path wallEntry = mechanisms == null ? atRouteSpeed(path1()) : atPickupSpeed(path1());
-        Path wallContact = mechanisms == null ? atRouteSpeed(path2()) : atPickupSpeed(path2());
+        // Every segment runs at 70% except the two that drive into balls: path 2 (into the wall
+        // balls) and path 7 (FLOWER intake). Drive-only uses the same speeds so it rehearses the run.
+        Approach wall = new Approach(POINT_2, WALL_ARRIVAL_IN, WALL_STALL_NS);
+        Approach flower = new Approach(POINT_7, FLOWER_ARRIVAL_IN, FLOWER_STALL_NS);
         Command wallPickup = sequential(
-                follow(follower, wallEntry),
-                follow(follower, wallContact).setDone(() ->
-                        follower.atParametricEnd() || follower.holding()
-                                || follower.pose().distance(POINT_2) <= WALL_ARRIVAL_IN));
+                follow(follower, atRouteSpeed(path1())),
+                approach(follower, clock, atPickupSpeed(path2()), wall, true));
         Command toSecondShot = sequential(
                 follow(follower, atRouteSpeed(path3())),
                 follow(follower, atRouteSpeed(path4())),
                 follow(follower, atRouteSpeed(path5())));
-        Path approach = atRouteSpeed(path7());
         Command toFlower = sequential(
                 follow(follower, atRouteSpeed(path6())),
-                Command.build().setStart(() -> {
-                    follower.follow(approach);
-                    flower.start(follower.pose(), clock.getAsLong());
-                }).setDone(() -> flower.finished(follower, clock.getAsLong())));
+                approach(follower, clock, atPickupSpeed(path7()), flower, false));
         Command exit = lazy(() -> follow(follower, atRouteSpeed(path8(flower.departure))));
         if (mechanisms == null) return sequential(
                 wallPickup, pauseDrive(follower, clock, WALL_PAUSE_NS),
@@ -263,29 +260,51 @@ public class AutoPath extends LinearOpMode {
         }
     }
 
-    private static final class FlowerApproach {
+    /**
+     * Follows a segment that drives into balls. It finishes on Pedro's end signal (when allowed),
+     * within the arrival radius, or after the stall window passes with less than 0.25 in of new
+     * progress, so balls or a field element blocking the robot can never hang the route.
+     */
+    private static Command approach(Follower follower, LongSupplier clock, Path path, Approach watch,
+                                    boolean pedroEndCounts) {
+        return Command.build().setStart(() -> {
+            follower.follow(path);
+            watch.start(follower.pose(), clock.getAsLong());
+        }).setDone(() -> (pedroEndCounts && (follower.atParametricEnd() || follower.holding()))
+                || watch.finished(follower, clock.getAsLong()));
+    }
+
+    private static final class Approach {
+        private final Pose target;
+        private final double arrivalIn;
+        private final long stallNs;
         private Pose departure;
         private double closestDistance;
         private long lastProgress;
 
+        Approach(Pose target, double arrivalIn, long stallNs) {
+            this.target = target; this.arrivalIn = arrivalIn; this.stallNs = stallNs;
+            departure = target;
+        }
+
         void start(Pose pose, long now) {
-            departure = POINT_7;
-            closestDistance = pose.distance(POINT_7);
+            departure = target;
+            closestDistance = pose.distance(target);
             lastProgress = now;
         }
 
         boolean finished(Follower follower, long now) {
             Pose pose = follower.pose();
-            double distance = pose.distance(POINT_7);
+            double distance = pose.distance(target);
             if (!Double.isFinite(distance) || !Double.isFinite(pose.heading())) {
-                throw new IllegalStateException("Invalid Pinpoint pose on FLOWER approach");
+                throw new IllegalStateException("Invalid Pinpoint pose approaching " + target);
             }
-            if (distance <= FLOWER_ARRIVAL_IN) return true;
-            if (closestDistance - distance >= FLOWER_PROGRESS_IN) {
+            if (distance <= arrivalIn) return true;
+            if (closestDistance - distance >= APPROACH_PROGRESS_IN) {
                 closestDistance = distance;
                 lastProgress = now;
             }
-            if (now - lastProgress < FLOWER_STALL_NS) return false;
+            if (now - lastProgress < stallNs) return false;
 
             // Rebase the exit so Pedro can back away without chasing the blocked endpoint.
             departure = pose;

@@ -46,7 +46,8 @@ public final class BioBuzzAutoConfig {
     // change the shot), and reuses that distance for at most DISTANCE_HOLD_SECONDS without a tag.
     public static final int DISTANCE_FILTER_SAMPLES = 5;
     public static final double DISTANCE_HOLD_SECONDS = 1.0;
-    // AutoPath path 1 drives over the four wall balls; 70% route speed bats them away.
+    // AutoPath runs every segment at 70% except the two that drive into balls: path 2 (into the
+    // four wall balls) and path 7 (FLOWER intake). 70% there bats the balls away.
     public static final double PICKUP_SPEED_FRACTION = 0.35;
     public static final double PICKUP_MAX_VELOCITY_IN_S = 18.0;
 

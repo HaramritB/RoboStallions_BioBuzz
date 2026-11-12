@@ -145,8 +145,12 @@ public final class AutoPathRegression {
     }
 
     private static void assertStep(Tracking follower, int step) {
-        if (follower.pathsStarted != step || Constants.foresightConfig.maxPathSpeed.get() != 0.70) {
-            throw new AssertionError("Expected path " + step + " at 70% speed, saw path " + follower.pathsStarted);
+        // Only path 2 (into the wall balls) and path 7 (FLOWER intake) run slower than 70%.
+        double expected = step == 2 || step == 7
+                ? org.firstinspires.ftc.teamcode.autonomous.BioBuzzAutoConfig.PICKUP_SPEED_FRACTION : 0.70;
+        if (follower.pathsStarted != step || Constants.foresightConfig.maxPathSpeed.get() != expected) {
+            throw new AssertionError("Expected path " + step + " at " + expected + " speed, saw path "
+                    + follower.pathsStarted + " at " + Constants.foresightConfig.maxPathSpeed.get());
         }
     }
 

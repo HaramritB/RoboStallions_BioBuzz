@@ -12,13 +12,17 @@ Select **AutoPath (Drive Only)** to run the same route and pauses without
 initializing mechanism hardware. The separate **BioBuzz Auto** from the latest pull is
 unchanged. The older BioBuzz Pedro Auto description below refers to its own implementation.
 
-AutoPath follows the supplied eight-segment route. Normal travel retains the 70% modeled
-speed policy. Wall pickup retains the 35% / 18 in/s speed settings.
+AutoPath follows the supplied eight-segment route. Every segment runs at the 70% modeled
+speed except the two that drive into balls: **path 2** (into the four wall balls) and
+**path 7** (FLOWER intake), which use 35% / 18 in/s. AutoPath (Drive Only) uses the same
+speeds so it rehearses the real run.
 
 1. INIT at (56, 8), heading 270°. A selects BLUE and B selects RED for tag filtering.
    With the turret physically pointing forward, BACK zeros it.
 2. Shoot the four preloads at START before driving. The flywheel and turret stay active.
-3. Intake on paths 1–2 and through the one-second stop at the wall after path 2.
+3. Intake on paths 1–2 and through the one-second stop at the wall after path 2. Path 2 ends
+   within 3 in of its target, or after 1 s without 0.25 in of progress if balls block the
+   robot farther out, so the wall can never hang the route.
 4. Follow paths 3–5 to the second shooting spot. At path 5's endpoint, deploy the flower
    lever and shoot, with a four-second minimum stop.
 5. Intake on paths 6–7 and for two seconds at FLOWER. The existing four-second
@@ -77,7 +81,7 @@ the stationary burst. No fixed 4000 RPM/color-based shooting target replaces the
 AutoPath maps the `flower` servo without moving it in INIT and retracts it at START. It stays
 OFF through the end of path 5, deploys at the second shooting spot,
 and stays ON through volley 2, paths 6–8 and the final volley. Only the end of the OpMode,
-STOP or a failure retracts it. FlowerLever shares TeleOp's ON=0.60/OFF=0.30 positions and
+STOP or a failure retracts it. FlowerLever shares TeleOp's ON=0.32/OFF=0 positions and
 PWM-enable/restore behavior. AutoPath (Drive Only) never maps or commands it.
 
 Scoring needs intake, transmission, turret, shooter, torqueservo1, **flower**, a working Limelight and
@@ -275,8 +279,8 @@ power, and cancels scheduler commands before reset.
 ## Direct route: AutoPath
 
 **AutoPath** and **AutoPath (Drive Only)** follow the same eight-segment geometry and
-heading profiles. The wall stop accepts a Pinpoint pose within 3 inches of the path-2
-target. The second shooting stop is after path 5. Path 7 targets (46.5109, 139.7571);
+heading profiles and speeds. The wall stop accepts a Pinpoint pose within 3 inches of the
+path-2 target, or a 1-second stall. The second shooting stop is after path 5. Path 7 targets (46.5109, 139.7571);
 if the approach stalls for four seconds without 0.25 inch of new progress, path 8 starts
 from the measured pose. Scoring retains the two-second stopped intake window before
 departure. Verify wall and FLOWER contact and total run time on the field.

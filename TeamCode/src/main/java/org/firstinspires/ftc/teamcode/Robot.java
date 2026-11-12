@@ -32,7 +32,7 @@ import java.util.function.DoubleSupplier;
 public class Robot {
 
     public static final String CODE_VERSION =
-            "BIOBUZZ-GATE-CALIBRATION-2026-11-08";
+            "BIOBUZZ-FLOWER-ON0.32-OFF0-2026-11-11";
 
     public enum Alliance { RED, BLUE }
     public enum BallColor { NONE, YELLOW, RED, BLUE }

@@ -70,6 +70,8 @@ public final class BioBuzzAutoMechanisms {
         default void setShooterIdle(boolean spinning) { }
         /** Run the intake inward for the whole run, not only during collect commands. */
         default void setIntakeAlways(boolean running) { }
+        /** Sweep the turret for the HIVE until a tag is first seen, then hold/track. */
+        default void setSearchUntilTagSeen(boolean search) { }
         void close();
     }
 
@@ -149,6 +151,14 @@ public final class BioBuzzAutoMechanisms {
         if (closed) return;
         intakeAlways=running;
         if (hardware!=null) hardware.setIntakeAlways(running);
+    }
+
+    /**
+     * AutoPath: the turret sweeps for the HIVE until it first sees a tag. Main's turret otherwise
+     * holds its starting direction whenever heading is known and would never find a tag behind it.
+     */
+    public void searchForTagUntilSeen(boolean search) {
+        if (hardware!=null && !closed) hardware.setSearchUntilTagSeen(search);
     }
 
     /** Stationary operator-held test only; mutually exclusive with any command. */
@@ -432,6 +442,7 @@ public final class BioBuzzAutoMechanisms {
         @Override public boolean shootingBurstActive() { return phase==Phase.FEEDING; }
         @Override public void setShooterIdle(boolean spinning) { idleSpin=spinning; }
         @Override public void setIntakeAlways(boolean running) { intakeAlways=running; }
+        @Override public void setSearchUntilTagSeen(boolean search) { robot.setTurretSearchUntilTagSeen(search); }
 
         @Override public Observation observe() {
             if (headingCw==null) robot.updateSensors();

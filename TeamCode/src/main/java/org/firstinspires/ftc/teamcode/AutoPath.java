@@ -65,6 +65,8 @@ public class AutoPath extends LinearOpMode {
                         () -> -Math.toDegrees(follower.velocity().omega));
                 // A sensor glitch or slow volley is reported and skipped; it never ends the run.
                 mechanisms.setFaultTolerant(true);
+                // Sweep for the HIVE until the first tag: at START the HIVE is behind the robot.
+                mechanisms.searchForTagUntilSeen(true);
                 mechanisms.manualIntake(false); // Motors idle; no INIT gate position command.
             }
             while (opModeInInit()) {

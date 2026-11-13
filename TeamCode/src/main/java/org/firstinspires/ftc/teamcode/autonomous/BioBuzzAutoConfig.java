@@ -41,7 +41,7 @@ public final class BioBuzzAutoConfig {
     public static final double GATE_RELIEF_SECONDS = 0.10;
     public static final double GATE_RELIEF_TRANSMISSION_POWER = 0.30;
     // No fresh aimed tag by this long after a volley starts: shoot at the calibrated-table RPM
-    // (latest filtered tag distance, or the 3150 RPM no-tag default) once the flywheel is stable.
+    // (latest filtered tag distance, or the 3215 RPM no-tag default) once the flywheel is stable.
     public static final double SHOOT_AIM_GRACE_SECONDS = 2.0;
     // Flywheel still outside the +/-50 RPM band by now (e.g. low battery): feed anyway if it is
     // at least SHOOT_FORCE_MIN_RPM_FRACTION of target, instead of waiting for the hard backstop.
@@ -51,8 +51,8 @@ public final class BioBuzzAutoConfig {
     // change the shot), and reuses that distance for at most DISTANCE_HOLD_SECONDS without a tag.
     public static final int DISTANCE_FILTER_SAMPLES = 5;
     public static final double DISTANCE_HOLD_SECONDS = 1.0;
-    // AutoPath runs every segment at 70% except the two that drive into balls: path 2 (into the
-    // four wall balls) and path 7 (FLOWER intake). 70% there bats the balls away.
+    // AutoPath runs every segment at 85% (AutoPath.SPEED_FRACTION) except the two that drive into balls: path 2 (into the
+    // four wall balls) and path 7 (FLOWER intake). Route speed there bats the balls away.
     public static final double PICKUP_SPEED_FRACTION = 0.35;
     public static final double PICKUP_MAX_VELOCITY_IN_S = 18.0;
 

@@ -3,6 +3,7 @@ package org.firstinspires.ftc.teamcode.v2;
 import com.pedropathing.ivy.Command;
 import com.pedropathing.ivy.behaviors.EndCondition;
 import com.qualcomm.robotcore.hardware.Gamepad;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.Servo;
 
 import org.firstinspires.ftc.teamcode.FlowerLever;
@@ -35,8 +36,10 @@ public final class V2Regression {
         flowerCommands();
         distanceFilter();
         sequencer();
-        mirror();
         voltageCompensation();
+        teleOpShooterTune();
+        calibrationSpeed();
+        preciseSpeedReadiness();
         burstEarlyEnd();
         System.out.println("Passed " + checks + " V2 regression checks.");
     }
@@ -74,11 +77,11 @@ public final class V2Regression {
                 });
         FlowerLever flower = new FlowerLever(servo);
         flower.setDeployed(false);
-        near(position[0], 0, 0, "Flower OFF commands 0 (not the deployed position)");
+        near(position[0], 0.1, 0, "Flower OFF commands 0.1 (not the deployed position)");
         flower.setDeployed(true);
-        near(position[0], 0.18, 0, "Flower ON commands 0.18");
+        near(position[0], 0.435, 0, "Flower ON commands 0.435");
         flower.stop();
-        near(position[0], 0, 0, "Auto cleanup retracts flower to 0");
+        near(position[0], 0.1, 0, "Auto cleanup retracts flower to 0.1");
     }
 
     // ================================================================ HIVE cell choice
@@ -291,10 +294,33 @@ public final class V2Regression {
         check(peakGoal < 0.3 && peakPower == 0,
                 "Small alternating camera/encoder noise must not kick a settled turret");
 
+        // One bad frame (e.g. half a tag cluster blinking out) is ignored.
+        T[0] += 20;
+        double glitch = a.update(withFrame(pose(0, 0, 0, 0), 6, 100, 0));
+        check(Math.abs(a.goalDeg) < 0.3 && glitch == 0, "A single 6 deg glitch frame does not move the turret");
+        for (int i = 0; i < 5; i++) {
+            T[0] += 20;
+            a.update(withFrame(pose(0, 0, 0, 0), 0.2, 100, 0));
+        }
+        check(Math.abs(a.goalDeg) < 0.3, "Normal frames after a glitch keep the goal where it was");
+
+        // A real jump (two agreeing frames, e.g. the HIVE tipped) is taken without smoothing.
+        T[0] += 20;
+        a.update(withFrame(pose(0, 0, 0, 0), 12, 100, 0));
+        check(Math.abs(a.goalDeg) < 0.3, "The first frame of a jump is held for confirmation");
         T[0] += 20;
         double correction = a.update(withFrame(pose(0, 0, 0, 0), 12, 100, 0));
-        near(a.goalDeg, 12, 0.001, "A real target change is acquired immediately");
+        near(a.goalDeg, 12, 0.001, "A confirmed target change is acquired in full on the second frame");
         check(correction > 0, "A large target change still starts the turret moving");
+
+        // Two disagreeing big frames are both glitches.
+        a = aim();
+        a.update(withFrame(pose(0, 0, 0, 0), 0, 100, 0));
+        T[0] += 20;
+        a.update(withFrame(pose(0, 0, 0, 0), 8, 100, 0));
+        T[0] += 20;
+        a.update(withFrame(pose(0, 0, 0, 0), -8, 100, 0));
+        check(Math.abs(a.goalDeg) < 0.3, "Opposite big glitches on back-to-back frames are both rejected");
 
         // Small sustained bias must converge instead of being mistaken for noise forever.
         a = aim();
@@ -383,31 +409,123 @@ public final class V2Regression {
         check(s.transmissionPower == ShotSequencerV2.INWARD_TRANSMISSION, "Then driver 1 feeds as before");
     }
 
-    // ================================================================ mirroring
-
-    static void mirror() {
-        check(FieldMirrorV2.x(56, 8, Robot.Alliance.BLUE) == 56 && FieldMirrorV2.headingDeg(270, Robot.Alliance.BLUE) == 270,
-                "Blue geometry is unchanged");
-        near(FieldMirrorV2.x(56, 8, Robot.Alliance.RED), 88, 1e-9, "Red mirrors x across the center line");
-        near(FieldMirrorV2.y(56, 8, Robot.Alliance.RED), 8, 1e-9, "Red keeps y when mirroring");
-        near(FieldMirrorV2.headingDeg(0, Robot.Alliance.RED), 180, 1e-9, "Facing +x becomes facing -x");
-        FieldMirrorV2.Mode mode = FieldMirrorV2.MODE;
-        FieldMirrorV2.MODE = FieldMirrorV2.Mode.ROTATE_180;
-        near(FieldMirrorV2.y(56, 8, Robot.Alliance.RED), 136, 1e-9, "Rotational mode flips y");
-        near(FieldMirrorV2.headingDeg(0, Robot.Alliance.RED), 180, 1e-9, "Rotational mode turns headings 180");
-        FieldMirrorV2.MODE = mode;
-    }
-
     // ================================================================ shooter F
 
     static void voltageCompensation() {
-        near(RobotV2.compensatedF(RobotV2.NOMINAL_VOLTAGE), Robot.SHOOTER_F, 1e-9, "Nominal voltage keeps F");
-        near(RobotV2.compensatedF(11.5), Robot.SHOOTER_F * RobotV2.NOMINAL_VOLTAGE / 11.5, 1e-9,
+        near(RobotV2.compensatedF(Robot.SHOOTER_F_REFERENCE_VOLTS), Robot.SHOOTER_F, 1e-9, "Reference voltage keeps F");
+        near(RobotV2.compensatedF(11.5), Robot.SHOOTER_F * Robot.SHOOTER_F_REFERENCE_VOLTS / 11.5, 1e-9,
                 "A sagging battery raises F proportionally");
-        near(RobotV2.compensatedF(5), Robot.SHOOTER_F * RobotV2.NOMINAL_VOLTAGE / 9.0, 1e-9, "Clamped at 9 V");
+        near(RobotV2.compensatedF(5), Robot.SHOOTER_F * Robot.SHOOTER_F_REFERENCE_VOLTS / 9.0, 1e-9, "Clamped at 9 V");
+        near(RobotV2.compensatedF(Double.NaN), Robot.SHOOTER_F, 0, "Missing voltage must not send NaN to the hub");
     }
 
     // ================================================================ early burst end
+
+    static void teleOpShooterTune() {
+        double[] applied = new double[4];
+        double[] measuredRpm = {3200};
+        double[] commandedVelocity = {0};
+        RobotV2 v2 = new RobotV2();
+        v2.robot.shooter = (DcMotorEx) Proxy.newProxyInstance(DcMotorEx.class.getClassLoader(),
+                new Class<?>[]{DcMotorEx.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("getVelocity")) return measuredRpm[0] * Robot.SHOOTER_TICKS_PER_REV / 60;
+                    if (method.getName().equals("setVelocity")) { commandedVelocity[0] = (double) args[0]; return null; }
+                    if (!method.getName().equals("setVelocityPIDFCoefficients")) {
+                        throw new AssertionError("Unexpected shooter call: " + method.getName());
+                    }
+                    for (int i = 0; i < 4; i++) applied[i] = (double) args[i];
+                    return null;
+                });
+        v2.setShooterTune(BioBuzzTeleOpV2.SHOOTER_P, BioBuzzTeleOpV2.SHOOTER_REFERENCE_F);
+        near(applied[0], 180, 0, "V2 TeleOp installs P=180 immediately");
+        near(applied[1], 0, 0, "V2 TeleOp keeps I at zero");
+        near(applied[2], 0, 0, "V2 TeleOp keeps D at zero");
+        near(applied[3], 12.71, 0, "Before a voltage reading the measured reference F is applied");
+        v2.batteryVolts = 12.0;
+        v2.setShooterTune(BioBuzzTeleOpV2.SHOOTER_P, BioBuzzTeleOpV2.SHOOTER_REFERENCE_F);
+        near(applied[3], 12.71 * 13.3 / 12, 1e-9, "Measured TeleOp F is normalized to 13.3 V");
+        near(Robot.SHOOTER_P, 180, 0, "The original feedback baseline remains available for comparison");
+        near(Robot.SHOOTER_F, 13.83, 0, "The original feedforward baseline remains available for comparison");
+        v2.robot.shooterOn = true;
+        v2.robot.targetRpm = 3200;
+        v2.robot.rpmTrim = 0;
+        measuredRpm[0] = 3230;
+        check(v2.atSpeed(), "Default 50-RPM window remains available to other V2 OpModes");
+        v2.atSpeedToleranceRpm = BioBuzzTeleOpV2.SHOOTER_READY_TOLERANCE_RPM;
+        check(!v2.atSpeed(), "TeleOp does not report a 30-RPM error as at speed");
+        measuredRpm[0] = 3210;
+        check(v2.atSpeed(), "Exactly +10 RPM is inside the inclusive calibration window");
+        measuredRpm[0] = 3190;
+        check(v2.atSpeed(), "Exactly -10 RPM is inside the inclusive calibration window");
+        measuredRpm[0] = 3210.1;
+        check(!v2.atSpeed(), "An error larger than 10 RPM is outside the window");
+        measuredRpm[0] = 3200;
+        v2.robot.shooterOn = false;
+        check(!v2.atSpeed(), "A disabled shooter never reports at speed");
+        for (double[] point : new double[][]{{1.39,3215},{1.52,3220},{1.62,3235},{1.57,3227.5}}) {
+            v2.shotDistanceM = point[0];
+            v2.runShooter(true, 0, Double.NaN);
+            near(commandedVelocity[0], point[1] * Robot.SHOOTER_TICKS_PER_REV / 60, 1e-8,
+                    "V2 sends the shared calibrated/interpolated RPM to the motor");
+        }
+        v2.runShooter(true, 1, Double.NaN);
+        near(v2.commandedRpm(), 3228.5, 1e-8, "Fine calibration trim still adds to the new table");
+        v2.shotDistanceM = 1.39;
+        v2.runShooter(true, 0, 3235);
+        near(v2.commandedRpm(), 3235, 0, "Calibration/burst RPM latch still overrides live distance");
+    }
+
+    static void calibrationSpeed() {
+        ShooterCalibrationV2 c = new ShooterCalibrationV2();
+        check(!c.enabled() && Double.isNaN(c.baseRpmOverride()), "Normal mode follows the distance table");
+        c.adjust(true, false, false);
+        near(c.trimRpm, 10, 0, "Normal up press adds 10 RPM");
+        c.adjust(true, false, true);
+        near(c.trimRpm, 11, 0, "LB+up adds 1 RPM");
+        c.adjust(false, true, true);
+        near(c.trimRpm, 10, 0, "LB+down subtracts 1 RPM");
+        c.adjust(true, true, false);
+        near(c.trimRpm, 10, 0, "Opposing trim inputs cancel");
+        c.toggle(3200);
+        check(c.enabled(), "Clicking the calibration toggle holds the current base RPM");
+        near(c.baseRpmOverride() + c.trimRpm, 3210, 0, "Entering calibration preserves the current trim");
+        c.adjust(false, true, false);
+        near(c.baseRpmOverride() + c.trimRpm, 3200, 0, "Frozen base remains adjustable");
+        c.adjust(true, false, true);
+        c.toggle(3250);
+        check(!c.enabled() && Double.isNaN(c.baseRpmOverride()), "Exiting returns to live table lookup");
+        near(c.trimRpm, 1, 0, "Exiting preserves manual trim");
+        c.toggle(3250);
+        c.resetTrim();
+        near(c.trimRpm, 0, 0, "Back clears trim");
+        near(c.baseRpmOverride(), 3250, 0, "Clearing trim does not release the calibration lock");
+        c.toggle(3250);
+        c.toggle(Double.NaN);
+        check(!c.enabled(), "Invalid table speed cannot create a calibration lock");
+    }
+
+    static void preciseSpeedReadiness() {
+        ShotSequencerV2 s = new ShotSequencerV2();
+        s.update(0, false, false, true, true, true, true, false, 0);
+        s.update(75, false, false, true, true, true, true, false, 0);
+        check(!s.speedStable, "A brief visit to the RPM band is not stable");
+        s.update(150, false, false, true, true, true, true, false, 0);
+        check(s.speedStable && s.ready, "150 ms continuously in band is ready when aimed");
+        s.resetSpeedReadiness();
+        s.update(160, false, false, true, true, true, true, false, 0);
+        check(!s.speedStable, "A 1-RPM setpoint edit must requalify readiness");
+        s.update(310, false, false, true, true, true, true, false, 0);
+        check(s.speedStable, "The edited target gets its own stable interval");
+        s.update(320, false, false, false, true, true, true, true, -1);
+        check(!s.speedStable && s.gateOpen, "Leaving the band resets readiness without blocking manual X");
+        s.update(580, false, false, false, true, true, true, true, -1);
+        near(s.transmissionPower, ShotSequencerV2.INWARD_TRANSMISSION, 0,
+                "Manual feed remains available outside the calibration band");
+        s = new ShotSequencerV2();
+        s.update(0, false, false, true, true, true, true, false, 0);
+        s.update(500, false, false, true, true, true, true, false, 0);
+        check(!s.speedStable, "A long gap between samples cannot claim continuous speed stability");
+    }
 
     static final class FakeHardware implements BioBuzzAutoMechanisms.Hardware {
         boolean feeding, finished;

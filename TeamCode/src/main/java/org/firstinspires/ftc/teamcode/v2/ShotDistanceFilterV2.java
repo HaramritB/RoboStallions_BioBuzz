@@ -5,7 +5,7 @@ import java.util.Arrays;
 /**
  * Distance used to pick shooter RPM.
  *
- * The original TeleOp used each raw frame's distance and fell back to 3150 RPM the moment a tag
+ * The original TeleOp used each raw frame's distance and fell back to 3215 RPM the moment a tag
  * blinked out, so the flywheel target jumped between frames. This uses the median of the last
  * few fresh distances, holds it briefly through dropouts, then falls back to the odometry range to
  * the remembered target point, and only then to the default.

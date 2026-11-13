@@ -21,6 +21,7 @@ public final class ShotSequencerV2 {
     public static double RELIEF_TRANSMISSION_POWER = 0.30;
     /** The flywheel must stay inside the tight window this long before the gate opens. */
     public static double READY_STABLE_MS = 150;
+    public static double READY_MAX_SAMPLE_GAP_MS = 150;
 
     public static final double INWARD_INTAKE = -Robot.INTAKE_POWER;
     public static final double INWARD_TRANSMISSION = -Robot.TRANSMISSION_INDEX_POWER;
@@ -33,9 +34,11 @@ public final class ShotSequencerV2 {
     public double transmissionPower;
     /** Flywheel stable and turret aimed: what the operator rumble signals. */
     public boolean ready;
+    public boolean speedStable;
     public String waitingFor = "";
 
     private double speedOkSinceMs = Double.NaN;
+    private double lastSpeedSampleMs = Double.NaN;
     private double gateCommandedOpenMs = Double.NaN;
     private boolean lastGateOpen;
 
@@ -51,12 +54,17 @@ public final class ShotSequencerV2 {
     public void update(double nowMs, boolean wantShoot, boolean forceShoot, boolean atSpeed,
                        boolean nearSpeed, boolean aimed, boolean gateCalibrated,
                        boolean manualGateOpen, double driverIntake) {
+        if (Double.isFinite(lastSpeedSampleMs) && (nowMs < lastSpeedSampleMs
+                || nowMs - lastSpeedSampleMs > READY_MAX_SAMPLE_GAP_MS)) {
+            speedOkSinceMs = Double.NaN;
+        }
+        lastSpeedSampleMs = nowMs;
         if (atSpeed) {
             if (Double.isNaN(speedOkSinceMs)) speedOkSinceMs = nowMs;
         } else {
             speedOkSinceMs = Double.NaN;
         }
-        boolean speedStable = !Double.isNaN(speedOkSinceMs) && nowMs - speedOkSinceMs >= READY_STABLE_MS;
+        speedStable = !Double.isNaN(speedOkSinceMs) && nowMs - speedOkSinceMs >= READY_STABLE_MS;
         ready = speedStable && aimed;
 
         if (!gateCalibrated) {
@@ -125,5 +133,12 @@ public final class ShotSequencerV2 {
     private void trackGate(double nowMs) {
         if (gateOpen && !lastGateOpen) gateCommandedOpenMs = nowMs;
         lastGateOpen = gateOpen;
+    }
+
+    /** Editing a setpoint starts a fresh readiness interval, even for a 1-RPM change. */
+    public void resetSpeedReadiness() {
+        speedOkSinceMs = Double.NaN;
+        lastSpeedSampleMs = Double.NaN;
+        speedStable = ready = false;
     }
 }

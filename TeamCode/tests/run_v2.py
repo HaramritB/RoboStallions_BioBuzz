@@ -61,8 +61,11 @@ with tempfile.TemporaryDirectory(prefix='biobuzz-v2-') as temporary:
     sources += sorted((TEAMCODE / 'autonomous').glob('*.java'))
     sources += sorted((TEAMCODE / 'v2').glob('*.java'))
     sources += [Path(__file__).with_name('V2Regression.java')]
+    sources += [Path(__file__).with_name('FlywheelTuningRegression.java')]
     classpath = os.pathsep.join(map(str, jars))
     subprocess.run([java_tool('javac'), '-source', '8', '-target', '8', '-proc:none', '-nowarn',
                     '-cp', classpath, '-d', str(work)] + list(map(str, sources)), check=True)
     subprocess.run([java_tool('java'), '-cp', os.pathsep.join([str(work), classpath]),
                     'org.firstinspires.ftc.teamcode.v2.V2Regression'], check=True)
+    subprocess.run([java_tool('java'), '-cp', os.pathsep.join([str(work), classpath]),
+                    'org.firstinspires.ftc.teamcode.FlywheelTuningRegression'], check=True)

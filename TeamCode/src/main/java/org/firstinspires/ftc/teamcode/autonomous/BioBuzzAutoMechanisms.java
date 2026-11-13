@@ -129,6 +129,20 @@ public final class BioBuzzAutoMechanisms {
     }
 
     /**
+     * Also passes the Pedro position (inches). The adapter then remembers where the HIVE is from
+     * each centered sighting while stopped to shoot, and pre-aims the turret there from odometry
+     * whenever the tag is out of view, so it reaches the next shooting spot already pointed at it.
+     */
+    public static BioBuzzAutoMechanisms initialize(HardwareMap map, Robot.Alliance alliance,
+                                                  DoubleSupplier headingCw, DoubleSupplier turnRateCw,
+                                                  DoubleSupplier xIn, DoubleSupplier yIn) {
+        BioBuzzAutoMechanisms result=initialize(map,alliance,headingCw,turnRateCw);
+        RobotHardware port=(RobotHardware)result.hardware;
+        port.xIn=xIn; port.yIn=yIn;
+        return result;
+    }
+
+    /**
      * Match autonomous policy: a bad feeder-sensor sample or a volley that cannot start is
      * reported in {@link #warning()} and the route keeps going. Without this, one I2C glitch or a
      * slow flywheel ended the whole autonomous. Diagnostic OpModes keep the strict default.
@@ -414,6 +428,11 @@ public final class BioBuzzAutoMechanisms {
         final Robot robot;
         private final LongSupplier clock;
         DoubleSupplier headingCw, turnRateCw;
+        /** Pedro position in inches; null disables the HIVE memory and pre-aim (old sweep behavior). */
+        DoubleSupplier xIn, yIn;
+        double hiveX=Double.NaN, hiveY=Double.NaN;
+        int hiveFixes;
+        double preAimDeg=Double.NaN;
         private Phase phase=Phase.IDLE;
         private boolean idleSpin;
         private boolean intakeAlways;
@@ -466,6 +485,11 @@ public final class BioBuzzAutoMechanisms {
                     robot.shooterRpm(),robot.targetRpm+robot.rpmTrim,robot.targetFresh,robot.aimedAtTarget(),
                     robot.targetTx,robot.targetDistanceMeters,filteredDistance(clock.getAsLong()),robot.gateCalibrated(),
                     robot.ballPresent,robot.ballDistanceCm,robot.shotsFired);
+            if (xIn!=null) {
+                detail+=hiveFixes==0 ? "; HIVE not located yet (turret sweeps)"
+                        : String.format(java.util.Locale.US,"; HIVE at (%.0f, %.0f) from %d sightings; pre-aim %.0f deg; turret %s",
+                        hiveX,hiveY,hiveFixes,preAimDeg,robot.turretAimState());
+            }
             return new Observation(robot.ballPresent,robot.shotsFired,robot.turretDegrees(),
                     Double.isFinite(robot.ballDistanceCm) && robot.ballDistanceCm > 0);
         }
@@ -475,6 +499,7 @@ public final class BioBuzzAutoMechanisms {
             long now=clock.getAsLong();
             boolean shooting=request==Kind.SHOOT;
             boolean spin=shooting || idleSpin;
+            updateHivePreAim(shooting);
             if (request==Kind.CENTER_TURRET) robot.turretToAngle(0);
             else if (spin) {
                 robot.aimTurret(true,0); // TeleOp keeps auto-aim on all match.
@@ -552,6 +577,27 @@ public final class BioBuzzAutoMechanisms {
                         collecting ? INWARD_TRANSMISSION_POWER : 0);
             }
             robot.updateLed();
+        }
+
+        /**
+         * Learns the HIVE's field position from centered sightings while stopped to shoot (no
+         * motion latency), and hands the turret the angle odometry predicts for it. Without a pose
+         * or a sighting yet, the prediction is NaN and the turret sweeps exactly as before.
+         */
+        private void updateHivePreAim(boolean stoppedToShoot) {
+            if (xIn==null || yIn==null || headingCw==null) return;
+            double x=xIn.getAsDouble(), y=yIn.getAsDouble(), heading=headingCw.getAsDouble();
+            if (stoppedToShoot && robot.targetFresh && robot.aimedAtTarget()
+                    && Double.isFinite(robot.targetDistanceMeters) && robot.targetDistanceMeters>0) {
+                double[] fix=Robot.hiveFieldPoint(x,y,heading,robot.turretDegrees(),
+                        robot.visionErrorDegrees(),robot.targetDistanceMeters/0.0254);
+                if (Double.isFinite(fix[0]) && Double.isFinite(fix[1])) {
+                    hiveX=fix[0]; hiveY=fix[1]; hiveFixes++;
+                }
+            }
+            preAimDeg=Robot.turretDegreesToward(x,y,heading,hiveX,hiveY);
+            // Sweep fallback only while stopped to shoot; while driving keep following the prediction.
+            robot.setTurretPreAim(preAimDeg,stoppedToShoot);
         }
 
         /** Calibrated gate plus both feed motors; the transmission never pushes balls into a moving gate. */

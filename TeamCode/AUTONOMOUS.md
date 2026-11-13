@@ -12,7 +12,7 @@ Select **AutoPath (Drive Only)** to run the same route and pauses without
 initializing mechanism hardware. The separate **BioBuzz Auto** from the latest pull is
 unchanged. The older BioBuzz Pedro Auto description below refers to its own implementation.
 
-AutoPath follows the supplied eight-segment route. Every segment runs at the 70% modeled
+AutoPath follows the supplied eight-segment route. Every segment runs at the 85% modeled
 speed except the two that drive into balls: **path 2** (into the four wall balls) and
 **path 7** (FLOWER intake), which use 35% / 18 in/s. AutoPath (Drive Only) uses the same
 speeds so it rehearses the real run.
@@ -24,8 +24,15 @@ speeds so it rehearses the real run.
    direction as the feed), including during volleys. While driving, the transmission stacks
    balls against the closed gate. For each volley it stops during spin-up, briefly backs the
    balls off the gate (0.10 s outward) as the gate opens, and never pushes balls into a moving
-   gate. The **turret sweeps for the HIVE whenever it has not seen a tag for 400 ms**, so it
-   re-finds the HIVE on the way to the 2nd and 3rd spots instead of holding the old bearing.
+   gate. **Turret pre-aim (2026-11-12):** while stopped and locked on during a volley, AutoPath
+   records where the HIVE is on the field (Pedro pose + turret angle + tag offset and distance).
+   Whenever the tag is out of view after that, the turret turns to the angle odometry predicts
+   for the HIVE instead of sweeping, so it reaches the 2nd and 3rd spots already pointed at it.
+   It sweeps only if stopped to shoot and nothing shows up within 1 s of reaching the
+   prediction. Before the first lock (the START volley) it sweeps as before. Previously it swept
+   the whole drive and could reach spot 2 sweeping away from the HIVE; a full sweep takes ~4 s,
+   longer than the 2 s aim wait, so shot 2 fired unaimed. Telemetry shows `HIVE at (x, y)` and
+   the turret state (`PRE-AIM`, `TRACK`, `SEARCH`) under Shooter / aiming / gate.
 3. Collect on paths 1–2 and through the one-second stop at the wall after path 2. Path 2 drives
    all the way to (7.994, 0) and ends on Pedro's end-of-path signal; there is no early
    stop. As a safety net, if balls block the robot first, it continues after 1 s without 0.25 in
@@ -58,7 +65,7 @@ single continuous burst using the same manual feeder motor control:
   overshoot, invalid aim/distance or target change over 25 RPM resets the stable window.
 - Fallbacks instead of aborting: with no fresh aimed tag after **2.0 s**
   (SHOOT_AIM_GRACE_SECONDS), shoot at the calibrated-table RPM (last filtered distance, else
-  the 3150 no-tag default) once the flywheel is stable. If the flywheel still is not in the
+  the 3215 no-tag default) once the flywheel is stable. If the flywheel still is not in the
   band after **3.5 s** (e.g. low battery) but is at least 85% of target, feed anyway. If a
   volley cannot start within **6 s** (broken flywheel/gate), skip it and continue the route.
 - **Gate first, then feed:** command calibrated OPEN, wait **GATE_OPEN_WAIT_SECONDS = 0.25 s**
@@ -80,18 +87,18 @@ single continuous burst using the same manual feeder motor control:
   abort-on-failure behavior.
 
 The shooter uses the same measured distance/RPM interpolation and tuned PIDF as TeleOp:
-**1.41 m -> 3150 RPM, 1.60 m -> 3150, 1.76 m -> 3200, 1.90 m -> 3250**. Interpolate between
+**1.39 m -> 3215 RPM, 1.52 m -> 3220, 1.62 m -> 3235**. Interpolate between
 points and clamp beyond the measured endpoints, as in Robot.rpmForDistance. Auto uses its
 stricter 50-RPM stable-speed qualification; TeleOp's existing 100-RPM readiness tolerance is
 unchanged. Auto looks up the table with the **median of the last five fresh tag distances**,
 so one bad Limelight frame cannot change the shot, and holds that distance for up to 1 s of
-missing frames before using the 3150 no-tag default. Once the gate opens, latch that RPM for
+missing frames before using the 3215 no-tag default. Once the gate opens, latch that RPM for
 the stationary burst. No fixed 4000 RPM/color-based shooting target replaces the measured table.
 
 AutoPath commands the `flower` servo OFF as soon as INIT is pressed (and again at START). It stays
 OFF through the end of path 5, deploys at the second shooting spot,
 and stays ON through volley 2, paths 6–8 and the final volley. Only the end of the OpMode,
-STOP or a failure retracts it. FlowerLever shares TeleOp's ON=0.18/OFF=0 positions and
+STOP or a failure retracts it. FlowerLever shares TeleOp's ON=0.435/OFF=0.1 positions and
 PWM-enable/restore behavior. AutoPath (Drive Only) never maps or commands it.
 
 Scoring needs intake, transmission, turret, shooter, torqueservo1, **flower**, a working Limelight and

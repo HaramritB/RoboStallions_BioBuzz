@@ -147,6 +147,8 @@ public class FlowerCalibration extends LinearOpMode {
         telemetry.addData("Marked (not yet saved)", "ON=%.4f OFF=%.4f", markedOn, markedOff);
         telemetry.addData("Saved endpoints", validPair(savedOn, savedOff)
                 ? String.format(java.util.Locale.US, "ON=%.4f OFF=%.4f", savedOn, savedOff) : "none");
+        telemetry.addData("TeleOp / Auto endpoints", "ON=%.4f OFF=%.4f (shared code constants)",
+                FlowerLever.DEPLOYED_POSITION, FlowerLever.RETRACTED_POSITION);
         telemetry.addData("Flower hardware", "port %d; %s", flower.getPortNumber(), flower.getConnectionInfo());
         telemetry.addData("Position hold", Double.isFinite(command) ? "ACTIVE until B or STOP" : "RELEASED");
         telemetry.addData("PWM signal", pwm.isPwmEnabled() ? "ENABLED" : "DISABLED");

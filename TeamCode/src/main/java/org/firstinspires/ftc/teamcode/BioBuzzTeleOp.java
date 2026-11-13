@@ -92,7 +92,7 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
             robot.addVisionTelemetry(telemetry);
             robot.addGateTelemetry(telemetry);
             addPollenLedTelemetry(robot);
-            telemetry.addData("Flower", "OFF from INIT (%.2f); gamepad %d RB toggles ON/OFF", FLOWER_OFF, operatorNumber);
+            telemetry.addData("Flower", "OFF from INIT (%.4f); gamepad %d RB toggles ON/OFF", FLOWER_OFF, operatorNumber);
 
             telemetry.update();
         }
@@ -438,7 +438,7 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
                         robot.ballDistanceCm
                 );
                 addPollenLedTelemetry(robot);
-                telemetry.addData("Flower", "%s (%.2f); gamepad %d RB toggles",
+                telemetry.addData("Flower", "%s (%.4f); gamepad %d RB toggles",
                         flowerOn ? "ON" : "OFF", flowerOn ? FLOWER_ON : FLOWER_OFF, operatorNumber);
 
                 telemetry.addData(
@@ -481,6 +481,6 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
         telemetry.addData("Shooter RPM source", hasDistance
                 ? String.format(java.util.Locale.US, "Tag %d: %.2f m", robot.targetDistanceTagId,
                         robot.targetDistanceMeters)
-                : "No fresh tag distance: default 3150 RPM");
+                : String.format(java.util.Locale.US, "No fresh tag distance: default %.0f RPM", Robot.TELEOP_DEFAULT_RPM));
     }
 }

@@ -106,7 +106,7 @@ public final class AutoPathMechanismRegression {
             volley(); tick();
             check(follower.pathsStarted==1 && hardware.output==BioBuzzAutoMechanisms.Kind.COLLECT,
                     "Intake accompanies path 1: paths="+follower.pathsStarted+" output="+hardware.output+" request="+mechanisms.state());
-            checkSpeed(SPEED,"Path 1 (to the wall) runs at 70%");
+            checkSpeed(SPEED,"Path 1 (to the wall) runs at route speed");
             check(hardware.ready && hardware.fullStops==0,"Volleys and intake never shut the ready flywheel down");
             arrive(); drain();
             check(follower.pathsStarted==2 && hardware.output==BioBuzzAutoMechanisms.Kind.COLLECT,
@@ -123,7 +123,7 @@ public final class AutoPathMechanismRegression {
             for (int path=3; path<=5; path++) {
                 check(follower.pathsStarted==path && hardware.intakeOn(),
                         "The intake keeps running during transit on path "+path);
-                checkSpeed(SPEED,"Path "+path+" runs at 70%");
+                checkSpeed(SPEED,"Path "+path+" runs at route speed");
                 if (path<5) { arrive(); drain(); }
             }
             check(!lever.commands.contains(FlowerLever.DEPLOYED_POSITION) && lever.position==FlowerLever.RETRACTED_POSITION,
@@ -139,7 +139,7 @@ public final class AutoPathMechanismRegression {
                     "End of the OpMode, STOP and failures retract the flower lever to OFF");
         }
     }
-    static final double SPEED=0.70;
+    static final double SPEED=AutoPath.SPEED_FRACTION;
     static void checkSpeed(double fraction,String message) {
         boolean slow=fraction!=SPEED;
         check(Constants.foresightConfig.maxPathSpeed.get()==fraction
@@ -179,7 +179,7 @@ public final class AutoPathMechanismRegression {
             check(f.follower.pathsStarted==6,"Path 6 begins after both pause and volley finish");
             check(f.hardware.output==BioBuzzAutoMechanisms.Kind.COLLECT,"Intake starts as soon as volley 2 ends, during path 6");
             check(f.lever.position==FlowerLever.DEPLOYED_POSITION && f.lever.pwm,"The flower stays ON during the path-6 intake");
-            checkSpeed(SPEED,"Path 6 (strafe under the FLOWER) runs at 70%");
+            checkSpeed(SPEED,"Path 6 (strafe under the FLOWER) runs at route speed");
             f.arrive(); f.drain();
             check(f.follower.pathsStarted==7 && f.hardware.output==BioBuzzAutoMechanisms.Kind.COLLECT,"Intake keeps running into the FLOWER approach");
             checkSpeed(BioBuzzAutoConfig.PICKUP_SPEED_FRACTION,"Path 7 FLOWER intake runs at pickup speed");
@@ -203,7 +203,7 @@ public final class AutoPathMechanismRegression {
             check(f.lever.position==FlowerLever.DEPLOYED_POSITION,"The flower stays ON through path 8");
             if(stalled) check(f.follower.currentPath().get(0).distance(PoseFactory.degrees().of(46.88,131.0,90))<1e-8,
                     "Stall recovery still rebases path 8 to the actual departure point");
-            check(Constants.foresightConfig.maxPathSpeed.get()==.70,"Keep the tested path speed");
+            check(Constants.foresightConfig.maxPathSpeed.get()==AutoPath.SPEED_FRACTION,"Path 8 runs at route speed");
             f.arrive();
             check(f.follower.idle() && Scheduler.isScheduled(f.route),"Path-8 arrival stops the drive and waits for final shooting");
             check(f.lever.position==FlowerLever.DEPLOYED_POSITION,"The flower stays ON for the final volley");

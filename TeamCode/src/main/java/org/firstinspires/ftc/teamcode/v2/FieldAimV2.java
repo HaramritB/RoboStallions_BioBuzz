@@ -48,8 +48,13 @@ public final class FieldAimV2 {
     public static double VELOCITY_WINDOW_MS = 60;
     /** Smooth small vision changes in field coordinates; odometry compensation stays immediate. */
     public static double VISION_SMOOTHING_MS = 100;
-    /** Larger changes may be a new CELL after a HIVE tip: acquire those immediately. */
+    /** Larger changes may be a new CELL after a HIVE tip: acquire those without smoothing... */
     public static double VISION_SNAP_DEG = 3.0;
+    /**
+     * ...but only once this many consecutive frames agree, so one bad frame (e.g. two tags of a
+     * cluster blinking out) cannot twitch the turret. Costs about one frame (~30 ms) on a real jump.
+     */
+    public static int VISION_SNAP_CONFIRM_FRAMES = 2;
     /** Ramp friction compensation near the goal instead of applying a full kS kick. */
     public static double STATIC_RAMP_DEG = 3.0;
 
@@ -103,6 +108,8 @@ public final class FieldAimV2 {
     private double lastFrameTimestamp = Double.NaN;
     private double cameraGoalDeg = Double.NaN;
     private double cameraGoalMs = Double.NEGATIVE_INFINITY;
+    private int pendingJumpFrames;
+    private double pendingJumpX = Double.NaN, pendingJumpY = Double.NaN;
     private int searchDirection = 1;
     private boolean settled;
     private boolean returning;
@@ -147,6 +154,7 @@ public final class FieldAimV2 {
         lastFrameTimestamp = Double.NaN;
         cameraGoalDeg = Double.NaN;
         cameraGoalMs = Double.NEGATIVE_INFINITY;
+        pendingJumpFrames = 0;
         settled = returning = false;
         if (Double.isFinite(guessX) && Double.isFinite(guessY)) setGuess(guessX, guessY);
     }
@@ -322,8 +330,17 @@ public final class FieldAimV2 {
         double measuredX = tx + range * Math.cos(bearing);
         double measuredY = ty + range * Math.sin(bearing);
         double innovation = Math.toDegrees(wrapRad(bearing - Math.atan2(targetY - ty, targetX - tx)));
-        double alpha = targetConfirmed && targetValid && !targetIsGuess
-                ? visionAlpha(observationGap, innovation) : 1.0;
+        boolean tracking = targetConfirmed && targetValid && !targetIsGuess;
+        if (tracking && Math.abs(innovation) >= VISION_SNAP_DEG && VISION_SNAP_CONFIRM_FRAMES > 1) {
+            boolean agrees = pendingJumpFrames > 0 && Math.abs(Math.toDegrees(wrapRad(
+                    bearing - Math.atan2(pendingJumpY - ty, pendingJumpX - tx)))) < VISION_SNAP_DEG;
+            pendingJumpFrames = agrees ? pendingJumpFrames + 1 : 1;
+            pendingJumpX = measuredX;
+            pendingJumpY = measuredY;
+            if (pendingJumpFrames < VISION_SNAP_CONFIRM_FRAMES) return; // Hold until confirmed.
+        }
+        pendingJumpFrames = 0;
+        double alpha = tracking ? visionAlpha(observationGap, innovation) : 1.0;
         targetX = alpha == 1 ? measuredX : lerp(targetX, measuredX, alpha);
         targetY = alpha == 1 ? measuredY : lerp(targetY, measuredY, alpha);
         targetValid = true;

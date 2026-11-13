@@ -38,13 +38,14 @@ public final class RobotV2 {
 
     public static final String VERSION = "BIOBUZZ-V2-ONE-PERSON-2026-11-12";
 
-    /** Battery voltage the shooter F (13.83) was tuned at. Check battery_v in the burst logs. */
-    public static double NOMINAL_VOLTAGE = 12.5;
+    // The tuner and V2 share Robot.SHOOTER_F_REFERENCE_VOLTS (13.3 V).
     public static double VOLTAGE_REFRESH_MS = 500;
     /** Rewrite the hub PIDF only when compensated F changes by more than this fraction. */
     public static double F_REWRITE_FRACTION = 0.01;
     /** Tight window for hold-to-shoot (the original TeleOp window was +/-100 RPM). */
     public static double AT_SPEED_RPM = 50;
+    /** Per-OpMode window; Auto keeps 50 RPM while TeleOp can use a tighter indication. */
+    public double atSpeedToleranceRpm = AT_SPEED_RPM;
     public static double FORCE_MIN_RPM_FRACTION = 0.90;
     /**
      * Height of the HIVE tags above the camera lens, inches. 0 = treat the straight-line tag
@@ -52,9 +53,6 @@ public final class RobotV2 {
      * straight-line distance, exactly as it was measured.
      */
     public static double TAG_HEIGHT_ABOVE_CAMERA_IN = 0.0;
-    /** Pre-aim point for Auto before the first tag sighting (BLUE side; RED is mirrored). */
-    public static double HIVE_GUESS_BLUE_X_IN = 72.0;
-    public static double HIVE_GUESS_BLUE_Y_IN = 72.0;
 
     public final Robot robot = new Robot();
     public final HiveTargetV2 hive = new HiveTargetV2();
@@ -84,6 +82,8 @@ public final class RobotV2 {
     // Shooter.
     public double batteryVolts = Double.NaN;
     public double appliedF = Double.NaN;
+    private double shooterP = Robot.SHOOTER_P;
+    private double shooterReferenceF = Robot.SHOOTER_F;
     private double lastVoltageMs = Double.NEGATIVE_INFINITY;
     public double shotDistanceM = Double.NaN;
     public double baseRpm = Robot.TELEOP_DEFAULT_RPM;
@@ -328,13 +328,20 @@ public final class RobotV2 {
                 && aim.aimed(robot.turretDegrees());
     }
 
-    /** The guessed HIVE position for the current alliance (Auto pre-aim). */
-    public void setHiveGuessForAlliance() {
-        aim.setGuess(FieldMirrorV2.x(HIVE_GUESS_BLUE_X_IN, HIVE_GUESS_BLUE_Y_IN, robot.alliance),
-                FieldMirrorV2.y(HIVE_GUESS_BLUE_X_IN, HIVE_GUESS_BLUE_Y_IN, robot.alliance));
-    }
 
     // =========================================================== shooter
+
+    /** Per-OpMode tune: V2 TeleOp can test new gains without changing the Auto/A-B baseline. */
+    public void setShooterTune(double p, double referenceF) {
+        if (!Double.isFinite(p) || p < 0 || !Double.isFinite(referenceF) || referenceF < 0) {
+            throw new IllegalArgumentException("Shooter gains must be finite and nonnegative");
+        }
+        shooterP = p;
+        shooterReferenceF = referenceF;
+        appliedF = Robot.compensatedShooterF(referenceF, batteryVolts);
+        robot.shooter.setVelocityPIDFCoefficients(shooterP, Robot.SHOOTER_I, Robot.SHOOTER_D, appliedF);
+        lastVoltageMs = Double.NEGATIVE_INFINITY;
+    }
 
     /** Re-reads battery voltage now and then and scales the hub velocity F to match. */
     public void refreshVoltage() {
@@ -348,16 +355,15 @@ public final class RobotV2 {
         }
         if (Double.isInfinite(lowest)) return;
         batteryVolts = lowest;
-        double f = compensatedF(lowest);
+        double f = Robot.compensatedShooterF(shooterReferenceF, lowest);
         if (Double.isNaN(appliedF) || Math.abs(f - appliedF) > F_REWRITE_FRACTION * appliedF) {
-            robot.shooter.setVelocityPIDFCoefficients(Robot.SHOOTER_P, Robot.SHOOTER_I, Robot.SHOOTER_D, f);
+            robot.shooter.setVelocityPIDFCoefficients(shooterP, Robot.SHOOTER_I, Robot.SHOOTER_D, f);
             appliedF = f;
         }
     }
 
     public static double compensatedF(double volts) {
-        double v = Math.max(9.0, Math.min(14.5, volts));
-        return Robot.SHOOTER_F * NOMINAL_VOLTAGE / v;
+        return Robot.compensatedShooterF(Robot.SHOOTER_F, volts);
     }
 
     /** Updates the filtered shot distance from this loop's frame and the remembered target. */
@@ -386,7 +392,7 @@ public final class RobotV2 {
     }
 
     public boolean atSpeed() {
-        return robot.shooterOn && Math.abs(robot.shooterRpm() - commandedRpm()) < AT_SPEED_RPM;
+        return robot.shooterOn && Math.abs(robot.shooterRpm() - commandedRpm()) <= atSpeedToleranceRpm;
     }
 
     public boolean nearSpeed() {
@@ -416,7 +422,11 @@ public final class RobotV2 {
                 ? String.format(Locale.US, "%.2f", shotDistanceM) : "--", distanceFilter.source);
         t.addData("Shooter", "%s %.0f / %.0f RPM (base %.0f, trim %+.0f) %s", robot.shooterOn ? "ON" : "OFF",
                 robot.shooterRpm(), commandedRpm(), baseRpm, robot.rpmTrim, atSpeed() ? "AT SPEED" : "");
+        t.addData("RPM error", "%+.1f RPM; at-speed band +/-%.0f RPM",
+                robot.shooterRpm() - commandedRpm(), atSpeedToleranceRpm);
         t.addData("Battery / F", "%.2f V / F=%.2f", batteryVolts, appliedF);
+        t.addData("Shooter tune", "P=%.0f I=%.0f D=%.0f; reference F=%.2f at %.1f V",
+                shooterP, Robot.SHOOTER_I, Robot.SHOOTER_D, shooterReferenceF, Robot.SHOOTER_F_REFERENCE_VOLTS);
         if (robot.isTurretStalled()) t.addLine("TURRET STALLED: check wiring, restart OpMode to reset.");
     }
 }

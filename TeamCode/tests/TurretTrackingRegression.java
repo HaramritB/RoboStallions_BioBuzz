@@ -111,6 +111,67 @@ public final class TurretTrackingRegression {
         near(auto.update(10, false, Double.NaN, 1, 0, 0), Robot.TURRET_SEARCH_POWER,
                 "AutoPath opt-in sweeps again once the tag is lost, instead of holding a stale bearing");
 
+        // AutoPath pre-aim: with an odometry prediction, go there instead of sweeping.
+        Aim pre = new Aim();
+        pre.controller.searchWhenTagLost = true;
+        pre.controller.preAimAngle = 150;
+        check(pre.update(0, false, Double.NaN, 0, 0, 0) > 0,
+                "Pre-aim turns toward the predicted HIVE angle instead of sweeping");
+        check(text(pre.controller, "state").equals("PRE-AIM"), "Pre-aim reports PRE-AIM");
+        near(pre.update(150, false, Double.NaN, 0, 0, 0), 0, "Pre-aim holds at the predicted angle");
+        pre.now += 1500;
+        near(pre.update(150, false, Double.NaN, 0, 0, 0), 0,
+                "While driving (no sweep fallback) it keeps holding the prediction");
+        pre.controller.preAimMaySearch = true;
+        near(pre.update(150, false, Double.NaN, 0, 0, 0), Robot.TURRET_SEARCH_POWER,
+                "Stopped to shoot and nothing seen 1 s after arriving: fall back to the sweep");
+        check(text(pre.controller, "state").startsWith("SEARCH"), "Fallback reports SEARCH");
+        pre.update(150, true, 2, 7, 0, 0);
+        check(text(pre.controller, "state").equals("TRACK"), "A sighting takes over from the prediction");
+        pre.now += 401;
+        pre.update(152, false, Double.NaN, 7, 0, 0);
+        check(text(pre.controller, "state").equals("PRE-AIM"),
+                "Losing the tag returns to the prediction with a fresh wait, not straight to a sweep");
+        pre.controller.preAimAngle = 170;
+        check(pre.update(152, false, Double.NaN, 7, 0, 0) > 0, "A moved prediction is followed");
+        pre.now += 900;
+        near(pre.update(170, false, Double.NaN, 7, 0, 0), 0, "Arriving at the moved prediction restarts the wait");
+        pre.now += 500;
+        near(pre.update(170, false, Double.NaN, 7, 0, 0), 0, "...so it does not sweep only 0.5 s after arriving");
+        pre.controller.preAimAngle = 200;
+        check(pre.update(170, false, Double.NaN, 7, 0, 0) < 0
+                        && text(pre.controller, "state").equals("UNWIND LEFT"),
+                "A prediction past the cable limit uses the equivalent angle a turn away");
+        pre.controller.preAimAngle = Double.NaN;
+        pre.now += 401;
+        check(text(pre.controller, "state").length() > 0
+                        && Math.abs(pre.update(0, false, Double.NaN, 7, 0, 0)) == Robot.TURRET_SEARCH_POWER,
+                "No prediction: the original sweep");
+
+        // Geometry helpers used by AutoPath to learn and predict the HIVE position.
+        double[] fix = Robot.hiveFieldPoint(0, 0, 0, 30, 0, 100);
+        near(fix[0], 100 * Math.cos(Math.toRadians(-30)), "Turret 30 deg right of forward: HIVE ahead-right (x)");
+        near(fix[1], -50, "Turret 30 deg right of forward: HIVE ahead-right (y)");
+        double[] withError = Robot.hiveFieldPoint(0, 0, 0, 25, 5, 100);
+        near(withError[0], fix[0], "The vision offset adds to the turret angle (x)");
+        near(withError[1], fix[1], "The vision offset adds to the turret angle (y)");
+        near(Robot.turretDegreesToward(0, 0, 0, fix[0], fix[1]), 30, "Prediction inverts the sighting");
+        near(Robot.turretDegreesToward(0, -50, 0, fix[0], fix[1]), 0, "Driving right of it: straight ahead");
+        near(Robot.turretDegreesToward(0, 0, -90, fix[0], fix[1]), 120,
+                "Chassis turned 90 deg left: turret turns 90 more to the right");
+        check(Double.isNaN(Robot.hiveFieldPoint(0, 0, 0, 0, Double.NaN, 100)[0])
+                        && Double.isNaN(Robot.turretDegreesToward(0, 0, 0, Double.NaN, 0)),
+                "Missing data gives no fix and no prediction");
+        // AutoPath route: a sighting at START (56, 8, heading 270) predicts shot 2 (56.5, 111.2, heading 90).
+        double hiveX = 72, hiveY = 72;
+        double startTurret = Robot.turretDegreesToward(56, 8, -270, hiveX, hiveY);
+        double[] learned = Robot.hiveFieldPoint(56, 8, -270, startTurret, 0, Math.hypot(hiveX - 56, hiveY - 8));
+        near(learned[0], hiveX, "START sighting locates the HIVE (x)");
+        near(learned[1], hiveY, "START sighting locates the HIVE (y)");
+        double shot2 = Robot.turretDegreesToward(56.5, 111.2, -90, learned[0], learned[1]);
+        near(shot2, 90 - Math.toDegrees(Math.atan2(hiveY - 111.2, hiveX - 56.5)),
+                "Shot 2 prediction points back at the HIVE (~158 deg right)");
+
         aim = new Aim();
         double rightTagError = -8 * Robot.TURRET_VISION_POWER_SIGN;
         check(aim.update(0, true, rightTagError, 1, 0, 0) > 0,

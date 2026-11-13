@@ -10,7 +10,7 @@ import java.util.Locale;
 /**
  * Builds the distance -> RPM table for longer shots.
  *
- * The measured table only covers 1.41-1.90 m and clamps at 3250 RPM beyond it, but the robot
+ * The measured table only covers 1.39-1.62 m and clamps at 3235 RPM beyond it, but the robot
  * usually shoots from farther. At each spot: trim RPM (D-pad) until shots go in, then press the
  * log button. Each press appends one row to /sdcard/FIRST/biobuzz_shot_table.csv. Send the file
  * back and the rows become new table points.
@@ -19,7 +19,7 @@ public final class ShotLoggerV2 {
     public static final String FILE_NAME = "biobuzz_shot_table.csv";
 
     public int rowsWritten;
-    public String lastMessage = "No points logged yet (gamepad 2 LB logs one)";
+    public String lastMessage = "Calibration: gamepad 1 RIGHT STICK click logs distance/RPM";
 
     public void log(RobotV2 v2) {
         File file = new File(AppUtil.FIRST_FOLDER, FILE_NAME);

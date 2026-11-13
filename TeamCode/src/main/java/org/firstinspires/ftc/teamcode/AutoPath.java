@@ -25,7 +25,9 @@ import static com.pedropathing.ivy.pedro.PedroCommands.follow;
 /** BioBuzz scoring using the field-tested AutoPath route and shared TeleOp mechanisms. */
 @Autonomous(name = "AutoPath", group = "Autonomous")
 public class AutoPath extends LinearOpMode {
-    private static final double SPEED_FRACTION = 0.70;
+    // Route segments (all but the two ball pickups). Was 1.0, slowed to 0.70 on 2026-11-10,
+    // raised to 0.85 on 2026-11-12. Pickups stay at BioBuzzAutoConfig.PICKUP_SPEED_FRACTION.
+    static final double SPEED_FRACTION = 0.85;
     // Path 2 drives all the way to point 2 (Pedro's end of path); there is no early-arrival radius.
     // Safety only: if balls or the wall stop the robot first, continue after this long without progress.
     private static final long WALL_STALL_NS = 1_000_000_000L;
@@ -60,9 +62,13 @@ public class AutoPath extends LinearOpMode {
             if (useMechanisms()) {
                 flowerLever = new FlowerLever(hardwareMap.get(Servo.class, "flower"));
                 flowerLever.setDeployed(false); // Flower OFF as soon as INIT is pressed.
+                // Pose lets the turret remember where the HIVE is after shot 1 and pre-aim there
+                // while driving, instead of sweeping from scratch at each shooting spot.
                 mechanisms = BioBuzzAutoMechanisms.initialize(hardwareMap, alliance,
                         () -> -Math.toDegrees(follower.pose().heading()),
-                        () -> -Math.toDegrees(follower.velocity().omega));
+                        () -> -Math.toDegrees(follower.velocity().omega),
+                        () -> follower.pose().x(),
+                        () -> follower.pose().y());
                 // A sensor glitch or slow volley is reported and skipped; it never ends the run.
                 mechanisms.setFaultTolerant(true);
                 // Sweep for the HIVE whenever the tag is lost: at START it is behind the robot, and at
@@ -152,7 +158,7 @@ public class AutoPath extends LinearOpMode {
     }
 
     static Command route(Follower follower, LongSupplier clock, BioBuzzAutoMechanisms mechanisms, FlowerLever flowerLever) {
-        // Every segment runs at 70% except the two that drive into balls: path 2 (into the wall
+        // Every segment runs at SPEED_FRACTION (85%) except the two that drive into balls: path 2 (into the wall
         // balls) and path 7 (FLOWER intake). Drive-only uses the same speeds so it rehearses the run.
         Approach wall = new Approach(POINT_2, 0, WALL_STALL_NS);
         Approach flower = new Approach(POINT_7, FLOWER_ARRIVAL_IN, FLOWER_STALL_NS);

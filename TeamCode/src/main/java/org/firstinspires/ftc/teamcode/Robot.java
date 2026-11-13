@@ -32,7 +32,7 @@ import java.util.function.DoubleSupplier;
 public class Robot {
 
     public static final String CODE_VERSION =
-            "BIOBUZZ-FLOWER-ON0.32-OFF0-2026-11-11";
+            "BIOBUZZ-FLOWER-ON0.18-OFF0-2026-11-12";
 
     public enum Alliance { RED, BLUE }
     public enum BallColor { NONE, YELLOW, RED, BLUE }
@@ -1024,7 +1024,29 @@ public class Robot {
         setTurretPower(power);
     }
 
-    private void setTurretPower(double power) {
+    /** Current soft limits in turret degrees; snag recovery may shrink them during an OpMode. */
+    public double turretMinDegrees() {
+        return turretMinTicks / TURRET_TICKS_PER_DEG;
+    }
+
+    public double turretMaxDegrees() {
+        return turretMaxTicks / TURRET_TICKS_PER_DEG;
+    }
+
+    public boolean turretRecovering() {
+        return turretRecoveryDirection != 0;
+    }
+
+    public String turretPowerLimit() {
+        return turretPowerLimit;
+    }
+
+    public double turretAppliedPower() {
+        return turretAppliedPower;
+    }
+
+    /** Applies soft limits, stall detection and snag recovery. Public so V2 controllers reuse it. */
+    public void setTurretPower(double power) {
 
         turretRequestedPower =
                 Double.isFinite(power) ? power : 0;

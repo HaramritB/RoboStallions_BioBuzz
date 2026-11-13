@@ -17,7 +17,9 @@ import static com.pedropathing.api.Paths.line;
 
 // Replace the old org.firstinspires.ftc.teamcode.BioBuzzAuto.java with this file.
 // Compiled against the project's FTC SDK 12.0.0 and PedroPathing 3.0.2.
-@Autonomous(name = "BioBuzz Auto", group = "Competition")
+// Drive-only legacy route with no mechanisms or alliance choice: kept out of the Competition group
+// so it cannot be picked by mistake at a match. AutoPath / AutoPath V2 are the scoring autos.
+@Autonomous(name = "BioBuzz Auto", group = "Development")
 public final class BioBuzzAuto extends LinearOpMode {
     private static final PoseFactory P = PoseFactory.degrees();
 

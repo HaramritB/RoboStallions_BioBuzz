@@ -61,6 +61,11 @@ public final class BioBuzzAutoMechanisms {
         default String diagnostics() { return "No controller diagnostics"; }
         /** True only once the gate has finished opening and both feed motors are running. */
         default boolean shootingBurstActive() { return false; }
+        /**
+         * Optional: the adapter has seen every planned ball leave and may end a timed burst before
+         * its full window. The original adapter never does, so its timing is unchanged.
+         */
+        default boolean burstFinishedEarly(int plannedBalls) { return false; }
         Observation observe();
         void control(Kind request);
         void stopOutputs();
@@ -88,6 +93,7 @@ public final class BioBuzzAutoMechanisms {
     private double activeTimeout;
     private double activeIntakeDuration;
     private double activeShotDuration;
+    private int activeShotCount;
     private long burstStarted=-1;
     private boolean burstCompleted;
     private long shotLimit;
@@ -191,7 +197,8 @@ public final class BioBuzzAutoMechanisms {
     public void update() {
         if (closed) return;
         if (commandActive && activeShotDuration>0 && burstStarted>=0 && !burstCompleted
-                && (activeClock.getAsLong()-burstStarted)/1e9>=activeShotDuration) {
+                && ((activeClock.getAsLong()-burstStarted)/1e9>=activeShotDuration
+                    || hardware.burstFinishedEarly(activeShotCount))) {
             burstCompleted=true;
             request=Kind.NONE;
             hardware.stopFeed(); // End feeding before another actuator write, even if no four sensor edges occurred.
@@ -273,6 +280,7 @@ public final class BioBuzzAutoMechanisms {
                     activeClock=clock; activeStart=began[0]; activeTimeout=action.timeoutSeconds;
                     activeIntakeDuration=action.kind==Kind.COLLECT ? action.durationSeconds : 0;
                     activeShotDuration=action.kind==Kind.SHOOT ? action.durationSeconds : 0;
+                    activeShotCount=action.kind==Kind.SHOOT ? action.count : 0;
                     burstStarted=-1; burstCompleted=false;
                     stableSince[0]=-1;
                     clearTransitions[0]=0;

@@ -1,5 +1,13 @@
 # Competition TeleOp, gate calibration and turret controls
 
+**One-person layout:** select the original **BioBuzz Blue/Red TeleOp (Single Controller)**
+or **BioBuzz Blue/Red TeleOp V2**. Both use gamepad 1: left stick drive/strafe, right stick X
+rotate, LB slow drive, RT intake in, LT intake out, A shooter toggle, X gate toggle,
+Y auto-aim toggle, B hold to center the turret, D-pad left/right hold to jog the turret,
+D-pad up/down RPM trim, and RB flower toggle. Back zeros the turret during INIT only.
+The gamepad 2 references below describe the original two-person TeleOps and calibration tools.
+V2 details are in [V2.md](V2.md).
+
 Choose **BioBuzz Blue TeleOp** or **BioBuzz Red TeleOp** on the Driver Station.
 The selected OpMode fixes the alliance automatically, including the HIVE tag filter;
 X/B during INIT cannot change it. Both entries share the same driving, shooter,
@@ -15,7 +23,7 @@ use the measured defaults; loading them sends no position command during INIT.
 The configured gate servo remains named `torqueservo1`.
 
 In both competition TeleOps, **gamepad 2 right bumper** toggles the flower lever
-**ON=0.32 / OFF=0** using the Servo named **`flower`**. It moves to OFF as
+**ON=0.18 / OFF=0** (`FlowerLever`) using the Servo named **`flower`**. It moves to OFF as
 soon as INIT is pressed (and again at START), holds its position with PWM enabled while
 TeleOp runs, and displays its commanded state. These measured
 values are fixed TeleOp constants; calibration preferences do not override them.
@@ -136,7 +144,7 @@ the target position, not servo torque or supply power.
 
 Flower calibration values use separate preferences (`biobuzz_flower_calibration_v1`,
 keys `on` and `off`) and do not change gate calibration. Competition TeleOp uses
-the configured **ON=0.32 / OFF=0** constants; saving a new calibration pair does
+the configured **ON=0.18 / OFF=0** `FlowerLever` constants; saving a new calibration pair does
 not automatically change those competition endpoints.
 
 ## Pollen indicator setup

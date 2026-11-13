@@ -11,7 +11,7 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
 
     static final double SLOW_MODE_SCALE = 0.4;
     static final double STICK_DEADBAND = 0.1;
-    static final double SINGLE_CONTROLLER_TURRET_JOG_POWER = 0.15;
+    static final double SINGLE_CONTROLLER_TURRET_JOG_POWER = 0.375;
     static final double FLOWER_ON = FlowerLever.DEPLOYED_POSITION;
     static final double FLOWER_OFF = FlowerLever.RETRACTED_POSITION;
 
@@ -105,6 +105,11 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
 
             if (opModeIsActive()) commandFlower(flower, false);
 
+            boolean intakeForwardOn = false;
+            boolean intakeReverseOn = false;
+            boolean previousRightTrigger = false;
+            boolean previousLeftTrigger = false;
+
             while (opModeIsActive()) {
 
                 robot.updateSensors();
@@ -137,7 +142,7 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
                 // DRIVER 1: INTAKE
                 // =====================================
 
-                double intakePower = 0;
+                /*double intakePower = 0;
 
                 if (gamepad1.right_trigger > 0.2) {
 
@@ -146,7 +151,26 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
                 } else if (gamepad1.left_trigger > 0.2) {
 
                     intakePower = Robot.INTAKE_POWER;
+                }*/
+
+                boolean rightTrigger = gamepad1.right_trigger > 0.2;
+                boolean leftTrigger = gamepad1.left_trigger > 0.2;
+
+                if (rightTrigger && !previousRightTrigger) {
+                    intakeForwardOn = !intakeForwardOn;
+                    intakeReverseOn = false;
                 }
+
+                if (leftTrigger && !previousLeftTrigger) {
+                    intakeReverseOn = !intakeReverseOn;
+                    intakeForwardOn = false;
+                }
+
+                previousRightTrigger = rightTrigger;
+                previousLeftTrigger = leftTrigger;
+
+                double intakePower = intakeForwardOn ? -Robot.INTAKE_POWER
+                        : intakeReverseOn ? Robot.INTAKE_POWER : 0;
 
                 // =====================================
                 // DRIVER 2: SHOOTER
@@ -218,8 +242,16 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
                 // GATE / FEEDER
                 // =====================================
 
-                boolean toggleGate =
-                        operator.xWasPressed();
+                double gateTargetRpm = robot.targetRpm + robot.rpmTrim;
+                double gateCurrentRpm = robot.shooterRpm();
+
+                boolean toggleGate = operator.xWasPressed()
+                        && (robot.gateOpen
+                        || (robot.shooterOn
+                        && Double.isFinite(gateTargetRpm)
+                        && gateTargetRpm > 0
+                        && Double.isFinite(gateCurrentRpm)
+                        && Math.abs(gateCurrentRpm - gateTargetRpm) <= 50));
 
                 boolean gateWasOpen = robot.gateOpen;
 

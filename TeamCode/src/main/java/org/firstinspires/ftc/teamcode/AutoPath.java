@@ -16,7 +16,6 @@ import java.util.function.LongSupplier;
 
 import static com.pedropathing.api.Paths.curve;
 import static com.pedropathing.api.Paths.line;
-import static com.pedropathing.api.Paths.path;
 import static com.pedropathing.ivy.commands.Commands.instant;
 import static com.pedropathing.ivy.commands.Commands.lazy;
 import static com.pedropathing.ivy.groups.Groups.parallel;
@@ -27,43 +26,52 @@ import static com.pedropathing.ivy.pedro.PedroCommands.follow;
 @Autonomous(name = "AutoPath", group = "Autonomous")
 public class AutoPath extends LinearOpMode {
     // Route segments (all but the two ball pickups). Was 1.0, slowed to 0.70 on 2026-11-10,
-    // raised to 0.85 on 2026-11-12. Pickups stay at BioBuzzAutoConfig.PICKUP_SPEED_FRACTION.
-    static final double SPEED_FRACTION = 0.85;
+    // raised to 0.85 on 2026-11-12 and 0.90 on 2026-11-14. Pickups stay at PICKUP_SPEED_FRACTION.
+    static final double SPEED_FRACTION = 0.90;
     // Path 2 drives all the way to point 2 (Pedro's end of path); there is no early-arrival radius.
     // Safety only: if balls or the wall stop the robot first, continue after this long without progress.
-    // Time at the wall balls (stall wait, shuffle, intake pause) cut 30% on 2026-11-13: all scaled
-    // by WALL_TIME_SCALE, and the shuffle drives 1/WALL_TIME_SCALE faster than the pickup speed.
+    // Time at the wall balls (stall wait, intake pause) cut 30% on 2026-11-13 via WALL_TIME_SCALE.
+    // The wall shuffle was removed on 2026-11-14 to save ~1.5 s for the FLOWER.
     static final double WALL_TIME_SCALE = 0.7;
     static final long WALL_STALL_NS = Math.round(1_000_000_000L * WALL_TIME_SCALE); // was 1 s
     static final long WALL_PAUSE_NS = Math.round(1_000_000_000L * WALL_TIME_SCALE); // was 1 s
-    // Wall shuffle (2026-11-13): once path 2 stops at the wall balls, shift slightly left, right,
-    // back and then push 1 in past the stop point, so the intake catches all four balls. Offsets
-    // are robot-relative from where the robot actually stopped; the wall is allowed to stop it.
-    // Visualizer route of 2026-11-13: left 2.0 in (x 9.3833), right 2.9456 in (x 4.4377) of point 2.
-    static final double SHUFFLE_LEFT_IN = 2.0;
-    static final double SHUFFLE_RIGHT_IN = 2.9456;
-    static final double SHUFFLE_BACK_IN = 2.5;
-    static final double SHUFFLE_PUSH_IN = 1.0;
-    // Ends at Pedro's end of path, after this long without 0.25 in of movement (pressed against
-    // the wall or balls), or at the time cap, whichever comes first.
-    static final long SHUFFLE_STALL_NS = Math.round(500_000_000L * WALL_TIME_SCALE); // was 0.5 s
-    static final long SHUFFLE_MAX_NS = Math.round(2_500_000_000L * WALL_TIME_SCALE); // was 2.5 s
-    static final double SHUFFLE_SPEED_FRACTION = BioBuzzAutoConfig.PICKUP_SPEED_FRACTION / WALL_TIME_SCALE;
-    static final double SHUFFLE_MAX_VELOCITY_IN_S = BioBuzzAutoConfig.PICKUP_MAX_VELOCITY_IN_S / WALL_TIME_SCALE;
-    private static final long SECOND_SHOT_PAUSE_NS = 4_000_000_000L;
+    /**
+     * Feed window (gate open, balls pushed) for volleys 1 and 3. Run logs of 2026-11-13/14: the
+     * ball sensor at the gate last sees a ball 0.3-0.6 s into the window, so 1.25 s keeps 2x margin.
+     */
+    static final double SHORT_FEED_S = 1.25;
+    /** Volley 2 keeps the full window, stops at least 4 s, and stays still this long after feeding. */
+    static final double VOLLEY2_FEED_S = BioBuzzAutoConfig.SHOOT_BURST_SECONDS;
+    static final long VOLLEY2_MIN_STOP_NS = 4_000_000_000L;
+    static final long VOLLEY2_HOLD_AFTER_NS = 500_000_000L;
+    /** Drive-only stand-in for volley 2. */
+    private static final long SECOND_SHOT_PAUSE_NS = VOLLEY2_MIN_STOP_NS;
     private static final double FLOWER_ARRIVAL_IN = 1.0;
     private static final double APPROACH_PROGRESS_IN = 0.25;
-    private static final long FLOWER_STALL_NS = 4_000_000_000L;
+    /**
+     * The FLOWER physically stops the robot near y = 127.5 (logs), short of POINT_7, so path 7 ends by
+     * stalling: after 1 s pressed in with the intake on (was 4 s), the stopped pickup starts.
+     */
+    static final long FLOWER_STALL_NS = 1_000_000_000L;
+    /** Stopped pickup at the FLOWER; intake keeps collecting on path 8 back to the 3rd spot. */
+    static final long FLOWER_PICKUP_NS = 2_000_000_000L;
+    /**
+     * Leave the FLOWER by this many seconds after START, whatever it is doing, so volley 3 always fires.
+     * Logs: path 8 ~1.8 s, then ~1.1 s to the gate opening and a 1.25 s feed: done by ~28.9 s.
+     */
+    static final double FLOWER_LEAVE_BY_S = 24.5;
+    /** The flower stays ON leaving the FLOWER and retracts once path 8 is this far from where it left. */
+    static final double FLOWER_RETRACT_AFTER_IN = 10.0;
     private static final PoseFactory POSES = PoseFactory.degrees();
     private static final Pose START = POSES.of(54.6728, 8.1648, 270);
     private static final Pose POINT_1 = POSES.of(7.4387, 15.6441, 270);
     private static final Pose POINT_2 = POSES.of(7.3833, 0.0881, -90.2042);
     private static final Pose POINT_3 = POSES.of(7.2845, 15.5174, -89.6334);
     private static final Pose POINT_4 = POSES.of(26.4473, 15.5231, -90);
-    private static final Pose POINT_5 = POSES.of(59.7632, 126.893, 90);
-    private static final Pose POINT_6 = POSES.of(46.5038, 110.9216, 90);
-    private static final Pose POINT_7 = POSES.of(46.5109, 139.7571, 90);
-    private static final Pose POINT_8 = POSES.of(59.8106, 127.0128, 90);
+    private static final Pose POINT_5 = POSES.of(59.3283, 124.8302, 90);
+    private static final Pose POINT_6 = POSES.of(43.2211, 110.6879, 90);
+    private static final Pose POINT_7 = POSES.of(42.0421, 139.2817, 90);
+    private static final Pose POINT_8 = POSES.of(59.5702, 124.8013, 90);
 
     @Override
     public void runOpMode() {
@@ -193,14 +201,13 @@ public class AutoPath extends LinearOpMode {
     }
 
     static Command route(Follower follower, LongSupplier clock, BioBuzzAutoMechanisms mechanisms, FlowerLever flowerLever) {
-        // Every segment runs at SPEED_FRACTION (85%) except the two that drive into balls: path 2 (into the wall
+        // Every segment runs at SPEED_FRACTION (90%) except the two that drive into balls: path 2 (into the wall
         // balls) and path 7 (FLOWER intake). Drive-only uses the same speeds so it rehearses the run.
         Approach wall = new Approach(POINT_2, 0, WALL_STALL_NS);
         Approach flower = new Approach(POINT_7, FLOWER_ARRIVAL_IN, FLOWER_STALL_NS);
         Command wallPickup = sequential(
                 follow(follower, atRouteSpeed(path1())),
-                approach(follower, clock, atPickupSpeed(path2()), wall, true),
-                wallShuffle(follower, clock));
+                approach(follower, clock, atPickupSpeed(path2()), wall, true));
         Command toSecondShot = sequential(
                 follow(follower, atRouteSpeed(path3())),
                 follow(follower, atRouteSpeed(path4())),
@@ -208,44 +215,105 @@ public class AutoPath extends LinearOpMode {
         Command toFlower = sequential(
                 follow(follower, atRouteSpeed(path6())),
                 approach(follower, clock, atPickupSpeed(path7()), flower, false));
-        Command exit = lazy(() -> follow(follower, atRouteSpeed(path8(flower.departure))));
+        // Path 8 starts where the robot actually is: the FLOWER stall point, or wherever the time cutoff hit.
+        Command exit = lazy(() -> follow(follower, atRouteSpeed(path8(follower.pose()))));
         if (mechanisms == null) return sequential(
                 wallPickup, pauseDrive(follower, clock, WALL_PAUSE_NS),
                 toSecondShot, pauseDrive(follower, clock, SECOND_SHOT_PAUSE_NS),
                 toFlower, exit);
+        long[] routeStart = {0};
         // Intake starts when volley 2 ends and runs through the FLOWER approach and pickup window.
         Command collectAtFlower = sequential(
                 intakeAlong(follower, mechanisms, toFlower),
                 // Stop pushing during pickup, including a recovered approach stall.
                 parallel(pauseDrive(follower, clock, 0), mechanisms.command(
-                        BioBuzzAutoMechanisms.Action.intakeFor(BioBuzzAutoConfig.FLOWER_INTAKE_SECONDS,
+                        BioBuzzAutoMechanisms.Action.intakeFor(FLOWER_PICKUP_NS / 1e9,
                                 BioBuzzAutoConfig.COLLECTION_TIMEOUT_S), clock, AutoPath::mechanismFailure)));
-        Command volley2 = stoppedShot(follower, clock, mechanisms, BioBuzzAutoConfig.STAGED_BALL_COUNT, SECOND_SHOT_PAUSE_NS);
-        // Flower stays retracted for the wall pickup, deploys on arrival at the 2nd shooting spot,
-        // and stays deployed for the rest of the route. Only STOP/cleanup retracts it.
-        if (flowerLever != null) volley2 = parallel(instant(() -> flowerLever.setDeployed(true)), volley2);
+        collectAtFlower = endBy(follower, mechanisms, collectAtFlower, clock, routeStart, FLOWER_LEAVE_BY_S);
+        // Volley 2 accuracy: stopped at least 4 s, full feed window, and still for 0.5 s after feeding.
+        Command volley2 = stoppedShot(follower, clock, mechanisms, BioBuzzAutoConfig.STAGED_BALL_COUNT,
+                VOLLEY2_FEED_S, VOLLEY2_MIN_STOP_NS, VOLLEY2_HOLD_AFTER_NS);
+        // Keep collecting on the drive back: balls still in the intake finish coming in before volley 3.
+        Command toThirdShot = intakeAlong(follower, mechanisms, exit);
+        // Flower lever: OFF until the robot starts moving away from the 2nd spot (path 6), ON for the
+        // FLOWER pickup, then OFF again for the drive to the 3rd and final volley (path 8).
+        if (flowerLever != null) {
+            collectAtFlower = sequential(instant(() -> flowerLever.setDeployed(true)), collectAtFlower);
+            toThirdShot = retractPartway(follower, mechanisms, toThirdShot, flowerLever);
+        }
         return sequential(
-                stoppedShot(follower, clock, mechanisms, BioBuzzAutoConfig.PRELOAD_BALL_COUNT, 0),
+                parallel(instant(() -> routeStart[0] = clock.getAsLong()), // START time for FLOWER_LEAVE_BY_S
+                        stoppedShot(follower, clock, mechanisms, BioBuzzAutoConfig.PRELOAD_BALL_COUNT,
+                                SHORT_FEED_S, 0, 0)),
                 intakeAlong(follower, mechanisms, wallPickup),
-                // Keep intaking through the one-second stop: the last wall ball is still being pulled
+                // Keep intaking through the 0.7 s stop: the last wall ball is still being pulled
                 // in when the chassis stops against the wall.
                 parallel(pauseDrive(follower, clock, WALL_PAUSE_NS), mechanisms.command(
                         BioBuzzAutoMechanisms.Action.intakeFor(WALL_PAUSE_NS / 1e9,
                                 BioBuzzAutoConfig.COLLECTION_TIMEOUT_S), clock, AutoPath::mechanismFailure)),
                 toSecondShot,
-                volley2, // Flower deploys here and stays on.
-                collectAtFlower,
-                exit,
-                stoppedShot(follower, clock, mechanisms, BioBuzzAutoConfig.FLOWER_BALL_COUNT, 0));
+                volley2,
+                collectAtFlower, // Flower ON from the start of path 6.
+                toThirdShot, // Flower OFF partway along path 8 (FLOWER_RETRACT_AFTER_IN).
+                stoppedShot(follower, clock, mechanisms, BioBuzzAutoConfig.FLOWER_BALL_COUNT,
+                        SHORT_FEED_S, 0, 0));
     }
 
+    /**
+     * Stopped volley: the drive stays stopped for at least {@code minimumStopNs} and for
+     * {@code holdAfterNs} after the feed window ends, whichever is later.
+     */
     private static Command stoppedShot(Follower follower, LongSupplier clock, BioBuzzAutoMechanisms mechanisms,
-                                       int count, long minimumPauseNs) {
-        // Parallel waits for both children: retain the tested four-second stop even if shots finish early.
-        return parallel(pauseDrive(follower, clock, minimumPauseNs), mechanisms.command(
-                BioBuzzAutoMechanisms.Action.shootFor(count, BioBuzzAutoConfig.SHOOT_BURST_SECONDS,
-                        BioBuzzAutoConfig.SHOOT_SPINUP_TIMEOUT_S),
-                clock, AutoPath::mechanismFailure));
+                                       int count, double feedSeconds, long minimumStopNs, long holdAfterNs) {
+        Command shoot = mechanisms.command(
+                BioBuzzAutoMechanisms.Action.shootFor(count, feedSeconds, BioBuzzAutoConfig.SHOOT_SPINUP_TIMEOUT_S),
+                clock, AutoPath::mechanismFailure);
+        if (holdAfterNs > 0) shoot = sequential(shoot, pauseDrive(follower, clock, holdAfterNs));
+        return parallel(pauseDrive(follower, clock, minimumStopNs), shoot);
+    }
+
+    /**
+     * Runs path 8 with the flower still ON, retracting it once the robot is FLOWER_RETRACT_AFTER_IN from
+     * where it left the FLOWER (not right after the pickup). It is OFF by the end of path 8 either way.
+     */
+    private static Command retractPartway(Follower follower, BioBuzzAutoMechanisms mechanisms, Command inner,
+                                          FlowerLever flowerLever) {
+        boolean[] active = {false}, retracted = {false};
+        Pose[] departure = {null};
+        Runnable retract = () -> { if (!retracted[0]) { retracted[0] = true; flowerLever.setDeployed(false); } };
+        return Command.build().requiring(follower, mechanisms)
+                .setStart(() -> {
+                    active[0] = true; retracted[0] = false;
+                    departure[0] = follower.pose();
+                    inner.start();
+                })
+                .setExecute(() -> {
+                    inner.execute();
+                    if (follower.pose().distance(departure[0]) >= FLOWER_RETRACT_AFTER_IN) retract.run();
+                })
+                .setDone(inner::done)
+                .setEnd(reason -> {
+                    if (!active[0]) return;
+                    active[0] = false;
+                    try { inner.end(reason); }
+                    finally { retract.run(); }
+                });
+    }
+
+    /** Runs {@code inner} but cuts it short once {@code leaveByS} seconds have passed since START. */
+    private static Command endBy(Follower follower, BioBuzzAutoMechanisms mechanisms, Command inner,
+                                 LongSupplier clock, long[] routeStart, double leaveByS) {
+        boolean[] active = {false};
+        long leaveByNs = Math.round(leaveByS * 1e9);
+        return Command.build().requiring(follower, mechanisms)
+                .setStart(() -> { active[0] = true; inner.start(); })
+                .setExecute(inner::execute)
+                .setDone(() -> inner.done() || clock.getAsLong() - routeStart[0] >= leaveByNs)
+                .setEnd(reason -> {
+                    if (!active[0]) return;
+                    active[0] = false;
+                    inner.end(reason);
+                });
     }
 
     private static Command intakeAlong(Follower follower, BioBuzzAutoMechanisms mechanisms, Command movement) {
@@ -323,64 +391,19 @@ public class AutoPath extends LinearOpMode {
                 || watch.finished(follower, clock.getAsLong()));
     }
 
-    /** Small side-to-side, then back-and-forth moves from wherever the wall approach stopped. */
-    private static Command wallShuffle(Follower follower, LongSupplier clock) {
-        long[] started = {0}, lastMove = {0};
-        Pose[] anchor = {null};
-        return Command.build().setStart(() -> {
-            Pose from = follower.pose();
-            follower.follow(wallShufflePath(from).with(
-                    Constants.foresightConfig.maxPathSpeed.at(SHUFFLE_SPEED_FRACTION),
-                    Constants.foresightConfig.maxVelocityConstraint.at(SHUFFLE_MAX_VELOCITY_IN_S)));
-            started[0] = lastMove[0] = clock.getAsLong();
-            anchor[0] = from;
-        }).setDone(() -> {
-            long now = clock.getAsLong();
-            Pose pose = follower.pose();
-            if (!Double.isFinite(pose.x()) || !Double.isFinite(pose.y())) {
-                throw new IllegalStateException("Invalid Pinpoint pose during the wall shuffle");
-            }
-            if (pose.distance(anchor[0]) >= APPROACH_PROGRESS_IN) { anchor[0] = pose; lastMove[0] = now; }
-            boolean done = follower.atParametricEnd() || now - lastMove[0] >= SHUFFLE_STALL_NS
-                    || now - started[0] >= SHUFFLE_MAX_NS;
-            if (done) stopDrive(follower);
-            return done;
-        });
-    }
-
-    /** Left, right, back to center, back off, then push SHUFFLE_PUSH_IN past the start, holding heading. */
-    static Path wallShufflePath(Pose from) {
-        double h = from.heading();
-        double fx = Math.cos(h), fy = Math.sin(h); // forward: into the wall
-        double lx = -fy, ly = fx;                  // robot left
-        Pose left = shifted(from, lx * SHUFFLE_LEFT_IN, ly * SHUFFLE_LEFT_IN);
-        Pose right = shifted(from, -lx * SHUFFLE_RIGHT_IN, -ly * SHUFFLE_RIGHT_IN);
-        Pose back = shifted(from, -fx * SHUFFLE_BACK_IN, -fy * SHUFFLE_BACK_IN);
-        Pose push = shifted(from, fx * SHUFFLE_PUSH_IN, fy * SHUFFLE_PUSH_IN);
-        return path(line(from, left).constant(from), line(left, right).constant(from),
-                line(right, from).constant(from), line(from, back).constant(from),
-                line(back, push).constant(from));
-    }
-
-    private static Pose shifted(Pose pose, double dx, double dy) {
-        return POSES.of(pose.x() + dx, pose.y() + dy, Math.toDegrees(pose.heading()));
-    }
 
     private static final class Approach {
         private final Pose target;
         private final double arrivalIn;
         private final long stallNs;
-        private Pose departure;
         private double closestDistance;
         private long lastProgress;
 
         Approach(Pose target, double arrivalIn, long stallNs) {
             this.target = target; this.arrivalIn = arrivalIn; this.stallNs = stallNs;
-            departure = target;
         }
 
         void start(Pose pose, long now) {
-            departure = target;
             closestDistance = pose.distance(target);
             lastProgress = now;
         }
@@ -398,8 +421,7 @@ public class AutoPath extends LinearOpMode {
             }
             if (now - lastProgress < stallNs) return false;
 
-            // Rebase the exit so Pedro can back away without chasing the blocked endpoint.
-            departure = pose;
+            // Path 8 is built from the current pose, so Pedro backs away without chasing the blocked endpoint.
             stopDrive(follower);
             return true;
         }

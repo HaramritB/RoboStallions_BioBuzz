@@ -28,8 +28,8 @@ public final class AutoPathRegression {
         Path[] paths = {AutoPath.path1(), AutoPath.path2(), AutoPath.path3(), AutoPath.path4(),
                 AutoPath.path5(), AutoPath.path6(), AutoPath.path7(), AutoPath.path8()};
         double[][] xy = {{54.6728, 8.1648}, {7.4387, 15.6441}, {7.3833, 0.0881}, {7.2845, 15.5174},
-                {26.4473, 15.5231}, {59.7632, 126.893}, {46.5038, 110.9216},
-                {46.5109, 139.7571}, {59.8106, 127.0128}};
+                {26.4473, 15.5231}, {59.3283, 124.8302}, {43.2211, 110.6879},
+                {42.0421, 139.2817}, {59.5702, 124.8013}};
         for (int i = 0; i < paths.length; i++) {
             assertPoint(paths[i].get(0), xy[i][0], xy[i][1]);
             assertPoint(paths[i].get(1), xy[i + 1][0], xy[i + 1][1]);
@@ -42,14 +42,14 @@ public final class AutoPathRegression {
         assertHeading(paths[4].heading(1), Math.PI / 2);
         for (int i = 5; i < paths.length; i++) assertHeading(paths[i].heading(.5), Math.PI / 2);
         assertPoint(paths[0].get(.5), (54.6728 + 2 * 37.8335 + 7.4387) / 4, (8.1648 + 2 * 44.6525 + 15.6441) / 4);
-        assertPoint(paths[4].get(.5), (26.4473 + 2 * 16.3139 + 59.7632) / 4,
-                (15.5231 + 2 * 96.4996 + 126.893) / 4);
-        assertPoint(paths[7].get(.5), (46.5109 + 2 * 49.7351 + 59.8106) / 4,
-                (139.7571 + 2 * 98.8256 + 127.0128) / 4);
+        assertPoint(paths[4].get(.5), (26.4473 + 2 * 16.3139 + 59.3283) / 4,
+                (15.5231 + 2 * 96.4996 + 124.8302) / 4);
+        assertPoint(paths[7].get(.5), (42.0421 + 2 * 49.7351 + 59.5702) / 4,
+                (139.2817 + 2 * 98.8256 + 124.8013) / 4);
         checkFlowerExit(false);
         checkFlowerExit(true);
         checkAutoTurretSearch();
-        System.out.println("Passed eight-path geometry, wall shuffle, headings, speed, pauses, FLOWER recovery, and registration checks.");
+        System.out.println("Passed eight-path geometry, no wall shuffle, headings, speed, pauses, FLOWER recovery, and registration checks.");
     }
 
     /** AutoPath's turret sweeps whenever the tag is lost, even though the heading is known. */
@@ -117,77 +117,18 @@ public final class AutoPathRegression {
                 navigation.setPose(follower.currentPath().endPose());
                 follower.atEnd = true;
             }
-            Pose stopped = navigation.state().pose();
-            tickRoute();
-            // Wall shuffle: one short path from where the robot stopped, 1/0.7x the pickup speed.
-            if (follower.pathsStarted != 3 || follower.idle()
-                    || Constants.foresightConfig.maxPathSpeed.get() != AutoPath.SHUFFLE_SPEED_FRACTION
-                    || Constants.foresightConfig.maxVelocityConstraint.get() != AutoPath.SHUFFLE_MAX_VELOCITY_IN_S) {
-                throw new AssertionError("The wall shuffle must start at its (30% faster than pickup) speed right after path 2");
-            }
-            double pickup = org.firstinspires.ftc.teamcode.autonomous.BioBuzzAutoConfig.PICKUP_SPEED_FRACTION;
-            if (Math.abs(AutoPath.SHUFFLE_SPEED_FRACTION * 0.7 - pickup) > 1e-9 || AutoPath.SHUFFLE_SPEED_FRACTION >= AutoPath.SPEED_FRACTION
-                    || AutoPath.WALL_STALL_NS != 700_000_000L || AutoPath.WALL_PAUSE_NS != 700_000_000L
-                    || AutoPath.SHUFFLE_STALL_NS != 350_000_000L || AutoPath.SHUFFLE_MAX_NS != 1_750_000_000L) {
-                throw new AssertionError("Wall stall, shuffle and pause times are 70% of the old 1 / 0.5 / 2.5 / 1 s");
-            }
-            Path shuffle = follower.currentPath();
-            assertPoint(shuffle.get(0), stopped.x(), stopped.y());
-            double h = stopped.heading();
-            assertPoint(shuffle.endPose(), stopped.x() + AutoPath.SHUFFLE_PUSH_IN * Math.cos(h),
-                    stopped.y() + AutoPath.SHUFFLE_PUSH_IN * Math.sin(h));
-            assertHeading(shuffle.heading(.5), h);
-            double maxLeft = 0, maxRight = 0, maxBack = 0;
-            for (int i = 0; i <= 400; i++) {
-                Pose q = shuffle.get(i / 400.0);
-                double dx = q.x() - stopped.x(), dy = q.y() - stopped.y();
-                double left = -Math.sin(h) * dx + Math.cos(h) * dy;
-                maxLeft = Math.max(maxLeft, left);
-                maxRight = Math.max(maxRight, -left);
-                maxBack = Math.max(maxBack, -(Math.cos(h) * dx + Math.sin(h) * dy));
-            }
-            if (Math.abs(maxLeft - AutoPath.SHUFFLE_LEFT_IN) > 0.05 || Math.abs(maxRight - AutoPath.SHUFFLE_RIGHT_IN) > 0.05
-                    || Math.abs(maxBack - AutoPath.SHUFFLE_BACK_IN) > 0.05 || maxLeft > 3 || maxRight > 3 || maxBack > 3) {
-                throw new AssertionError("The shuffle moves only slightly side to side and back: "
-                        + maxLeft + " / " + maxRight + " / " + maxBack);
-            }
-            // From point 2 it reproduces the visualizer's shuffle points.
-            Path drawn = AutoPath.wallShufflePath(PoseFactory.degrees().of(7.3833, 0.0881, -90.2042));
-            double[][] drawnXy = {{9.3833, 0.081}, {4.4377, 0.0829}, {7.3833, 0.0881}, {7.3922, 2.5881}, {7.3797, -0.9119}};
-            for (double[] xy : drawnXy) {
-                double best = Double.POSITIVE_INFINITY;
-                for (int i = 0; i <= 2000; i++) {
-                    Pose q = drawn.get(i / 2000.0);
-                    best = Math.min(best, Math.hypot(q.x() - xy[0], q.y() - xy[1]));
-                }
-                if (best > 0.02) throw new AssertionError("Shuffle misses visualizer point " + xy[0] + ", " + xy[1]);
-            }
             int stopsBeforePause = drive.stops;
-            if (stalled) {
-                // Pressed against the wall: no movement, so the shuffle ends after its stall window.
-                now[0] += AutoPath.SHUFFLE_STALL_NS - 1_000_000L;
-                tickRoute();
-                if (follower.pathsStarted != 3 || follower.idle()) throw new AssertionError("Keep shuffling until the stall window ends");
-                now[0] += 1_000_000L;
-            } else {
-                // Still moving but not at the end: the time cap ends the shuffle.
-                long shuffleStart = now[0];
-                for (int i = 1; now[0] - shuffleStart < AutoPath.SHUFFLE_MAX_NS - 50_000_000L; i++) {
-                    navigation.setPose(shuffle.get(Math.min(1, i * 0.025))); // ~0.37 in per 50 ms: still moving at the cap
-                    now[0] += 50_000_000L;
-                    tickRoute();
-                    if (follower.idle()) throw new AssertionError("The moving shuffle ended before its time cap");
-                }
-                navigation.setPose(shuffle.get(0.95));
-                now[0] = shuffleStart + AutoPath.SHUFFLE_MAX_NS;
+            if (AutoPath.WALL_STALL_NS != 700_000_000L || AutoPath.WALL_PAUSE_NS != 700_000_000L
+                    || AutoPath.SPEED_FRACTION != 0.90) {
+                throw new AssertionError("Wall stall and pause stay 0.7 s; route speed is 90%");
             }
             tickRoute();
-            if (!follower.idle() || drive.stops <= stopsBeforePause) {
-                throw new AssertionError("Wall pause must stop the drivetrain");
+            if (!follower.idle() || drive.stops <= stopsBeforePause || follower.pathsStarted != 2) {
+                throw new AssertionError("No wall shuffle: path 2's end goes straight to the stopped wall pause");
             }
             now[0] += AutoPath.WALL_PAUSE_NS - 1_000_000L;
             tickRoute();
-            if (follower.pathsStarted != 3) throw new AssertionError("Path 3 must wait the full wall pause");
+            if (follower.pathsStarted != 2) throw new AssertionError("Path 3 must wait the full wall pause");
             now[0] += 1_000_000L;
             tickRoute();
 
@@ -196,9 +137,13 @@ public final class AutoPathRegression {
                 arrive(follower, navigation);
             }
             if (!follower.idle()) throw new AssertionError("Path 5 must end at a stopped shooting spot");
+            if (AutoPath.FLOWER_STALL_NS != 1_000_000_000L || AutoPath.FLOWER_PICKUP_NS != 2_000_000_000L
+                    || AutoPath.FLOWER_LEAVE_BY_S != 24.5) {
+                throw new AssertionError("FLOWER stall 1 s, pickup 2 s, leave by 24.5 s after START");
+            }
             now[0] += 3_999_000_000L;
             tickRoute();
-            if (follower.pathsStarted != 6) throw new AssertionError("Path 6 must wait four full seconds");
+            if (follower.pathsStarted != 5) throw new AssertionError("Path 6 must wait four full seconds");
             now[0] += 1_000_000L;
             tickRoute();
             assertStep(follower, 6);
@@ -206,15 +151,15 @@ public final class AutoPathRegression {
             assertStep(follower, 7);
 
             if (stalled) {
-                navigation.setPose(poses.of(46.51, 130.0, 90));
+                navigation.setPose(poses.of(42.10, 130.0, 90));
                 follower.atEnd = true; // Path projection alone cannot establish arrival at FLOWER.
                 tickRoute();
-                now[0] += 3_900_000_000L;
+                now[0] += AutoPath.FLOWER_STALL_NS - 100_000_000L;
                 tickRoute();
                 assertStep(follower, 7);
-                navigation.setPose(poses.of(46.51, 131.0, 90));
+                navigation.setPose(poses.of(42.10, 131.0, 90));
                 tickRoute();
-                now[0] += 3_999_000_000L;
+                now[0] += AutoPath.FLOWER_STALL_NS - 1_000_000L;
                 tickRoute();
                 assertStep(follower, 7);
                 int stopsBeforeEscape = drive.stops;
@@ -222,13 +167,13 @@ public final class AutoPathRegression {
                 tickRoute();
                 assertStep(follower, 8);
                 if (drive.stops <= stopsBeforeEscape) throw new AssertionError("Stall must stop pushing");
-                assertPoint(follower.currentPath().get(0), 46.51, 131.0);
+                assertPoint(follower.currentPath().get(0), 42.10, 131.0);
             } else {
                 arrive(follower, navigation);
                 assertStep(follower, 8);
-                assertPoint(follower.currentPath().get(0), 46.5109, 139.7571);
+                assertPoint(follower.currentPath().get(0), 42.0421, 139.2817);
             }
-            assertPoint(follower.currentPath().get(1), 59.8106, 127.0128);
+            assertPoint(follower.currentPath().get(1), 59.5702, 124.8013);
             assertHeading(follower.currentPath().heading(.5), Math.PI / 2);
             arrive(follower, navigation);
             if (Scheduler.isScheduled(route)) throw new AssertionError("Path 8 must finish the route");
@@ -253,12 +198,12 @@ public final class AutoPathRegression {
         for (int i = 0; i < 3; i++) Scheduler.execute();
     }
 
-    /** step = route path number 1-8; the wall shuffle runs between paths 2 and 3 as one extra follow. */
+    /** step = route path number 1-8 (one follow per path; there is no wall shuffle any more). */
     private static void assertStep(Tracking follower, int step) {
         // Only path 2 (into the wall balls) and path 7 (FLOWER intake) run slower than the route speed.
         double expected = step == 2 || step == 7
                 ? org.firstinspires.ftc.teamcode.autonomous.BioBuzzAutoConfig.PICKUP_SPEED_FRACTION : AutoPath.SPEED_FRACTION;
-        int started = step >= 3 ? step + 1 : step;
+        int started = step;
         if (follower.pathsStarted != started || Constants.foresightConfig.maxPathSpeed.get() != expected) {
             throw new AssertionError("Expected path " + step + " at " + expected + " speed, saw path "
                     + follower.pathsStarted + " at " + Constants.foresightConfig.maxPathSpeed.get());

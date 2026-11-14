@@ -12,7 +12,7 @@ Select **AutoPath (Drive Only)** to run the same route and pauses without
 initializing mechanism hardware. The separate **BioBuzz Auto** from the latest pull is
 unchanged. The older BioBuzz Pedro Auto description below refers to its own implementation.
 
-AutoPath follows the supplied eight-segment route. Every segment runs at the 85% modeled
+AutoPath follows the supplied eight-segment route. Every segment runs at the 90% modeled
 speed except the two that drive into balls: **path 2** (into the four wall balls) and
 **path 7** (FLOWER intake), which use 35% / 18 in/s. AutoPath (Drive Only) uses the same
 speeds so it rehearses the real run.
@@ -22,7 +22,7 @@ speeds so it rehearses the real run.
 2. Shoot the four preloads at START before driving. The flywheel and turret stay active, and
    the **intake roller runs inward the entire time** from START to the end of the route (same
    direction as the feed), including during volleys. The **transmission runs only while
-   collecting** (path 1 → wall shuffle → wall pause, and path 6 → FLOWER pickup), stacking balls
+   collecting** (path 1 → path 2 → wall pause, paths 6–7 → FLOWER pickup, and path 8), stacking balls
    against the closed gate, and while feeding a volley; it is off between pickups (since
    2026-11-13). For each volley it stops during spin-up, briefly backs the
    balls off the gate (0.10 s outward) as the gate opens, and never pushes balls into a moving
@@ -44,31 +44,38 @@ speeds so it rehearses the real run.
    0.45 power, autonomous tracking uses 0.45 power when more than 10 deg off, and the 2 s
    unaimed fallback applies only when the turret is blind (SEARCH / no camera). While it is
    still turning toward a known or visible HIVE (PRE-AIM, UNWIND, TRACK, REACQUIRE), the gate
-   waits until the 3.5 s force-feed time (spot 2 already stops for 4 s). Telemetry shows
+   waits until the 3.5 s force-feed time. Telemetry shows
    `HIVE at (x, y)` and the turret state under Shooter / aiming / gate.
    **Run log (2026-11-13):** every AutoPath run writes one CSV row per loop (pose, turn rate,
    turret angle/speed/state/power, tag ids and offsets, distance, HIVE estimate, pre-aim angle,
    shot phase, gate) to `/sdcard/FIRST/java/src/Datalogs/autopath_<millis>.csv` on the Control
    Hub. Telemetry shows the file name. Pull with
    `adb pull /sdcard/FIRST/java/src/Datalogs/` after a run.
-3. Collect on paths 1–2 and through the 0.7 s stop at the wall after the shuffle. Path 2 drives
+3. Collect on paths 1–2 and through the 0.7 s stop at the wall. Path 2 drives
    all the way to (7.994, 0) and ends on Pedro's end-of-path signal; there is no early
    stop. As a safety net, if balls block the robot first, it continues after 0.7 s without 0.25 in
-   of progress, so the wall can never hang the route.
-   **Wall shuffle (2026-11-13):** wherever path 2 stops, the robot then shifts 2 in left, 2.95 in
-   right of the stop point, back to center, backs off 2.5 in and pushes 1 in past the stop point (heading held,
-   1/0.7x pickup speed, intake on), so all four wall balls get caught. It ends at Pedro's end of path,
-   after 0.35 s without 0.25 in of movement (pressed on the wall), or at 1.75 s, then the 0.7 s
-   intaking pause runs. Offsets: `AutoPath.SHUFFLE_LEFT_IN / SHUFFLE_RIGHT_IN / SHUFFLE_BACK_IN / SHUFFLE_PUSH_IN`.
-   The visualizer file `routes/AutoPath_current.pp.json` draws it from point 2.
-   **Wall time cut 30% (2026-11-13):** the path-2 stall wait, shuffle stall/time cap, shuffle
-   speed and wall pause all scale with `AutoPath.WALL_TIME_SCALE = 0.7` (was 1 / 0.5 / 2.5 s,
-   pickup speed, 1 s).
-4. Follow paths 3–5 to the second shooting spot. At path 5's endpoint, deploy the flower
-   lever and shoot, with a four-second minimum stop.
-5. Collect on paths 6–7 and for two seconds at FLOWER. The existing four-second
-   no-progress recovery uses the measured departure pose if path 7 stalls.
-6. Follow path 8, shoot the final volley, and clean up the mechanisms and drivetrain.
+   of progress, so the wall can never hang the route. The wall shuffle was removed on 2026-11-14
+   to give the FLOWER more time. (`AutoPath.WALL_TIME_SCALE = 0.7` still scales the stall and pause.)
+4. Follow paths 3–5 to the second shooting spot and shoot volley 2 with the full 2.0 s feed
+   window. For accuracy the robot stays stopped at least **4 s** after arriving and at least
+   **0.5 s** after the feed window ends (`VOLLEY2_MIN_STOP_NS`, `VOLLEY2_HOLD_AFTER_NS`).
+   The flower lever stays OFF.
+5. The flower deploys ON as path 6 starts (moving away from spot 2). Collect on paths 6–7, then
+   **2 s** stopped at FLOWER (`FLOWER_PICKUP_NS`). The FLOWER physically stops the robot near
+   y = 127.5 (run logs), short of POINT_7, so path 7 ends by stalling: after **1 s** pressed in
+   without 0.25 in of progress (`FLOWER_STALL_NS`, was 4 s) the stopped pickup starts.
+6. The flower stays ON leaving the FLOWER and retracts once path 8 is 10 in from where it left
+   (`FLOWER_RETRACT_AFTER_IN`; OFF by the end of path 8 either way). Path 8 starts from the robot's actual pose and keeps
+   collecting (transmission on) on the way to the 3rd spot, then the final volley and cleanup.
+   **Time cutoff:** whatever it is doing at the FLOWER, the robot leaves for volley 3 at
+   `AutoPath.FLOWER_LEAVE_BY_S = 24.5` s after START. From the logs, path 8 takes ~1.8 s and the gate
+   opens ~1.1 s after arrival, so the 1.25 s feed is done by ~28.9 s.
+
+**Timing (2026-11-14, from the run log of that day).** The previous run spent 0 s at the FLOWER: it
+arrived at 23.9 s and the 24 s cutoff fired. Time found: volleys 1 and 3 feed for **1.25 s**
+instead of 2.0 s (`AutoPath.SHORT_FEED_S`; in every logged volley the gate ball sensor last saw a
+ball 0.3–0.6 s into the window), the wall shuffle is gone (~1.5 s), and route speed is 90% (was 85%).
+Volley 2 keeps the 2.0 s feed.
 
 Mechanisms use Robot.initMechanismsOnly, keeping Pedro as the sole drive controller.
 Both full Robot and mechanism-only initialization select AUTO hub bulk caching and clear
@@ -103,7 +110,8 @@ single continuous burst using the same manual feeder motor control:
   -TRANSMISSION_INDEX_POWER. If the tag is lost while the gate is open, the turret holds
   still instead of sweeping.
 - Once feeding starts, hold the gate open and both motors running for
-  **SHOOT_BURST_SECONDS = 2.0 seconds**, including normal flywheel RPM dips. The feed window
+  **SHOOT_BURST_SECONDS = 2.0 seconds** (AutoPath: 1.25 s for volleys 1 and 3, 2.0 s for volley 2),
+  including normal flywheel RPM dips. The feed window
   starts after the gate-open wait, not when spin-up begins.
 - At the end of that window, close the gate and stop the feed motors before another actuator
   write, settle for 0.20 seconds, then continue the route. Ball-clear counts are advisory:
@@ -124,9 +132,9 @@ missing frames before using the 3215 no-tag default. Once the gate opens, latch 
 the stationary burst. No fixed 4000 RPM/color-based shooting target replaces the measured table.
 
 AutoPath commands the `flower` servo OFF as soon as INIT is pressed (and again at START). It stays
-OFF through the end of path 5, deploys at the second shooting spot,
-and stays ON through volley 2, paths 6–8 and the final volley. Only the end of the OpMode,
-STOP or a failure retracts it. FlowerLever shares TeleOp's ON=0.505/OFF=0.155 positions and
+OFF through path 5 and volley 2, deploys ON as path 6 starts (moving away from the 2nd spot),
+stays ON through path 7 and the FLOWER pickup, retracts once path 8 is 10 in from the FLOWER (not right after the pickup), and stays OFF
+for the final volley. The end of the OpMode, STOP or a failure also retracts it. FlowerLever shares TeleOp's ON=0.505/OFF=0.14 positions and
 PWM-enable/restore behavior. AutoPath (Drive Only) never maps or commands it.
 
 Scoring needs intake, transmission, turret, shooter, torqueservo1, **flower**, a working Limelight and
@@ -325,10 +333,10 @@ power, and cancels scheduler commands before reset.
 
 **AutoPath** and **AutoPath (Drive Only)** follow the same eight-segment geometry and
 heading profiles and speeds. Path 2 runs to its end at (7.994, 0), with a 1-second
-no-progress safety stop. The second shooting stop is after path 5. Path 7 targets (46.5109, 139.7571);
-if the approach stalls for four seconds without 0.25 inch of new progress, path 8 starts
-from the measured pose. Scoring retains the two-second stopped intake window before
-departure. Verify wall and FLOWER contact and total run time on the field.
+no-progress safety stop. The second shooting stop is after path 5. Path 7 targets (42.0421, 139.2817);
+if the approach stalls for one second without 0.25 inch of new progress, the pickup starts and
+path 8 then starts from the measured pose. Scoring keeps a two-second stopped intake window,
+collects on path 8, and leaves the FLOWER by 24.5 s after START. Verify wall and FLOWER contact and total run time on the field.
 
 ## Earlier scoring integration
 

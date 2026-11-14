@@ -100,11 +100,11 @@ public final class V2Regression {
                 });
         FlowerLever flower = new FlowerLever(servo);
         flower.setDeployed(false);
-        near(position[0], 0.155, 0, "Flower OFF commands 0.155");
+        near(position[0], 0.14, 0, "Flower OFF commands 0.14");
         flower.setDeployed(true);
         near(position[0], 0.505, 0, "Flower ON commands 0.505");
         flower.stop();
-        near(position[0], 0.155, 0, "Auto cleanup retracts flower to 0.155");
+        near(position[0], 0.14, 0, "Auto cleanup retracts flower to 0.14");
     }
 
     // ================================================================ HIVE cell choice

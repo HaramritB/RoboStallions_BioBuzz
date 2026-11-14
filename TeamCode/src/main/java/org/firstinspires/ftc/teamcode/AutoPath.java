@@ -38,14 +38,14 @@ public class AutoPath extends LinearOpMode {
     private static final long FLOWER_STALL_NS = 4_000_000_000L;
     private static final PoseFactory POSES = PoseFactory.degrees();
     private static final Pose START = POSES.of(56, 8, 270);
-    private static final Pose POINT_1 = POSES.of(8.2575, 16.1386, 270);
-    private static final Pose POINT_2 = POSES.of(7.994, 0, -90.9354);
-    private static final Pose POINT_3 = POSES.of(8.2939, 15.6271, -91.0994);
+    private static final Pose POINT_1 = POSES.of(7.4387, 15.6441, 270);
+    private static final Pose POINT_2 = POSES.of(7.3833, 0.0881, -90.2042);
+    private static final Pose POINT_3 = POSES.of(7.2845, 15.5174, -89.6334);
     private static final Pose POINT_4 = POSES.of(26.4473, 15.5231, -90);
-    private static final Pose POINT_5 = POSES.of(59.3913, 129.6717, 90);
+    private static final Pose POINT_5 = POSES.of(59.7632, 126.893, 90);
     private static final Pose POINT_6 = POSES.of(46.5038, 110.9216, 90);
     private static final Pose POINT_7 = POSES.of(46.5109, 139.7571, 90);
-    private static final Pose POINT_8 = POSES.of(60.4633, 132.0291, 90);
+    private static final Pose POINT_8 = POSES.of(59.8106, 127.0128, 90);
 
     @Override
     public void runOpMode() {

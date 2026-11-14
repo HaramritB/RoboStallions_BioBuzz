@@ -23,7 +23,9 @@ public abstract class BioBuzzTeleOpV2 extends LinearOpMode {
 
     static final double SLOW_MODE_SCALE = 0.4;
     static final double STICK_DEADBAND = 0.1;
-    static final double TURRET_JOG_POWER = 0.15;
+    static final double TURRET_JOG_POWER = 0.375; // Matches the original TeleOp (was 0.15).
+    /** X opens the gate only when the flywheel is this close to its target (closing always works). */
+    static final double GATE_OPEN_RPM = 50.0;
     static final double TELEMETRY_PERIOD_MS = 100;
     // Edit these in Robot.java (V2_TELEOP_SHOOTER_P/F): Flywheel Tuning starts from the same F.
     static final double SHOOTER_P = Robot.V2_TELEOP_SHOOTER_P;
@@ -50,7 +52,8 @@ public abstract class BioBuzzTeleOpV2 extends LinearOpMode {
         ShooterCalibrationV2 calibration = new ShooterCalibrationV2();
         ShotLoggerV2 logger = new ShotLoggerV2();
         boolean autoAim = true;
-        boolean manualGateOpen = false;
+        ShootingToggle shooting = new ShootingToggle();
+        IntakeToggle intakeToggle = new IntakeToggle();
         boolean flowerOn = false;
         boolean wasReady = false;
         double lastTelemetryMs = Double.NEGATIVE_INFINITY;
@@ -100,11 +103,11 @@ public abstract class BioBuzzTeleOpV2 extends LinearOpMode {
                     FlowerLever.command(flower, flowerOn);
                 }
 
-                // ---------------- driver 1: drive + intake, unchanged
+                // ---------------- driver 1: drive + toggle intake (tap RT in / tap LT out)
                 double scale = gamepad1.left_bumper ? SLOW_MODE_SCALE : 1.0;
                 robot.drive(-gamepad1.left_stick_y * scale, gamepad1.left_stick_x * scale,
                         gamepad1.right_stick_x * scale);
-                double driverIntake = intakePower(operator);
+                double toggledIntake = intakeToggle.update(operator);
 
                 // RT/LT belong exclusively to intake in the original one-person layout.
                 if (operator.aWasPressed()) robot.shooterOn = !robot.shooterOn;
@@ -136,10 +139,17 @@ public abstract class BioBuzzTeleOpV2 extends LinearOpMode {
                     }
                 }
 
-                // ---------------- gate + feed
-                if (operator.xWasPressed()) manualGateOpen = !manualGateOpen;
+                // ---------------- X shooting sequence: gate open + intake in + purple LED
+                if (operator.xWasPressed() && shooting.press(robot.shooterOn, robot.gateCalibrated(),
+                        v2.commandedRpm(), robot.shooterRpm()) && !shooting.active) {
+                    intakeToggle.off(); // Stopping the sequence also stops the intake.
+                    toggledIntake = 0;
+                }
+                double driverIntake = shooting.intakePower(toggledIntake);
+                v2.shootingIndicator = shooting.active;
+                v2.refreshLed();
                 sequencer.update(now, false, false, v2.atSpeed(), v2.nearSpeed(), v2.aimed(),
-                        robot.gateCalibrated(), manualGateOpen, driverIntake);
+                        robot.gateCalibrated(), shooting.active, driverIntake);
                 if (robot.gateCalibrated()) {
                     robot.gateOpen = sequencer.gateOpen;
                     robot.gateController.commandSaved(sequencer.gateOpen);
@@ -163,6 +173,11 @@ public abstract class BioBuzzTeleOpV2 extends LinearOpMode {
                             sequencer.gateOpen ? "OPEN" : "CLOSED", autoAim ? "ON" : "OFF");
                     telemetry.addData("Speed stable", "%s (+/-10 RPM for %.0f ms); manual X/RT feed",
                             sequencer.speedStable ? "YES" : "NO", ShotSequencerV2.READY_STABLE_MS);
+                    telemetry.addData("Shooting (X)", shooting.active
+                            ? "ON: gate open, intake feeding, LED purple (X again stops)"
+                            : String.format(java.util.Locale.US, "OFF (X starts it when shooter is within +/-%.0f RPM)", GATE_OPEN_RPM));
+                    telemetry.addData("Intake", "%s (tap RT in, LT out)",
+                            driverIntake < 0 ? "IN" : driverIntake > 0 ? "OUT" : "OFF");
                     telemetry.addData("Calibration", calibration.enabled()
                             ? "ON: fixed table RPM (left stick click exits)" : "OFF: following distance table");
                     telemetry.addData("RPM trim controls", "Up/Down +/-10; LB+Up/Down +/-1; BACK clears");
@@ -180,9 +195,68 @@ public abstract class BioBuzzTeleOpV2 extends LinearOpMode {
         }
     }
 
-    static double intakePower(Gamepad pad) {
-        return pad.right_trigger > 0.2 ? -Robot.INTAKE_POWER
-                : pad.left_trigger > 0.2 ? Robot.INTAKE_POWER : 0;
+    /**
+     * Toggle intake (matches the original TeleOp since Abishek's 2026-11-12 change): tap RT to turn
+     * inward intake on/off, tap LT to turn outward on/off. Turning one on turns the other off.
+     */
+    static final class IntakeToggle {
+        private boolean inward, outward, lastRight, lastLeft;
+
+        double update(boolean rightTrigger, boolean leftTrigger) {
+            if (rightTrigger && !lastRight) {
+                inward = !inward;
+                outward = false;
+            }
+            if (leftTrigger && !lastLeft) {
+                outward = !outward;
+                inward = false;
+            }
+            lastRight = rightTrigger;
+            lastLeft = leftTrigger;
+            return inward ? -Robot.INTAKE_POWER : outward ? Robot.INTAKE_POWER : 0;
+        }
+
+        double update(Gamepad pad) {
+            return update(pad.right_trigger > 0.2, pad.left_trigger > 0.2);
+        }
+
+        /** Stops the intake (used when the X shooting sequence ends). */
+        void off() {
+            inward = outward = false;
+        }
+    }
+
+    /**
+     * X toggles the whole shooting sequence: first press opens the gate, runs the intake inward
+     * and turns the LED purple; second press stops all of it. It starts only with a calibrated gate
+     * and the flywheel on and within GATE_OPEN_RPM of target; stopping always works.
+     */
+    static final class ShootingToggle {
+        boolean active;
+
+        /** @return true if the sequence started or stopped. */
+        boolean press(boolean shooterOn, boolean gateCalibrated, double targetRpm, double currentRpm) {
+            if (active) {
+                active = false;
+                return true;
+            }
+            if (gateCalibrated && gateToggleAllowed(false, shooterOn, targetRpm, currentRpm)) {
+                active = true;
+                return true;
+            }
+            return false;
+        }
+
+        /** While shooting the intake runs inward regardless of the RT/LT toggle. */
+        double intakePower(double toggledIntake) {
+            return active ? -Robot.INTAKE_POWER : toggledIntake;
+        }
+    }
+
+    /** Matches the original TeleOp: X always closes, but opens only within GATE_OPEN_RPM of target. */
+    static boolean gateToggleAllowed(boolean gateOpen, boolean shooterOn, double targetRpm, double currentRpm) {
+        return gateOpen || (shooterOn && Double.isFinite(targetRpm) && targetRpm > 0
+                && Double.isFinite(currentRpm) && Math.abs(currentRpm - targetRpm) <= GATE_OPEN_RPM);
     }
 
     static double manualTurretPower(Gamepad pad) {

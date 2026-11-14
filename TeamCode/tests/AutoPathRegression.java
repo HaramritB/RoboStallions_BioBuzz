@@ -27,25 +27,25 @@ public final class AutoPathRegression {
         assertRegistered(BioBuzzAuto.class, "BioBuzz Auto"); // Replaced by the teammate's Pedro route.
         Path[] paths = {AutoPath.path1(), AutoPath.path2(), AutoPath.path3(), AutoPath.path4(),
                 AutoPath.path5(), AutoPath.path6(), AutoPath.path7(), AutoPath.path8()};
-        double[][] xy = {{56, 8}, {8.2575, 16.1386}, {7.994, 0}, {8.2939, 15.6271},
-                {26.4473, 15.5231}, {59.3913, 129.6717}, {46.5038, 110.9216},
-                {46.5109, 139.7571}, {60.4633, 132.0291}};
+        double[][] xy = {{56, 8}, {7.4387, 15.6441}, {7.3833, 0.0881}, {7.2845, 15.5174},
+                {26.4473, 15.5231}, {59.7632, 126.893}, {46.5038, 110.9216},
+                {46.5109, 139.7571}, {59.8106, 127.0128}};
         for (int i = 0; i < paths.length; i++) {
             assertPoint(paths[i].get(0), xy[i][0], xy[i][1]);
             assertPoint(paths[i].get(1), xy[i + 1][0], xy[i + 1][1]);
         }
         assertHeading(paths[0].heading(.5), Math.toRadians(270));
-        assertHeading(paths[1].heading(.5), Math.atan2(0 - 16.1386, 7.994 - 8.2575));
-        assertHeading(paths[2].heading(.5), Math.atan2(15.6271 - 0, 8.2939 - 7.994) + Math.PI);
+        assertHeading(paths[1].heading(.5), Math.atan2(0.0881 - 15.6441, 7.3833 - 7.4387));
+        assertHeading(paths[2].heading(.5), Math.atan2(15.5174 - 0.0881, 7.2845 - 7.3833) + Math.PI);
         assertHeading(paths[3].heading(.5), -Math.PI / 2);
         assertHeading(paths[4].heading(0), -Math.PI / 2);
         assertHeading(paths[4].heading(1), Math.PI / 2);
         for (int i = 5; i < paths.length; i++) assertHeading(paths[i].heading(.5), Math.PI / 2);
-        assertPoint(paths[0].get(.5), (56 + 2 * 37.8335 + 8.2575) / 4, (8 + 2 * 44.6525 + 16.1386) / 4);
-        assertPoint(paths[4].get(.5), (26.4473 + 2 * 16.3139 + 59.3913) / 4,
-                (15.5231 + 2 * 96.4996 + 129.6717) / 4);
-        assertPoint(paths[7].get(.5), (46.5109 + 2 * 49.7351 + 60.4633) / 4,
-                (139.7571 + 2 * 98.8256 + 132.0291) / 4);
+        assertPoint(paths[0].get(.5), (56 + 2 * 37.8335 + 7.4387) / 4, (8 + 2 * 44.6525 + 15.6441) / 4);
+        assertPoint(paths[4].get(.5), (26.4473 + 2 * 16.3139 + 59.7632) / 4,
+                (15.5231 + 2 * 96.4996 + 126.893) / 4);
+        assertPoint(paths[7].get(.5), (46.5109 + 2 * 49.7351 + 59.8106) / 4,
+                (139.7571 + 2 * 98.8256 + 127.0128) / 4);
         checkFlowerExit(false);
         checkFlowerExit(true);
         checkAutoTurretSearch();
@@ -165,7 +165,7 @@ public final class AutoPathRegression {
                 assertStep(follower, 8);
                 assertPoint(follower.currentPath().get(0), 46.5109, 139.7571);
             }
-            assertPoint(follower.currentPath().get(1), 60.4633, 132.0291);
+            assertPoint(follower.currentPath().get(1), 59.8106, 127.0128);
             assertHeading(follower.currentPath().heading(.5), Math.PI / 2);
             arrive(follower, navigation);
             if (Scheduler.isScheduled(route)) throw new AssertionError("Path 8 must finish the route");

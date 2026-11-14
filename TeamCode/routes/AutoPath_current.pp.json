@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "timestamp": "2026-11-13T19:50:40.550801Z",
+  "timestamp": "2026-11-14T00:54:54.918189Z",
   "startPoint": {
     "x": 56,
     "y": 8,
@@ -14,8 +14,8 @@
       "id": "autopath-path-1",
       "name": "Path 1 - to wall",
       "endPoint": {
-        "x": 8.2575,
-        "y": 16.1386,
+        "x": 7.4387,
+        "y": 15.6441,
         "name": "point1"
       },
       "controlPoints": [
@@ -41,8 +41,8 @@
       "id": "autopath-path-2",
       "name": "Path 2 - into wall balls",
       "endPoint": {
-        "x": 7.994,
-        "y": 0,
+        "x": 7.3833,
+        "y": 0.0881,
         "name": "point2"
       },
       "controlPoints": [],
@@ -62,8 +62,8 @@
       "id": "autopath-path-3",
       "name": "Path 3 - back off wall",
       "endPoint": {
-        "x": 8.2939,
-        "y": 15.6271,
+        "x": 7.2845,
+        "y": 15.5174,
         "name": "point3"
       },
       "controlPoints": [],
@@ -104,8 +104,8 @@
       "id": "autopath-path-5",
       "name": "Path 5 - to 2nd shot",
       "endPoint": {
-        "x": 59.3913,
-        "y": 129.6717,
+        "x": 59.7632,
+        "y": 126.893,
         "name": "point5"
       },
       "controlPoints": [
@@ -173,8 +173,8 @@
       "id": "autopath-path-8",
       "name": "Path 8 - to 3rd shot",
       "endPoint": {
-        "x": 60.4633,
-        "y": 132.0291,
+        "x": 59.8106,
+        "y": 127.0128,
         "name": "point8"
       },
       "controlPoints": [

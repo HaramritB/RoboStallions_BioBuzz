@@ -50,22 +50,54 @@ public final class V2Regression {
         near(BioBuzzTeleOpV2.manualTurretPower(pad), 0, 0,
                 "Chassis steering must never jog the turret in one-person TeleOp");
         pad.dpad_right = true;
-        near(BioBuzzTeleOpV2.manualTurretPower(pad), 0.15, 0, "Held right D-pad jogs clockwise");
-        near(BioBuzzTeleOpV2.manualTurretPower(pad), 0.15, 0, "Jog continues while held");
+        near(BioBuzzTeleOpV2.manualTurretPower(pad), 0.375, 0, "Held right D-pad jogs clockwise at 0.375");
+        near(BioBuzzTeleOpV2.manualTurretPower(pad), 0.375, 0, "Jog continues while held");
         pad.dpad_left = true;
         near(BioBuzzTeleOpV2.manualTurretPower(pad), 0, 0, "Opposing jog buttons cancel");
         pad.dpad_right = false;
-        near(BioBuzzTeleOpV2.manualTurretPower(pad), -0.15, 0, "Held left D-pad jogs counterclockwise");
+        near(BioBuzzTeleOpV2.manualTurretPower(pad), -0.375, 0, "Held left D-pad jogs counterclockwise");
         pad.dpad_left = false;
         near(BioBuzzTeleOpV2.manualTurretPower(pad), 0, 0, "Releasing the D-pad ends manual jog");
-        pad.right_trigger = 1;
-        near(BioBuzzTeleOpV2.intakePower(pad), -Robot.INTAKE_POWER, 0, "RT collects inward");
-        pad.left_trigger = 1;
-        near(BioBuzzTeleOpV2.intakePower(pad), -Robot.INTAKE_POWER, 0, "RT retains original priority over LT");
-        pad.right_trigger = 0;
-        near(BioBuzzTeleOpV2.intakePower(pad), Robot.INTAKE_POWER, 0, "LT ejects outward");
-        pad.left_trigger = 0;
-        near(BioBuzzTeleOpV2.intakePower(pad), 0, 0, "Releasing triggers stops intake");
+
+        // Toggle intake, matching the original TeleOp.
+        BioBuzzTeleOpV2.IntakeToggle intake = new BioBuzzTeleOpV2.IntakeToggle();
+        near(intake.update(true, false), -Robot.INTAKE_POWER, 0, "Tap RT turns inward intake on");
+        near(intake.update(true, false), -Robot.INTAKE_POWER, 0, "Holding RT does not toggle again");
+        near(intake.update(false, false), -Robot.INTAKE_POWER, 0, "Releasing RT keeps it running");
+        near(intake.update(true, false), 0, 0, "Second RT tap turns it off");
+        intake.update(false, false);
+        near(intake.update(false, true), Robot.INTAKE_POWER, 0, "Tap LT turns outward on");
+        intake.update(false, false);
+        near(intake.update(true, false), -Robot.INTAKE_POWER, 0, "RT while outward switches straight to inward");
+        intake.update(false, false);
+        near(intake.update(false, true), Robot.INTAKE_POWER, 0, "LT while inward switches straight to outward");
+        intake.update(false, false);
+        near(intake.update(false, true), 0, 0, "Second LT tap turns it off");
+
+        // Gate opens only near flywheel target; closing always works.
+        check(!BioBuzzTeleOpV2.gateToggleAllowed(false, false, 3215, 3215), "Gate stays shut with the shooter off");
+        check(!BioBuzzTeleOpV2.gateToggleAllowed(false, true, 3215, 3100), "Gate stays shut 115 RPM below target");
+        check(BioBuzzTeleOpV2.gateToggleAllowed(false, true, 3215, 3171), "Gate opens within 50 RPM of target");
+        check(!BioBuzzTeleOpV2.gateToggleAllowed(false, true, Double.NaN, 3215), "No target speed: gate stays shut");
+        check(BioBuzzTeleOpV2.gateToggleAllowed(true, false, 3215, 0), "An open gate can always be closed");
+
+        // X toggles the whole shooting sequence.
+        BioBuzzTeleOpV2.ShootingToggle shoot = new BioBuzzTeleOpV2.ShootingToggle();
+        check(!shoot.press(true, true, 3215, 3000) && !shoot.active, "X does nothing while the flywheel is far off speed");
+        check(!shoot.press(true, false, 3215, 3215) && !shoot.active, "X does nothing without gate calibration");
+        check(shoot.press(true, true, 3215, 3200) && shoot.active, "X at speed starts shooting");
+        near(shoot.intakePower(0), -Robot.INTAKE_POWER, 0, "Shooting runs the intake inward");
+        near(shoot.intakePower(Robot.INTAKE_POWER), -Robot.INTAKE_POWER, 0, "Shooting overrides an outward intake toggle");
+        check(shoot.press(false, true, 3215, 0) && !shoot.active, "Second X always stops, even with the shooter off");
+        near(shoot.intakePower(0), 0, 0, "Stopped: intake follows the RT/LT toggle again");
+        BioBuzzTeleOpV2.IntakeToggle running = new BioBuzzTeleOpV2.IntakeToggle();
+        running.update(true, false);
+        running.update(false, false);
+        running.off();
+        near(running.update(false, false), 0, 0, "Ending the sequence turns the intake off");
+        near(RobotV2.ledColor(true, true), Robot.LED_VIOLET, 0, "LED is purple while shooting");
+        near(RobotV2.ledColor(false, true), Robot.LED_GREEN, 0, "LED is green with pollen when not shooting");
+        near(RobotV2.ledColor(false, false), Robot.LED_RED, 0, "LED is red without pollen when not shooting");
     }
 
     static void flowerCommands() {

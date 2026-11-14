@@ -265,7 +265,20 @@ public final class RobotV2 {
             robot.ballDistanceCm = d;
             robot.ballPresent = Double.isFinite(d) && d > 0 && d < Robot.BALL_PRESENT_CM;
         }
-        double led = robot.ballPresent ? Robot.LED_GREEN : Robot.LED_RED;
+        refreshLed();
+    }
+
+    /** True while the X shooting sequence is running: the LED shows purple instead of pollen state. */
+    public boolean shootingIndicator;
+
+    /** Purple while shooting; otherwise green with pollen present, red without. */
+    public static double ledColor(boolean shooting, boolean ballPresent) {
+        return shooting ? Robot.LED_VIOLET : ballPresent ? Robot.LED_GREEN : Robot.LED_RED;
+    }
+
+    /** Writes the LED only when its color changes. */
+    public void refreshLed() {
+        double led = ledColor(shootingIndicator, robot.ballPresent);
         if (robot.led != null && led != lastLed) {
             robot.led.setPosition(led);
             lastLed = led;

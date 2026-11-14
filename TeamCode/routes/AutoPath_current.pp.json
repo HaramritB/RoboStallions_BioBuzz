@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "timestamp": "2026-11-14T00:54:54.918189Z",
+  "timestamp": "2026-11-14T02:43:23.168635Z",
   "startPoint": {
     "x": 56,
     "y": 8,
@@ -11,7 +11,7 @@
   "lines": [
     {
       "kind": "atomic",
-      "id": "autopath-path-1",
+      "id": "autopath-seg-1",
       "name": "Path 1 - to wall",
       "endPoint": {
         "x": 7.4387,
@@ -38,7 +38,7 @@
     },
     {
       "kind": "atomic",
-      "id": "autopath-path-2",
+      "id": "autopath-seg-2",
       "name": "Path 2 - into wall balls",
       "endPoint": {
         "x": 7.3833,
@@ -53,13 +53,118 @@
       "color": "#f28e2b",
       "locked": false,
       "waitBeforeMs": 0,
-      "waitAfterMs": 1000,
+      "waitAfterMs": 0,
       "waitBeforeName": "",
-      "waitAfterName": "Wall pickup pause"
+      "waitAfterName": ""
     },
     {
       "kind": "atomic",
-      "id": "autopath-path-3",
+      "id": "autopath-seg-3",
+      "name": "Wall shuffle 1 - left",
+      "endPoint": {
+        "x": 9.3833,
+        "y": 0.081,
+        "name": "shuffle_left"
+      },
+      "controlPoints": [],
+      "heading": {
+        "type": "constant",
+        "degrees": -90.2042
+      },
+      "color": "#59a14f",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 0,
+      "waitBeforeName": "",
+      "waitAfterName": ""
+    },
+    {
+      "kind": "atomic",
+      "id": "autopath-seg-4",
+      "name": "Wall shuffle 2 - right",
+      "endPoint": {
+        "x": 5.3833,
+        "y": 0.0952,
+        "name": "shuffle_right"
+      },
+      "controlPoints": [],
+      "heading": {
+        "type": "constant",
+        "degrees": -90.2042
+      },
+      "color": "#edc948",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 0,
+      "waitBeforeName": "",
+      "waitAfterName": ""
+    },
+    {
+      "kind": "atomic",
+      "id": "autopath-seg-5",
+      "name": "Wall shuffle 3 - center",
+      "endPoint": {
+        "x": 7.3833,
+        "y": 0.0881,
+        "name": "shuffle_center"
+      },
+      "controlPoints": [],
+      "heading": {
+        "type": "constant",
+        "degrees": -90.2042
+      },
+      "color": "#b07aa1",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 0,
+      "waitBeforeName": "",
+      "waitAfterName": ""
+    },
+    {
+      "kind": "atomic",
+      "id": "autopath-seg-6",
+      "name": "Wall shuffle 4 - back",
+      "endPoint": {
+        "x": 7.3922,
+        "y": 2.5881,
+        "name": "shuffle_back"
+      },
+      "controlPoints": [],
+      "heading": {
+        "type": "constant",
+        "degrees": -90.2042
+      },
+      "color": "#e15759",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 0,
+      "waitBeforeName": "",
+      "waitAfterName": ""
+    },
+    {
+      "kind": "atomic",
+      "id": "autopath-seg-7",
+      "name": "Wall shuffle 5 - push",
+      "endPoint": {
+        "x": 7.3797,
+        "y": -0.9119,
+        "name": "shuffle_push"
+      },
+      "controlPoints": [],
+      "heading": {
+        "type": "constant",
+        "degrees": -90.2042
+      },
+      "color": "#76b7b2",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 1000,
+      "waitBeforeName": "",
+      "waitAfterName": "Wall pickup pause (intake on)"
+    },
+    {
+      "kind": "atomic",
+      "id": "autopath-seg-8",
       "name": "Path 3 - back off wall",
       "endPoint": {
         "x": 7.2845,
@@ -71,7 +176,7 @@
         "type": "tangential",
         "reverse": true
       },
-      "color": "#59a14f",
+      "color": "#ff9da7",
       "locked": false,
       "waitBeforeMs": 0,
       "waitAfterMs": 0,
@@ -80,7 +185,7 @@
     },
     {
       "kind": "atomic",
-      "id": "autopath-path-4",
+      "id": "autopath-seg-9",
       "name": "Path 4",
       "endPoint": {
         "x": 26.4473,
@@ -92,7 +197,7 @@
         "type": "constant",
         "degrees": -90
       },
-      "color": "#edc948",
+      "color": "#4e79a7",
       "locked": false,
       "waitBeforeMs": 0,
       "waitAfterMs": 0,
@@ -101,7 +206,7 @@
     },
     {
       "kind": "atomic",
-      "id": "autopath-path-5",
+      "id": "autopath-seg-10",
       "name": "Path 5 - to 2nd shot",
       "endPoint": {
         "x": 59.7632,
@@ -119,7 +224,7 @@
         "startDeg": -90,
         "endDeg": 90
       },
-      "color": "#b07aa1",
+      "color": "#f28e2b",
       "locked": false,
       "waitBeforeMs": 0,
       "waitAfterMs": 4000,
@@ -128,7 +233,7 @@
     },
     {
       "kind": "atomic",
-      "id": "autopath-path-6",
+      "id": "autopath-seg-11",
       "name": "Path 6 - under FLOWER",
       "endPoint": {
         "x": 46.5038,
@@ -140,7 +245,7 @@
         "type": "constant",
         "degrees": 90
       },
-      "color": "#e15759",
+      "color": "#59a14f",
       "locked": false,
       "waitBeforeMs": 0,
       "waitAfterMs": 0,
@@ -149,7 +254,7 @@
     },
     {
       "kind": "atomic",
-      "id": "autopath-path-7",
+      "id": "autopath-seg-12",
       "name": "Path 7 - FLOWER intake",
       "endPoint": {
         "x": 46.5109,
@@ -161,7 +266,7 @@
         "type": "constant",
         "degrees": 90
       },
-      "color": "#76b7b2",
+      "color": "#edc948",
       "locked": false,
       "waitBeforeMs": 0,
       "waitAfterMs": 2000,
@@ -170,7 +275,7 @@
     },
     {
       "kind": "atomic",
-      "id": "autopath-path-8",
+      "id": "autopath-seg-13",
       "name": "Path 8 - to 3rd shot",
       "endPoint": {
         "x": 59.8106,
@@ -187,7 +292,7 @@
         "type": "constant",
         "degrees": 90
       },
-      "color": "#ff9da7",
+      "color": "#b07aa1",
       "locked": false,
       "waitBeforeMs": 0,
       "waitAfterMs": 3000,
@@ -360,35 +465,55 @@
   "sequence": [
     {
       "kind": "path",
-      "lineId": "autopath-path-1"
+      "lineId": "autopath-seg-1"
     },
     {
       "kind": "path",
-      "lineId": "autopath-path-2"
+      "lineId": "autopath-seg-2"
     },
     {
       "kind": "path",
-      "lineId": "autopath-path-3"
+      "lineId": "autopath-seg-3"
     },
     {
       "kind": "path",
-      "lineId": "autopath-path-4"
+      "lineId": "autopath-seg-4"
     },
     {
       "kind": "path",
-      "lineId": "autopath-path-5"
+      "lineId": "autopath-seg-5"
     },
     {
       "kind": "path",
-      "lineId": "autopath-path-6"
+      "lineId": "autopath-seg-6"
     },
     {
       "kind": "path",
-      "lineId": "autopath-path-7"
+      "lineId": "autopath-seg-7"
     },
     {
       "kind": "path",
-      "lineId": "autopath-path-8"
+      "lineId": "autopath-seg-8"
+    },
+    {
+      "kind": "path",
+      "lineId": "autopath-seg-9"
+    },
+    {
+      "kind": "path",
+      "lineId": "autopath-seg-10"
+    },
+    {
+      "kind": "path",
+      "lineId": "autopath-seg-11"
+    },
+    {
+      "kind": "path",
+      "lineId": "autopath-seg-12"
+    },
+    {
+      "kind": "path",
+      "lineId": "autopath-seg-13"
     }
   ],
   "fieldPoints": [],

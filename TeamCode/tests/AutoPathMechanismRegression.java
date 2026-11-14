@@ -114,14 +114,18 @@ public final class AutoPathMechanismRegression {
             checkSpeed(BioBuzzAutoConfig.PICKUP_SPEED_FRACTION,
                     "Path 2 into the wall balls runs at pickup speed so balls are intaken, not batted away");
             arrive(); drain();
+            check(follower.pathsStarted==3 && !follower.idle() && hardware.output==BioBuzzAutoMechanisms.Kind.COLLECT,
+                    "At the wall, the side-to-side / back-and-forth shuffle runs with the intake on");
+            checkSpeed(BioBuzzAutoConfig.PICKUP_SPEED_FRACTION,"The wall shuffle runs at pickup speed");
+            arrive(); drain();
             check(follower.idle() && hardware.output==BioBuzzAutoMechanisms.Kind.COLLECT,
-                    "Path-2 arrival stops the drive and keeps intaking during the pause");
+                    "Shuffle end stops the drive and keeps intaking during the pause");
             advance(.999);
-            check(follower.pathsStarted==2 && hardware.output==BioBuzzAutoMechanisms.Kind.COLLECT,
+            check(follower.pathsStarted==3 && hardware.output==BioBuzzAutoMechanisms.Kind.COLLECT,
                     "Keep the one-second wall pause with intake");
             advance(.001); drain();
             for (int path=3; path<=5; path++) {
-                check(follower.pathsStarted==path && hardware.intakeOn(),
+                check(follower.pathsStarted==path+1 && hardware.intakeOn(),
                         "The intake keeps running during transit on path "+path);
                 checkSpeed(SPEED,"Path "+path+" runs at route speed");
                 if (path<5) { arrive(); drain(); }
@@ -170,18 +174,18 @@ public final class AutoPathMechanismRegression {
             check(f.lever.position==FlowerLever.DEPLOYED_POSITION && f.lever.pwm,
                     "Deploy the flower to ON on arrival at the 2nd shooting spot");
             f.volley();
-            check(f.follower.pathsStarted==5 && f.follower.idle(),"An early volley cannot shorten the four-second path-5 stop");
+            check(f.follower.pathsStarted==6 && f.follower.idle(),"An early volley cannot shorten the four-second path-5 stop");
             f.advance(4-BioBuzzAutoConfig.SHOOT_BURST_SECONDS-.211);
-            check(f.follower.pathsStarted==5,"Path-5 stop lasts the full four seconds");
+            check(f.follower.pathsStarted==6,"Path-5 stop lasts the full four seconds");
             check(f.lever.position==FlowerLever.DEPLOYED_POSITION,"The flower stays ON while volley 2 is shooting");
             f.advance(.001);
             f.drain();
-            check(f.follower.pathsStarted==6,"Path 6 begins after both pause and volley finish");
+            check(f.follower.pathsStarted==7,"Path 6 begins after both pause and volley finish");
             check(f.hardware.output==BioBuzzAutoMechanisms.Kind.COLLECT,"Intake starts as soon as volley 2 ends, during path 6");
             check(f.lever.position==FlowerLever.DEPLOYED_POSITION && f.lever.pwm,"The flower stays ON during the path-6 intake");
             checkSpeed(SPEED,"Path 6 (strafe under the FLOWER) runs at route speed");
             f.arrive(); f.drain();
-            check(f.follower.pathsStarted==7 && f.hardware.output==BioBuzzAutoMechanisms.Kind.COLLECT,"Intake keeps running into the FLOWER approach");
+            check(f.follower.pathsStarted==8 && f.hardware.output==BioBuzzAutoMechanisms.Kind.COLLECT,"Intake keeps running into the FLOWER approach");
             checkSpeed(BioBuzzAutoConfig.PICKUP_SPEED_FRACTION,"Path 7 FLOWER intake runs at pickup speed");
             check(f.lever.position==FlowerLever.DEPLOYED_POSITION && f.lever.pwm,"Flower stays deployed from path 6 into path 7");
             f.lever.pwm=false; f.tick();
@@ -189,17 +193,17 @@ public final class AutoPathMechanismRegression {
             if(stalled) {
                 f.nav.setPose(PoseFactory.degrees().of(46.88,131.0,90)); f.tick();
                 f.advance(3.999);
-                check(f.follower.pathsStarted==7,"Preserve the four-second FLOWER progress window");
+                check(f.follower.pathsStarted==8,"Preserve the four-second FLOWER progress window");
                 f.advance(.001);
             } else f.arrive();
             f.drain(); // Path 6 + path 7 share one intake command: one extra loop to settle.
-            check(f.follower.idle() && f.follower.pathsStarted==7,"Stop pushing during the FLOWER pickup window");
+            check(f.follower.idle() && f.follower.pathsStarted==8,"Stop pushing during the FLOWER pickup window");
             f.advance(BioBuzzAutoConfig.FLOWER_INTAKE_SECONDS-.001);
-            check(f.follower.pathsStarted==7 && f.hardware.output==BioBuzzAutoMechanisms.Kind.COLLECT,"FLOWER intake runs its configured duration");
+            check(f.follower.pathsStarted==8 && f.hardware.output==BioBuzzAutoMechanisms.Kind.COLLECT,"FLOWER intake runs its configured duration");
             check(f.lever.position==FlowerLever.DEPLOYED_POSITION,"Keep the lever deployed throughout the FLOWER pickup window");
             f.advance(.001);
             f.drain();
-            check(f.follower.pathsStarted==8 && f.hardware.intakeOn(),"Path 8 follows the timed pickup with the intake still running");
+            check(f.follower.pathsStarted==9 && f.hardware.intakeOn(),"Path 8 follows the timed pickup with the intake still running");
             check(f.lever.position==FlowerLever.DEPLOYED_POSITION,"The flower stays ON through path 8");
             if(stalled) check(f.follower.currentPath().get(0).distance(PoseFactory.degrees().of(46.88,131.0,90))<1e-8,
                     "Stall recovery still rebases path 8 to the actual departure point");
@@ -226,20 +230,28 @@ public final class AutoPathMechanismRegression {
             f.advance(.999);
             check(f.follower.pathsStarted==2 && !f.follower.idle(),"Keep pushing while the wall stall window runs");
             f.advance(.001); f.drain();
+            check(f.follower.pathsStarted==3 && f.drive.stops>stops && f.hardware.output==BioBuzzAutoMechanisms.Kind.COLLECT,
+                    "A blocked wall approach stops pushing and moves on to the shuffle instead of hanging");
+            check(f.follower.currentPath().get(0).distance(PoseFactory.degrees().of(8.1905,12.0319,-90.9351))<1e-8,
+                    "The shuffle starts from where the robot actually stopped");
+            stops=f.drive.stops;
+            f.advance(.499);
+            check(f.follower.pathsStarted==3 && !f.follower.idle(),"Keep shuffling until it stops moving for the stall window");
+            f.advance(.001); f.drain();
             check(f.follower.idle() && f.drive.stops>stops && f.hardware.output==BioBuzzAutoMechanisms.Kind.COLLECT,
-                    "A blocked wall approach stops pushing and moves on to the intaking pause instead of hanging");
+                    "Pressed against the wall, the shuffle ends and the intaking pause begins");
             f.advance(1); f.drain();
-            check(f.follower.pathsStarted==3,"The route continues to the second shot after a wall stall");
+            check(f.follower.pathsStarted==4,"The route continues to the second shot after a wall stall");
         } finally { f.close(false); }
     }
     static void delayedVolley() {
         Fixture f=new Fixture();
         try {
             f.toSecondShotApproach(); f.hardware.feedReady=false; f.arrive(); f.drain(); f.advance(4.1);
-            check(f.follower.pathsStarted==5,"Pause completion alone cannot bypass unfinished shooting");
+            check(f.follower.pathsStarted==6,"Pause completion alone cannot bypass unfinished shooting");
             f.hardware.feedReady=true;
             f.volley();
-            check(f.follower.pathsStarted==6,"A late successful volley permits path 6");
+            check(f.follower.pathsStarted==7,"A late successful volley permits path 6");
         } finally { f.close(false); }
     }
     static void missingShotCounts() {
@@ -278,7 +290,7 @@ public final class AutoPathMechanismRegression {
                     "A bad feeder-sensor sample is reported, not fatal");
             f.volley();
             f.advance(4-BioBuzzAutoConfig.SHOOT_BURST_SECONDS-.21); f.drain();
-            check(f.follower.pathsStarted==6,"The route keeps shooting and driving through sensor glitches");
+            check(f.follower.pathsStarted==7,"The route keeps shooting and driving through sensor glitches");
         } finally { f.close(false); }
         Fixture strict=new Fixture(false);
         try {
@@ -286,7 +298,7 @@ public final class AutoPathMechanismRegression {
             int outputs=strict.hardware.controls; strict.hardware.valid=false;
             try { strict.tick(); throw new AssertionError("Strict sensor failure must abort"); }
             catch(IllegalStateException expected) {
-                check(strict.follower.pathsStarted==5 && strict.hardware.controls==outputs,
+                check(strict.follower.pathsStarted==6 && strict.hardware.controls==outputs,
                         "Diagnostic (strict) mode still blocks output on invalid sensors");
             }
         } finally { strict.close(false); }

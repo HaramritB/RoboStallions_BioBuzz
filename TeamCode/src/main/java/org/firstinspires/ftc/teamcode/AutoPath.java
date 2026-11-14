@@ -16,6 +16,7 @@ import java.util.function.LongSupplier;
 
 import static com.pedropathing.api.Paths.curve;
 import static com.pedropathing.api.Paths.line;
+import static com.pedropathing.api.Paths.path;
 import static com.pedropathing.ivy.commands.Commands.instant;
 import static com.pedropathing.ivy.commands.Commands.lazy;
 import static com.pedropathing.ivy.groups.Groups.parallel;
@@ -32,6 +33,16 @@ public class AutoPath extends LinearOpMode {
     // Safety only: if balls or the wall stop the robot first, continue after this long without progress.
     private static final long WALL_STALL_NS = 1_000_000_000L;
     private static final long WALL_PAUSE_NS = 1_000_000_000L;
+    // Wall shuffle (2026-11-13): once path 2 stops at the wall balls, shift slightly left, right,
+    // back and then push 1 in past the stop point, so the intake catches all four balls. Offsets
+    // are robot-relative from where the robot actually stopped; the wall is allowed to stop it.
+    static final double SHUFFLE_SIDE_IN = 2.0;
+    static final double SHUFFLE_BACK_IN = 2.5;
+    static final double SHUFFLE_PUSH_IN = 1.0;
+    // Ends at Pedro's end of path, after this long without 0.25 in of movement (pressed against
+    // the wall or balls), or at the time cap, whichever comes first.
+    private static final long SHUFFLE_STALL_NS = 500_000_000L;
+    private static final long SHUFFLE_MAX_NS = 2_500_000_000L;
     private static final long SECOND_SHOT_PAUSE_NS = 4_000_000_000L;
     private static final double FLOWER_ARRIVAL_IN = 1.0;
     private static final double APPROACH_PROGRESS_IN = 0.25;
@@ -180,7 +191,8 @@ public class AutoPath extends LinearOpMode {
         Approach flower = new Approach(POINT_7, FLOWER_ARRIVAL_IN, FLOWER_STALL_NS);
         Command wallPickup = sequential(
                 follow(follower, atRouteSpeed(path1())),
-                approach(follower, clock, atPickupSpeed(path2()), wall, true));
+                approach(follower, clock, atPickupSpeed(path2()), wall, true),
+                wallShuffle(follower, clock));
         Command toSecondShot = sequential(
                 follow(follower, atRouteSpeed(path3())),
                 follow(follower, atRouteSpeed(path4())),
@@ -301,6 +313,47 @@ public class AutoPath extends LinearOpMode {
             watch.start(follower.pose(), clock.getAsLong());
         }).setDone(() -> (pedroEndCounts && (follower.atParametricEnd() || follower.holding()))
                 || watch.finished(follower, clock.getAsLong()));
+    }
+
+    /** Small side-to-side, then back-and-forth moves from wherever the wall approach stopped. */
+    private static Command wallShuffle(Follower follower, LongSupplier clock) {
+        long[] started = {0}, lastMove = {0};
+        Pose[] anchor = {null};
+        return Command.build().setStart(() -> {
+            Pose from = follower.pose();
+            follower.follow(atPickupSpeed(wallShufflePath(from)));
+            started[0] = lastMove[0] = clock.getAsLong();
+            anchor[0] = from;
+        }).setDone(() -> {
+            long now = clock.getAsLong();
+            Pose pose = follower.pose();
+            if (!Double.isFinite(pose.x()) || !Double.isFinite(pose.y())) {
+                throw new IllegalStateException("Invalid Pinpoint pose during the wall shuffle");
+            }
+            if (pose.distance(anchor[0]) >= APPROACH_PROGRESS_IN) { anchor[0] = pose; lastMove[0] = now; }
+            boolean done = follower.atParametricEnd() || now - lastMove[0] >= SHUFFLE_STALL_NS
+                    || now - started[0] >= SHUFFLE_MAX_NS;
+            if (done) stopDrive(follower);
+            return done;
+        });
+    }
+
+    /** Left, right, back to center, back off, then push SHUFFLE_PUSH_IN past the start, holding heading. */
+    static Path wallShufflePath(Pose from) {
+        double h = from.heading();
+        double fx = Math.cos(h), fy = Math.sin(h); // forward: into the wall
+        double lx = -fy, ly = fx;                  // robot left
+        Pose left = shifted(from, lx * SHUFFLE_SIDE_IN, ly * SHUFFLE_SIDE_IN);
+        Pose right = shifted(from, -lx * SHUFFLE_SIDE_IN, -ly * SHUFFLE_SIDE_IN);
+        Pose back = shifted(from, -fx * SHUFFLE_BACK_IN, -fy * SHUFFLE_BACK_IN);
+        Pose push = shifted(from, fx * SHUFFLE_PUSH_IN, fy * SHUFFLE_PUSH_IN);
+        return path(line(from, left).constant(from), line(left, right).constant(from),
+                line(right, from).constant(from), line(from, back).constant(from),
+                line(back, push).constant(from));
+    }
+
+    private static Pose shifted(Pose pose, double dx, double dy) {
+        return POSES.of(pose.x() + dx, pose.y() + dy, Math.toDegrees(pose.heading()));
     }
 
     private static final class Approach {

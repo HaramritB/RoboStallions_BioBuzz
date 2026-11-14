@@ -28,8 +28,8 @@ public final class AutoPathRegression {
         Path[] paths = {AutoPath.path1(), AutoPath.path2(), AutoPath.path3(), AutoPath.path4(),
                 AutoPath.path5(), AutoPath.path6(), AutoPath.path7(), AutoPath.path8()};
         double[][] xy = {{56, 8}, {8.2575, 16.1386}, {7.994, 0}, {8.2939, 15.6271},
-                {26.4473, 15.5231}, {56.5176, 111.2149}, {46.5038, 110.9216},
-                {46.5109, 139.7571}, {56.4722, 111.3911}};
+                {26.4473, 15.5231}, {59.3913, 129.6717}, {46.5038, 110.9216},
+                {46.5109, 139.7571}, {60.4633, 132.0291}};
         for (int i = 0; i < paths.length; i++) {
             assertPoint(paths[i].get(0), xy[i][0], xy[i][1]);
             assertPoint(paths[i].get(1), xy[i + 1][0], xy[i + 1][1]);
@@ -42,10 +42,10 @@ public final class AutoPathRegression {
         assertHeading(paths[4].heading(1), Math.PI / 2);
         for (int i = 5; i < paths.length; i++) assertHeading(paths[i].heading(.5), Math.PI / 2);
         assertPoint(paths[0].get(.5), (56 + 2 * 37.8335 + 8.2575) / 4, (8 + 2 * 44.6525 + 16.1386) / 4);
-        assertPoint(paths[4].get(.5), (26.4473 + 2 * 5.9643 + 56.5176) / 4,
-                (15.5231 + 2 * 105.7087 + 111.2149) / 4);
-        assertPoint(paths[7].get(.5), (46.5109 + 2 * 43.558 + 56.4722) / 4,
-                (139.7571 + 2 * 106.1367 + 111.3911) / 4);
+        assertPoint(paths[4].get(.5), (26.4473 + 2 * 16.3139 + 59.3913) / 4,
+                (15.5231 + 2 * 96.4996 + 129.6717) / 4);
+        assertPoint(paths[7].get(.5), (46.5109 + 2 * 49.7351 + 60.4633) / 4,
+                (139.7571 + 2 * 98.8256 + 132.0291) / 4);
         checkFlowerExit(false);
         checkFlowerExit(true);
         checkAutoTurretSearch();
@@ -165,7 +165,7 @@ public final class AutoPathRegression {
                 assertStep(follower, 8);
                 assertPoint(follower.currentPath().get(0), 46.5109, 139.7571);
             }
-            assertPoint(follower.currentPath().get(1), 56.4722, 111.3911);
+            assertPoint(follower.currentPath().get(1), 60.4633, 132.0291);
             assertHeading(follower.currentPath().heading(.5), Math.PI / 2);
             arrive(follower, navigation);
             if (Scheduler.isScheduled(route)) throw new AssertionError("Path 8 must finish the route");

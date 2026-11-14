@@ -39,13 +39,13 @@ public class AutoPath extends LinearOpMode {
     private static final PoseFactory POSES = PoseFactory.degrees();
     private static final Pose START = POSES.of(56, 8, 270);
     private static final Pose POINT_1 = POSES.of(8.2575, 16.1386, 270);
-    private static final Pose POINT_2 = POSES.of(7.994, 0, -90.9351);
-    private static final Pose POINT_3 = POSES.of(8.2939, 15.6271, -91.0991);
+    private static final Pose POINT_2 = POSES.of(7.994, 0, -90.9354);
+    private static final Pose POINT_3 = POSES.of(8.2939, 15.6271, -91.0994);
     private static final Pose POINT_4 = POSES.of(26.4473, 15.5231, -90);
-    private static final Pose POINT_5 = POSES.of(56.5176, 111.2149, 90);
+    private static final Pose POINT_5 = POSES.of(59.3913, 129.6717, 90);
     private static final Pose POINT_6 = POSES.of(46.5038, 110.9216, 90);
     private static final Pose POINT_7 = POSES.of(46.5109, 139.7571, 90);
-    private static final Pose POINT_8 = POSES.of(56.4722, 111.3911, 90);
+    private static final Pose POINT_8 = POSES.of(60.4633, 132.0291, 90);
 
     @Override
     public void runOpMode() {
@@ -343,7 +343,7 @@ public class AutoPath extends LinearOpMode {
     }
 
     static Path path5() {
-        return curve(POINT_4, POSES.of(5.9643, 105.7087, 0), POINT_5).linear(POINT_4, POINT_5);
+        return curve(POINT_4, POSES.of(16.3139, 96.4996, 0), POINT_5).linear(POINT_4, POINT_5);
     }
 
     static Path path6() {
@@ -359,6 +359,6 @@ public class AutoPath extends LinearOpMode {
     }
 
     private static Path path8(Pose departure) {
-        return curve(departure, POSES.of(43.558, 106.1367, 0), POINT_8).constant(POINT_8);
+        return curve(departure, POSES.of(49.7351, 98.8256, 0), POINT_8).constant(POINT_8);
     }
 }

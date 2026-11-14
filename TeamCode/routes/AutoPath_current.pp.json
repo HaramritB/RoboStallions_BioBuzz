@@ -1,0 +1,397 @@
+{
+  "version": "2.0.0",
+  "timestamp": "2026-11-13T19:50:40.550801Z",
+  "startPoint": {
+    "x": 56,
+    "y": 8,
+    "headingDeg": 270,
+    "name": "start",
+    "locked": false
+  },
+  "lines": [
+    {
+      "kind": "atomic",
+      "id": "autopath-path-1",
+      "name": "Path 1 - to wall",
+      "endPoint": {
+        "x": 8.2575,
+        "y": 16.1386,
+        "name": "point1"
+      },
+      "controlPoints": [
+        {
+          "x": 37.8335,
+          "y": 44.6525
+        }
+      ],
+      "heading": {
+        "type": "linear",
+        "startDeg": 270,
+        "endDeg": 270
+      },
+      "color": "#4e79a7",
+      "locked": false,
+      "waitBeforeMs": 3000,
+      "waitAfterMs": 0,
+      "waitBeforeName": "Preload volley (~3 s, varies)",
+      "waitAfterName": ""
+    },
+    {
+      "kind": "atomic",
+      "id": "autopath-path-2",
+      "name": "Path 2 - into wall balls",
+      "endPoint": {
+        "x": 7.994,
+        "y": 0,
+        "name": "point2"
+      },
+      "controlPoints": [],
+      "heading": {
+        "type": "tangential",
+        "reverse": false
+      },
+      "color": "#f28e2b",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 1000,
+      "waitBeforeName": "",
+      "waitAfterName": "Wall pickup pause"
+    },
+    {
+      "kind": "atomic",
+      "id": "autopath-path-3",
+      "name": "Path 3 - back off wall",
+      "endPoint": {
+        "x": 8.2939,
+        "y": 15.6271,
+        "name": "point3"
+      },
+      "controlPoints": [],
+      "heading": {
+        "type": "tangential",
+        "reverse": true
+      },
+      "color": "#59a14f",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 0,
+      "waitBeforeName": "",
+      "waitAfterName": ""
+    },
+    {
+      "kind": "atomic",
+      "id": "autopath-path-4",
+      "name": "Path 4",
+      "endPoint": {
+        "x": 26.4473,
+        "y": 15.5231,
+        "name": "point4"
+      },
+      "controlPoints": [],
+      "heading": {
+        "type": "constant",
+        "degrees": -90
+      },
+      "color": "#edc948",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 0,
+      "waitBeforeName": "",
+      "waitAfterName": ""
+    },
+    {
+      "kind": "atomic",
+      "id": "autopath-path-5",
+      "name": "Path 5 - to 2nd shot",
+      "endPoint": {
+        "x": 59.3913,
+        "y": 129.6717,
+        "name": "point5"
+      },
+      "controlPoints": [
+        {
+          "x": 16.3139,
+          "y": 96.4996
+        }
+      ],
+      "heading": {
+        "type": "linear",
+        "startDeg": -90,
+        "endDeg": 90
+      },
+      "color": "#b07aa1",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 4000,
+      "waitBeforeName": "",
+      "waitAfterName": "Volley 2 (minimum stop)"
+    },
+    {
+      "kind": "atomic",
+      "id": "autopath-path-6",
+      "name": "Path 6 - under FLOWER",
+      "endPoint": {
+        "x": 46.5038,
+        "y": 110.9216,
+        "name": "point6"
+      },
+      "controlPoints": [],
+      "heading": {
+        "type": "constant",
+        "degrees": 90
+      },
+      "color": "#e15759",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 0,
+      "waitBeforeName": "",
+      "waitAfterName": ""
+    },
+    {
+      "kind": "atomic",
+      "id": "autopath-path-7",
+      "name": "Path 7 - FLOWER intake",
+      "endPoint": {
+        "x": 46.5109,
+        "y": 139.7571,
+        "name": "point7"
+      },
+      "controlPoints": [],
+      "heading": {
+        "type": "constant",
+        "degrees": 90
+      },
+      "color": "#76b7b2",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 2000,
+      "waitBeforeName": "",
+      "waitAfterName": "FLOWER intake"
+    },
+    {
+      "kind": "atomic",
+      "id": "autopath-path-8",
+      "name": "Path 8 - to 3rd shot",
+      "endPoint": {
+        "x": 60.4633,
+        "y": 132.0291,
+        "name": "point8"
+      },
+      "controlPoints": [
+        {
+          "x": 49.7351,
+          "y": 98.8256
+        }
+      ],
+      "heading": {
+        "type": "constant",
+        "degrees": 90
+      },
+      "color": "#ff9da7",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 3000,
+      "waitBeforeName": "",
+      "waitAfterName": "Final volley (~3 s, varies)"
+    }
+  ],
+  "shapes": [
+    {
+      "id": "biobuzz-red-hive",
+      "name": "Red HIVE",
+      "vertices": [
+        {
+          "x": 46,
+          "y": 50
+        },
+        {
+          "x": 48.6,
+          "y": 50
+        },
+        {
+          "x": 48.6,
+          "y": 91.4
+        },
+        {
+          "x": 46,
+          "y": 91.4
+        }
+      ],
+      "color": "#dc2626",
+      "fillColor": "#ff6b6b"
+    },
+    {
+      "id": "biobuzz-blue-hive",
+      "name": "Blue HIVE",
+      "vertices": [
+        {
+          "x": 96.5,
+          "y": 91.4
+        },
+        {
+          "x": 93.9,
+          "y": 91.4
+        },
+        {
+          "x": 93.9,
+          "y": 50
+        },
+        {
+          "x": 96.5,
+          "y": 50
+        }
+      ],
+      "color": "#2563eb",
+      "fillColor": "#60a5fa"
+    },
+    {
+      "id": "biobuzz-flower-top",
+      "name": "Scoring-Side FLOWER",
+      "vertices": [
+        {
+          "x": 43.4,
+          "y": 141.5
+        },
+        {
+          "x": 50.1,
+          "y": 141.5
+        },
+        {
+          "x": 50.1,
+          "y": 139.4
+        },
+        {
+          "x": 46.75,
+          "y": 137.7
+        },
+        {
+          "x": 43.4,
+          "y": 139.4
+        }
+      ],
+      "color": "#dc2626",
+      "fillColor": "#ff6b6b"
+    },
+    {
+      "id": "biobuzz-flower-right",
+      "name": "Blue Alliance FLOWER",
+      "vertices": [
+        {
+          "x": 141.5,
+          "y": 98.1
+        },
+        {
+          "x": 139.4,
+          "y": 98.1
+        },
+        {
+          "x": 137.7,
+          "y": 94.75
+        },
+        {
+          "x": 139.4,
+          "y": 91.4
+        },
+        {
+          "x": 141.5,
+          "y": 91.4
+        }
+      ],
+      "color": "#2563eb",
+      "fillColor": "#60a5fa"
+    },
+    {
+      "id": "biobuzz-flower-bottom",
+      "name": "Audience-Side FLOWER",
+      "vertices": [
+        {
+          "x": 91.15,
+          "y": 0
+        },
+        {
+          "x": 97.8,
+          "y": 0
+        },
+        {
+          "x": 97.8,
+          "y": 2.1
+        },
+        {
+          "x": 94.5,
+          "y": 3.8
+        },
+        {
+          "x": 91.15,
+          "y": 2.1
+        }
+      ],
+      "color": "#2563eb",
+      "fillColor": "#60a5fa"
+    },
+    {
+      "id": "biobuzz-flower-left",
+      "name": "Red Alliance FLOWER",
+      "vertices": [
+        {
+          "x": 0,
+          "y": 50.35
+        },
+        {
+          "x": 2.1,
+          "y": 50.35
+        },
+        {
+          "x": 3.8,
+          "y": 47
+        },
+        {
+          "x": 2.1,
+          "y": 43.65
+        },
+        {
+          "x": 0,
+          "y": 43.65
+        }
+      ],
+      "color": "#dc2626",
+      "fillColor": "#ff6b6b"
+    }
+  ],
+  "sequence": [
+    {
+      "kind": "path",
+      "lineId": "autopath-path-1"
+    },
+    {
+      "kind": "path",
+      "lineId": "autopath-path-2"
+    },
+    {
+      "kind": "path",
+      "lineId": "autopath-path-3"
+    },
+    {
+      "kind": "path",
+      "lineId": "autopath-path-4"
+    },
+    {
+      "kind": "path",
+      "lineId": "autopath-path-5"
+    },
+    {
+      "kind": "path",
+      "lineId": "autopath-path-6"
+    },
+    {
+      "kind": "path",
+      "lineId": "autopath-path-7"
+    },
+    {
+      "kind": "path",
+      "lineId": "autopath-path-8"
+    }
+  ],
+  "fieldPoints": [],
+  "robot": {},
+  "activePaths": []
+}

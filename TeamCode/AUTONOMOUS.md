@@ -20,9 +20,11 @@ speeds so it rehearses the real run.
 1. INIT at (54.6728, 8.1648), heading 270° (route of 2026-11-13; was (56, 8)). A selects BLUE and B selects RED for tag filtering.
    With the turret pointing straight backward (180 deg, BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG), BACK zeros it.
 2. Shoot the four preloads at START before driving. The flywheel and turret stay active, and
-   the **intake runs inward the entire time** from START to the end of the route (same
-   direction as the feed), including during volleys. While driving, the transmission stacks
-   balls against the closed gate. For each volley it stops during spin-up, briefly backs the
+   the **intake roller runs inward the entire time** from START to the end of the route (same
+   direction as the feed), including during volleys. The **transmission runs only while
+   collecting** (path 1 → wall shuffle → wall pause, and path 6 → FLOWER pickup), stacking balls
+   against the closed gate, and while feeding a volley; it is off between pickups (since
+   2026-11-13). For each volley it stops during spin-up, briefly backs the
    balls off the gate (0.10 s outward) as the gate opens, and never pushes balls into a moving
    gate. **Turret pre-aim (2026-11-12, fixed 2026-11-13):** whenever the chassis
    has been still for 0.25 s and a HIVE tag is in view (any time, not only during a volley, and
@@ -49,16 +51,19 @@ speeds so it rehearses the real run.
    shot phase, gate) to `/sdcard/FIRST/java/src/Datalogs/autopath_<millis>.csv` on the Control
    Hub. Telemetry shows the file name. Pull with
    `adb pull /sdcard/FIRST/java/src/Datalogs/` after a run.
-3. Collect on paths 1–2 and through the one-second stop at the wall after path 2. Path 2 drives
+3. Collect on paths 1–2 and through the 0.7 s stop at the wall after the shuffle. Path 2 drives
    all the way to (7.994, 0) and ends on Pedro's end-of-path signal; there is no early
-   stop. As a safety net, if balls block the robot first, it continues after 1 s without 0.25 in
+   stop. As a safety net, if balls block the robot first, it continues after 0.7 s without 0.25 in
    of progress, so the wall can never hang the route.
    **Wall shuffle (2026-11-13):** wherever path 2 stops, the robot then shifts 2 in left, 2.95 in
    right of the stop point, back to center, backs off 2.5 in and pushes 1 in past the stop point (heading held,
-   pickup speed, intake on), so all four wall balls get caught. It ends at Pedro's end of path,
-   after 0.5 s without 0.25 in of movement (pressed on the wall), or at 2.5 s, then the 1 s
+   1/0.7x pickup speed, intake on), so all four wall balls get caught. It ends at Pedro's end of path,
+   after 0.35 s without 0.25 in of movement (pressed on the wall), or at 1.75 s, then the 0.7 s
    intaking pause runs. Offsets: `AutoPath.SHUFFLE_LEFT_IN / SHUFFLE_RIGHT_IN / SHUFFLE_BACK_IN / SHUFFLE_PUSH_IN`.
    The visualizer file `routes/AutoPath_current.pp.json` draws it from point 2.
+   **Wall time cut 30% (2026-11-13):** the path-2 stall wait, shuffle stall/time cap, shuffle
+   speed and wall pause all scale with `AutoPath.WALL_TIME_SCALE = 0.7` (was 1 / 0.5 / 2.5 s,
+   pickup speed, 1 s).
 4. Follow paths 3–5 to the second shooting spot. At path 5's endpoint, deploy the flower
    lever and shoot, with a four-second minimum stop.
 5. Collect on paths 6–7 and for two seconds at FLOWER. The existing four-second

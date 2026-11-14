@@ -597,8 +597,8 @@ public final class MechanismIsolationRegression {
         mechanisms.keepShooterReady(true); mechanisms.keepIntakeRunning(true);
         mechanisms.update();
         double in=-Robot.INTAKE_POWER, tx=-Robot.TRANSMISSION_INDEX_POWER;
-        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==tx && !port.robot.gateOpen,
-                "With no command, the always-on intake collects inward against the closed gate");
+        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==0 && !port.robot.gateOpen,
+                "With no command, the always-on intake runs only the roller; the transmission stays off");
         map.motors.get("shooter").velocity=ticks(3235);
         com.pedropathing.ivy.Command volley=mechanisms.command(
                 BioBuzzAutoMechanisms.Action.shootFor(4,BioBuzzAutoConfig.SHOOT_BURST_SECONDS,BioBuzzAutoConfig.SHOOT_SPINUP_TIMEOUT_S),
@@ -622,12 +622,18 @@ public final class MechanismIsolationRegression {
         check(!port.robot.gateOpen && map.motors.get("intake").power==in && map.motors.get("transmission").power==0,
                 "The burst closes the gate; the intake stays on and the transmission waits for the gate to close");
         now[0]=burstEnd+GATE_WAIT_NS; tick.run();
-        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==tx,
-                "After the gate has closed, collecting resumes immediately");
+        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==0,
+                "After the volley the roller keeps running, but the transmission stays off until the next pickup");
         now[0]+=210_000_000L; mechanisms.update();
         check(volley.done(),"The volley still completes normally");
         volley.end(com.pedropathing.ivy.behaviors.EndCondition.NATURALLY);
         check(map.motors.get("intake").power==in,"Ending the volley command does not stop the always-on intake");
+        mechanisms.manualIntake(true); mechanisms.update();
+        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==tx,
+                "A pickup (COLLECT) runs the transmission too");
+        mechanisms.manualIntake(false); mechanisms.update();
+        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==0,
+                "Ending the pickup turns the transmission off again; the roller stays on");
         mechanisms.stop();
         check(map.motors.get("intake").power==0 && map.motors.get("transmission").power==0,"STOP still stops the intake");
     }

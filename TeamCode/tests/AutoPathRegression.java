@@ -109,7 +109,7 @@ public final class AutoPathRegression {
                 navigation.setPose(poses.of(8.1313, 8.41, -90.9351));
                 follower.atEnd = false;
                 tickRoute();
-                now[0] += 999_000_000L;
+                now[0] += AutoPath.WALL_STALL_NS - 1_000_000L;
                 tickRoute();
                 if (follower.idle()) throw new AssertionError("Keep pressing into the wall until the stall window ends");
                 now[0] += 1_000_000L;
@@ -119,11 +119,17 @@ public final class AutoPathRegression {
             }
             Pose stopped = navigation.state().pose();
             tickRoute();
-            // Wall shuffle: one short path from where the robot stopped, at pickup speed.
+            // Wall shuffle: one short path from where the robot stopped, 1/0.7x the pickup speed.
             if (follower.pathsStarted != 3 || follower.idle()
-                    || Constants.foresightConfig.maxPathSpeed.get()
-                    != org.firstinspires.ftc.teamcode.autonomous.BioBuzzAutoConfig.PICKUP_SPEED_FRACTION) {
-                throw new AssertionError("The wall shuffle must start at pickup speed right after path 2");
+                    || Constants.foresightConfig.maxPathSpeed.get() != AutoPath.SHUFFLE_SPEED_FRACTION
+                    || Constants.foresightConfig.maxVelocityConstraint.get() != AutoPath.SHUFFLE_MAX_VELOCITY_IN_S) {
+                throw new AssertionError("The wall shuffle must start at its (30% faster than pickup) speed right after path 2");
+            }
+            double pickup = org.firstinspires.ftc.teamcode.autonomous.BioBuzzAutoConfig.PICKUP_SPEED_FRACTION;
+            if (Math.abs(AutoPath.SHUFFLE_SPEED_FRACTION * 0.7 - pickup) > 1e-9 || AutoPath.SHUFFLE_SPEED_FRACTION >= AutoPath.SPEED_FRACTION
+                    || AutoPath.WALL_STALL_NS != 700_000_000L || AutoPath.WALL_PAUSE_NS != 700_000_000L
+                    || AutoPath.SHUFFLE_STALL_NS != 350_000_000L || AutoPath.SHUFFLE_MAX_NS != 1_750_000_000L) {
+                throw new AssertionError("Wall stall, shuffle and pause times are 70% of the old 1 / 0.5 / 2.5 / 1 s");
             }
             Path shuffle = follower.currentPath();
             assertPoint(shuffle.get(0), stopped.x(), stopped.y());
@@ -159,21 +165,29 @@ public final class AutoPathRegression {
             int stopsBeforePause = drive.stops;
             if (stalled) {
                 // Pressed against the wall: no movement, so the shuffle ends after its stall window.
-                now[0] += 499_000_000L;
+                now[0] += AutoPath.SHUFFLE_STALL_NS - 1_000_000L;
                 tickRoute();
                 if (follower.pathsStarted != 3 || follower.idle()) throw new AssertionError("Keep shuffling until the stall window ends");
                 now[0] += 1_000_000L;
             } else {
-                navigation.setPose(shuffle.endPose());
-                follower.atEnd = true;
+                // Still moving but not at the end: the time cap ends the shuffle.
+                long shuffleStart = now[0];
+                for (int i = 1; now[0] - shuffleStart < AutoPath.SHUFFLE_MAX_NS - 50_000_000L; i++) {
+                    navigation.setPose(shuffle.get(Math.min(1, i * 0.025))); // ~0.37 in per 50 ms: still moving at the cap
+                    now[0] += 50_000_000L;
+                    tickRoute();
+                    if (follower.idle()) throw new AssertionError("The moving shuffle ended before its time cap");
+                }
+                navigation.setPose(shuffle.get(0.95));
+                now[0] = shuffleStart + AutoPath.SHUFFLE_MAX_NS;
             }
             tickRoute();
             if (!follower.idle() || drive.stops <= stopsBeforePause) {
                 throw new AssertionError("Wall pause must stop the drivetrain");
             }
-            now[0] += 999_000_000L;
+            now[0] += AutoPath.WALL_PAUSE_NS - 1_000_000L;
             tickRoute();
-            if (follower.pathsStarted != 3) throw new AssertionError("Path 3 must wait one full second");
+            if (follower.pathsStarted != 3) throw new AssertionError("Path 3 must wait the full wall pause");
             now[0] += 1_000_000L;
             tickRoute();
 

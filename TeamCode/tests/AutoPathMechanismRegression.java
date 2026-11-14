@@ -116,13 +116,15 @@ public final class AutoPathMechanismRegression {
             arrive(); drain();
             check(follower.pathsStarted==3 && !follower.idle() && hardware.output==BioBuzzAutoMechanisms.Kind.COLLECT,
                     "At the wall, the side-to-side / back-and-forth shuffle runs with the intake on");
-            checkSpeed(BioBuzzAutoConfig.PICKUP_SPEED_FRACTION,"The wall shuffle runs at pickup speed");
+            check(Constants.foresightConfig.maxPathSpeed.get()==AutoPath.SHUFFLE_SPEED_FRACTION
+                    && Constants.foresightConfig.maxVelocityConstraint.get()==AutoPath.SHUFFLE_MAX_VELOCITY_IN_S,
+                    "The wall shuffle runs 1/0.7x the pickup speed (30% less time at the wall)");
             arrive(); drain();
             check(follower.idle() && hardware.output==BioBuzzAutoMechanisms.Kind.COLLECT,
                     "Shuffle end stops the drive and keeps intaking during the pause");
-            advance(.999);
+            advance(AutoPath.WALL_PAUSE_NS/1e9-.001);
             check(follower.pathsStarted==3 && hardware.output==BioBuzzAutoMechanisms.Kind.COLLECT,
-                    "Keep the one-second wall pause with intake");
+                    "Keep the (0.7 s) wall pause with intake");
             advance(.001); drain();
             for (int path=3; path<=5; path++) {
                 check(follower.pathsStarted==path+1 && hardware.intakeOn(),
@@ -227,7 +229,7 @@ public final class AutoPathMechanismRegression {
             // Balls jam the intake 12 in short of POINT_2.
             f.nav.setPose(PoseFactory.degrees().of(8.1905,12.0319,-90.9351)); f.tick();
             int stops=f.drive.stops;
-            f.advance(.999);
+            f.advance(AutoPath.WALL_STALL_NS/1e9-.001);
             check(f.follower.pathsStarted==2 && !f.follower.idle(),"Keep pushing while the wall stall window runs");
             f.advance(.001); f.drain();
             check(f.follower.pathsStarted==3 && f.drive.stops>stops && f.hardware.output==BioBuzzAutoMechanisms.Kind.COLLECT,
@@ -235,7 +237,7 @@ public final class AutoPathMechanismRegression {
             check(f.follower.currentPath().get(0).distance(PoseFactory.degrees().of(8.1905,12.0319,-90.9351))<1e-8,
                     "The shuffle starts from where the robot actually stopped");
             stops=f.drive.stops;
-            f.advance(.499);
+            f.advance(AutoPath.SHUFFLE_STALL_NS/1e9-.001);
             check(f.follower.pathsStarted==3 && !f.follower.idle(),"Keep shuffling until it stops moving for the stall window");
             f.advance(.001); f.drain();
             check(f.follower.idle() && f.drive.stops>stops && f.hardware.output==BioBuzzAutoMechanisms.Kind.COLLECT,

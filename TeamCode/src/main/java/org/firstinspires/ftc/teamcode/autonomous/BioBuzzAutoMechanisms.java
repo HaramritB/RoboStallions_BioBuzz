@@ -164,8 +164,8 @@ public final class BioBuzzAutoMechanisms {
     }
 
     /**
-     * AutoPath: keep the intake running inward from START to the end of the route, including
-     * between pickups and during volleys. Collecting and feeding use the same direction.
+     * AutoPath: keep the intake ROLLER running inward from START to the end of the route. The
+     * transmission runs only while collecting (and while feeding a volley), not between pickups.
      */
     public void keepIntakeRunning(boolean running) {
         if (closed) return;
@@ -620,8 +620,11 @@ public final class BioBuzzAutoMechanisms {
             } else {
                 resetShot();
                 // Collect in the same direction as the shot, gate closed: balls stack against the gate.
-                boolean collecting=request==Kind.COLLECT || (intakeAlways && request==Kind.NONE);
-                driveFeeder(now,false,collecting ? INWARD_INTAKE_POWER : 0,
+                // The always-on intake keeps only the roller running between pickups; the
+                // transmission runs only while actually collecting (user request 2026-11-13).
+                boolean collecting=request==Kind.COLLECT;
+                boolean roller=collecting || (intakeAlways && request==Kind.NONE);
+                driveFeeder(now,false,roller ? INWARD_INTAKE_POWER : 0,
                         collecting ? INWARD_TRANSMISSION_POWER : 0);
             }
             robot.updateLed();

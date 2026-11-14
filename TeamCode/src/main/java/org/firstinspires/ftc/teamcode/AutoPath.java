@@ -31,8 +31,11 @@ public class AutoPath extends LinearOpMode {
     static final double SPEED_FRACTION = 0.85;
     // Path 2 drives all the way to point 2 (Pedro's end of path); there is no early-arrival radius.
     // Safety only: if balls or the wall stop the robot first, continue after this long without progress.
-    private static final long WALL_STALL_NS = 1_000_000_000L;
-    private static final long WALL_PAUSE_NS = 1_000_000_000L;
+    // Time at the wall balls (stall wait, shuffle, intake pause) cut 30% on 2026-11-13: all scaled
+    // by WALL_TIME_SCALE, and the shuffle drives 1/WALL_TIME_SCALE faster than the pickup speed.
+    static final double WALL_TIME_SCALE = 0.7;
+    static final long WALL_STALL_NS = Math.round(1_000_000_000L * WALL_TIME_SCALE); // was 1 s
+    static final long WALL_PAUSE_NS = Math.round(1_000_000_000L * WALL_TIME_SCALE); // was 1 s
     // Wall shuffle (2026-11-13): once path 2 stops at the wall balls, shift slightly left, right,
     // back and then push 1 in past the stop point, so the intake catches all four balls. Offsets
     // are robot-relative from where the robot actually stopped; the wall is allowed to stop it.
@@ -43,8 +46,10 @@ public class AutoPath extends LinearOpMode {
     static final double SHUFFLE_PUSH_IN = 1.0;
     // Ends at Pedro's end of path, after this long without 0.25 in of movement (pressed against
     // the wall or balls), or at the time cap, whichever comes first.
-    private static final long SHUFFLE_STALL_NS = 500_000_000L;
-    private static final long SHUFFLE_MAX_NS = 2_500_000_000L;
+    static final long SHUFFLE_STALL_NS = Math.round(500_000_000L * WALL_TIME_SCALE); // was 0.5 s
+    static final long SHUFFLE_MAX_NS = Math.round(2_500_000_000L * WALL_TIME_SCALE); // was 2.5 s
+    static final double SHUFFLE_SPEED_FRACTION = BioBuzzAutoConfig.PICKUP_SPEED_FRACTION / WALL_TIME_SCALE;
+    static final double SHUFFLE_MAX_VELOCITY_IN_S = BioBuzzAutoConfig.PICKUP_MAX_VELOCITY_IN_S / WALL_TIME_SCALE;
     private static final long SECOND_SHOT_PAUSE_NS = 4_000_000_000L;
     private static final double FLOWER_ARRIVAL_IN = 1.0;
     private static final double APPROACH_PROGRESS_IN = 0.25;
@@ -111,7 +116,8 @@ public class AutoPath extends LinearOpMode {
                 // Like TeleOp: flywheel at calibrated RPM and turret tracking for the whole run,
                 // so every volley starts warm and aimed instead of from zero after stopping.
                 mechanisms.keepShooterReady(true);
-                // Intake runs inward from START to the end of the route (same direction as the feed).
+                // Intake roller runs inward from START to the end of the route; the transmission runs only
+                // while collecting (wall, FLOWER) and feeding volleys.
                 mechanisms.keepIntakeRunning(true);
             }
             mechanisms.observe();
@@ -323,7 +329,9 @@ public class AutoPath extends LinearOpMode {
         Pose[] anchor = {null};
         return Command.build().setStart(() -> {
             Pose from = follower.pose();
-            follower.follow(atPickupSpeed(wallShufflePath(from)));
+            follower.follow(wallShufflePath(from).with(
+                    Constants.foresightConfig.maxPathSpeed.at(SHUFFLE_SPEED_FRACTION),
+                    Constants.foresightConfig.maxVelocityConstraint.at(SHUFFLE_MAX_VELOCITY_IN_S)));
             started[0] = lastMove[0] = clock.getAsLong();
             anchor[0] = from;
         }).setDone(() -> {

@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "timestamp": "2026-11-14T03:10:03.844531Z",
+  "timestamp": "2026-11-14T03:40:11.131427Z",
   "startPoint": {
     "x": 54.6728,
     "y": 8.1648,
@@ -158,7 +158,7 @@
       "color": "#76b7b2",
       "locked": false,
       "waitBeforeMs": 0,
-      "waitAfterMs": 1000,
+      "waitAfterMs": 700,
       "waitBeforeName": "",
       "waitAfterName": "Wall pickup pause (intake on)"
     },

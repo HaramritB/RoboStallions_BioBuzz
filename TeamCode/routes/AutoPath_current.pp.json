@@ -1,9 +1,9 @@
 {
   "version": "2.0.0",
-  "timestamp": "2026-11-14T02:43:23.168635Z",
+  "timestamp": "2026-11-14T03:10:03.844531Z",
   "startPoint": {
-    "x": 56,
-    "y": 8,
+    "x": 54.6728,
+    "y": 8.1648,
     "headingDeg": 270,
     "name": "start",
     "locked": false
@@ -83,8 +83,8 @@
       "id": "autopath-seg-4",
       "name": "Wall shuffle 2 - right",
       "endPoint": {
-        "x": 5.3833,
-        "y": 0.0952,
+        "x": 4.4377,
+        "y": 0.0986,
         "name": "shuffle_right"
       },
       "controlPoints": [],

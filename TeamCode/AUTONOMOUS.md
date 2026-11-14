@@ -17,7 +17,7 @@ speed except the two that drive into balls: **path 2** (into the four wall balls
 **path 7** (FLOWER intake), which use 35% / 18 in/s. AutoPath (Drive Only) uses the same
 speeds so it rehearses the real run.
 
-1. INIT at (56, 8), heading 270°. A selects BLUE and B selects RED for tag filtering.
+1. INIT at (54.6728, 8.1648), heading 270° (route of 2026-11-13; was (56, 8)). A selects BLUE and B selects RED for tag filtering.
    With the turret pointing straight backward (180 deg, BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG), BACK zeros it.
 2. Shoot the four preloads at START before driving. The flywheel and turret stay active, and
    the **intake runs inward the entire time** from START to the end of the route (same
@@ -53,11 +53,11 @@ speeds so it rehearses the real run.
    all the way to (7.994, 0) and ends on Pedro's end-of-path signal; there is no early
    stop. As a safety net, if balls block the robot first, it continues after 1 s without 0.25 in
    of progress, so the wall can never hang the route.
-   **Wall shuffle (2026-11-13):** wherever path 2 stops, the robot then shifts 2 in left, 2 in
-   right, back to center, backs off 2.5 in and pushes 1 in past the stop point (heading held,
+   **Wall shuffle (2026-11-13):** wherever path 2 stops, the robot then shifts 2 in left, 2.95 in
+   right of the stop point, back to center, backs off 2.5 in and pushes 1 in past the stop point (heading held,
    pickup speed, intake on), so all four wall balls get caught. It ends at Pedro's end of path,
    after 0.5 s without 0.25 in of movement (pressed on the wall), or at 2.5 s, then the 1 s
-   intaking pause runs. Offsets: `AutoPath.SHUFFLE_SIDE_IN / SHUFFLE_BACK_IN / SHUFFLE_PUSH_IN`.
+   intaking pause runs. Offsets: `AutoPath.SHUFFLE_LEFT_IN / SHUFFLE_RIGHT_IN / SHUFFLE_BACK_IN / SHUFFLE_PUSH_IN`.
    The visualizer file `routes/AutoPath_current.pp.json` draws it from point 2.
 4. Follow paths 3–5 to the second shooting spot. At path 5's endpoint, deploy the flower
    lever and shoot, with a four-second minimum stop.
@@ -121,7 +121,7 @@ the stationary burst. No fixed 4000 RPM/color-based shooting target replaces the
 AutoPath commands the `flower` servo OFF as soon as INIT is pressed (and again at START). It stays
 OFF through the end of path 5, deploys at the second shooting spot,
 and stays ON through volley 2, paths 6–8 and the final volley. Only the end of the OpMode,
-STOP or a failure retracts it. FlowerLever shares TeleOp's ON=0.62/OFF=0.25 positions and
+STOP or a failure retracts it. FlowerLever shares TeleOp's ON=0.62/OFF=0.26 positions and
 PWM-enable/restore behavior. AutoPath (Drive Only) never maps or commands it.
 
 Scoring needs intake, transmission, turret, shooter, torqueservo1, **flower**, a working Limelight and

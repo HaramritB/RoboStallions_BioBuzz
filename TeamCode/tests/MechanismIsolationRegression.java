@@ -526,7 +526,7 @@ public final class MechanismIsolationRegression {
         double d=a-b; d-=360*Math.floor((d+180)/360); return Math.abs(d)<1e-6;
     }
 
-    /** AutoPath's real geometry: START (56,8) facing 270, spot 2 (59.8,126.9) facing 90, blue HIVE ~(95,71). */
+    /** AutoPath's real geometry: START (54.67,8.16) facing 270, spot 2 (59.8,126.9) facing 90, blue HIVE ~(95,71). */
     static void secondVolleyGeometry() {
         long[] now={1_000_000_000L};
         double[] turretEncoder={0};
@@ -537,15 +537,15 @@ public final class MechanismIsolationRegression {
         robot.initMechanismsOnly(new MapFixture(),false);
         robot.targetFresh=true; robot.targetVisible=true; robot.targetTx=0; robot.ballPresent=true; robot.ballDistanceCm=2;
         BioBuzzAutoMechanisms.RobotHardware port=new BioBuzzAutoMechanisms.RobotHardware(robot,()->now[0]);
-        double[] pose={56,8,-270}; // Pedro heading 270 -> clockwise -270
+        double[] pose={54.6728,8.1648,-270}; // Pedro heading 270 -> clockwise -270
         port.headingCw=()->pose[2]; port.turnRateCw=()->0; port.xIn=()->pose[0]; port.yIn=()->pose[1];
         double hx=95.2, hy=70.7;
-        double physical=Robot.turretDegreesToward(56,8,-270,hx,hy); // HIVE ~148 deg left, behind the robot
+        double physical=Robot.turretDegreesToward(54.6728,8.1648,-270,hx,hy); // HIVE ~148 deg left, behind the robot
         double encoder=physical-BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG;
         encoder-=360*Math.floor((encoder+180)/360);
         check(Math.abs(encoder-32)<1,"Zeroed backward, the turret locks at START near encoder +32 (got " + encoder + ")");
         turretEncoder[0]=encoder;
-        robot.targetDistanceMeters=Math.hypot(hx-56,hy-8)*0.0254;
+        robot.targetDistanceMeters=Math.hypot(hx-54.6728,hy-8.1648)*0.0254;
         for (int i=0;i<30;i++) { now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE); }
         check(port.hiveFixes>0 && Math.abs(port.hiveX-hx)<1e-6 && Math.abs(port.hiveY-hy)<1e-6,
                 "The START lock puts the HIVE at its real field position (was mirrored behind START)");

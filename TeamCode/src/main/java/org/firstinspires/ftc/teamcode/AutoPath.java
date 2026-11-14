@@ -36,7 +36,9 @@ public class AutoPath extends LinearOpMode {
     // Wall shuffle (2026-11-13): once path 2 stops at the wall balls, shift slightly left, right,
     // back and then push 1 in past the stop point, so the intake catches all four balls. Offsets
     // are robot-relative from where the robot actually stopped; the wall is allowed to stop it.
-    static final double SHUFFLE_SIDE_IN = 2.0;
+    // Visualizer route of 2026-11-13: left 2.0 in (x 9.3833), right 2.9456 in (x 4.4377) of point 2.
+    static final double SHUFFLE_LEFT_IN = 2.0;
+    static final double SHUFFLE_RIGHT_IN = 2.9456;
     static final double SHUFFLE_BACK_IN = 2.5;
     static final double SHUFFLE_PUSH_IN = 1.0;
     // Ends at Pedro's end of path, after this long without 0.25 in of movement (pressed against
@@ -48,7 +50,7 @@ public class AutoPath extends LinearOpMode {
     private static final double APPROACH_PROGRESS_IN = 0.25;
     private static final long FLOWER_STALL_NS = 4_000_000_000L;
     private static final PoseFactory POSES = PoseFactory.degrees();
-    private static final Pose START = POSES.of(56, 8, 270);
+    private static final Pose START = POSES.of(54.6728, 8.1648, 270);
     private static final Pose POINT_1 = POSES.of(7.4387, 15.6441, 270);
     private static final Pose POINT_2 = POSES.of(7.3833, 0.0881, -90.2042);
     private static final Pose POINT_3 = POSES.of(7.2845, 15.5174, -89.6334);
@@ -343,8 +345,8 @@ public class AutoPath extends LinearOpMode {
         double h = from.heading();
         double fx = Math.cos(h), fy = Math.sin(h); // forward: into the wall
         double lx = -fy, ly = fx;                  // robot left
-        Pose left = shifted(from, lx * SHUFFLE_SIDE_IN, ly * SHUFFLE_SIDE_IN);
-        Pose right = shifted(from, -lx * SHUFFLE_SIDE_IN, -ly * SHUFFLE_SIDE_IN);
+        Pose left = shifted(from, lx * SHUFFLE_LEFT_IN, ly * SHUFFLE_LEFT_IN);
+        Pose right = shifted(from, -lx * SHUFFLE_RIGHT_IN, -ly * SHUFFLE_RIGHT_IN);
         Pose back = shifted(from, -fx * SHUFFLE_BACK_IN, -fy * SHUFFLE_BACK_IN);
         Pose push = shifted(from, fx * SHUFFLE_PUSH_IN, fy * SHUFFLE_PUSH_IN);
         return path(line(from, left).constant(from), line(left, right).constant(from),

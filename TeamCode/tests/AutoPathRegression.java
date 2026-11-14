@@ -27,7 +27,7 @@ public final class AutoPathRegression {
         assertRegistered(BioBuzzAuto.class, "BioBuzz Auto"); // Replaced by the teammate's Pedro route.
         Path[] paths = {AutoPath.path1(), AutoPath.path2(), AutoPath.path3(), AutoPath.path4(),
                 AutoPath.path5(), AutoPath.path6(), AutoPath.path7(), AutoPath.path8()};
-        double[][] xy = {{56, 8}, {7.4387, 15.6441}, {7.3833, 0.0881}, {7.2845, 15.5174},
+        double[][] xy = {{54.6728, 8.1648}, {7.4387, 15.6441}, {7.3833, 0.0881}, {7.2845, 15.5174},
                 {26.4473, 15.5231}, {59.7632, 126.893}, {46.5038, 110.9216},
                 {46.5109, 139.7571}, {59.8106, 127.0128}};
         for (int i = 0; i < paths.length; i++) {
@@ -41,7 +41,7 @@ public final class AutoPathRegression {
         assertHeading(paths[4].heading(0), -Math.PI / 2);
         assertHeading(paths[4].heading(1), Math.PI / 2);
         for (int i = 5; i < paths.length; i++) assertHeading(paths[i].heading(.5), Math.PI / 2);
-        assertPoint(paths[0].get(.5), (56 + 2 * 37.8335 + 7.4387) / 4, (8 + 2 * 44.6525 + 15.6441) / 4);
+        assertPoint(paths[0].get(.5), (54.6728 + 2 * 37.8335 + 7.4387) / 4, (8.1648 + 2 * 44.6525 + 15.6441) / 4);
         assertPoint(paths[4].get(.5), (26.4473 + 2 * 16.3139 + 59.7632) / 4,
                 (15.5231 + 2 * 96.4996 + 126.893) / 4);
         assertPoint(paths[7].get(.5), (46.5109 + 2 * 49.7351 + 59.8106) / 4,
@@ -131,16 +131,30 @@ public final class AutoPathRegression {
             assertPoint(shuffle.endPose(), stopped.x() + AutoPath.SHUFFLE_PUSH_IN * Math.cos(h),
                     stopped.y() + AutoPath.SHUFFLE_PUSH_IN * Math.sin(h));
             assertHeading(shuffle.heading(.5), h);
-            double maxSide = 0, maxBack = 0;
-            for (int i = 0; i <= 200; i++) {
-                Pose q = shuffle.get(i / 200.0);
+            double maxLeft = 0, maxRight = 0, maxBack = 0;
+            for (int i = 0; i <= 400; i++) {
+                Pose q = shuffle.get(i / 400.0);
                 double dx = q.x() - stopped.x(), dy = q.y() - stopped.y();
-                maxSide = Math.max(maxSide, Math.abs(-Math.sin(h) * dx + Math.cos(h) * dy));
+                double left = -Math.sin(h) * dx + Math.cos(h) * dy;
+                maxLeft = Math.max(maxLeft, left);
+                maxRight = Math.max(maxRight, -left);
                 maxBack = Math.max(maxBack, -(Math.cos(h) * dx + Math.sin(h) * dy));
             }
-            if (Math.abs(maxSide - AutoPath.SHUFFLE_SIDE_IN) > 0.05 || Math.abs(maxBack - AutoPath.SHUFFLE_BACK_IN) > 0.05
-                    || maxSide > 3 || maxBack > 3) {
-                throw new AssertionError("The shuffle moves only slightly side to side and back: " + maxSide + " / " + maxBack);
+            if (Math.abs(maxLeft - AutoPath.SHUFFLE_LEFT_IN) > 0.05 || Math.abs(maxRight - AutoPath.SHUFFLE_RIGHT_IN) > 0.05
+                    || Math.abs(maxBack - AutoPath.SHUFFLE_BACK_IN) > 0.05 || maxLeft > 3 || maxRight > 3 || maxBack > 3) {
+                throw new AssertionError("The shuffle moves only slightly side to side and back: "
+                        + maxLeft + " / " + maxRight + " / " + maxBack);
+            }
+            // From point 2 it reproduces the visualizer's shuffle points.
+            Path drawn = AutoPath.wallShufflePath(PoseFactory.degrees().of(7.3833, 0.0881, -90.2042));
+            double[][] drawnXy = {{9.3833, 0.081}, {4.4377, 0.0829}, {7.3833, 0.0881}, {7.3922, 2.5881}, {7.3797, -0.9119}};
+            for (double[] xy : drawnXy) {
+                double best = Double.POSITIVE_INFINITY;
+                for (int i = 0; i <= 2000; i++) {
+                    Pose q = drawn.get(i / 2000.0);
+                    best = Math.min(best, Math.hypot(q.x() - xy[0], q.y() - xy[1]));
+                }
+                if (best > 0.02) throw new AssertionError("Shuffle misses visualizer point " + xy[0] + ", " + xy[1]);
             }
             int stopsBeforePause = drive.stops;
             if (stalled) {

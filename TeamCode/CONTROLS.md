@@ -22,14 +22,14 @@ turret, and gate controls. The old generic BioBuzz TeleOp entry is removed.
 BioBuzz Auto still uses X/B during INIT to choose its alliance. After Auto, select
 its matching Blue or Red TeleOp; Auto no longer preselects the removed generic entry.
 
-The redesigned gate's measured code defaults are **OPEN=0.41** and **CLOSED=0.59**.
+The redesigned gate's measured code defaults are **OPEN=0.39** and **CLOSED=0.59**.
 Both competition TeleOps, Auto, Robot Test, and Flywheel Tuning share these values. A complete
 saved calibration overrides the code defaults. With no saved pair, fresh installs
 use the measured defaults; loading them sends no position command during INIT.
 The configured gate servo remains named `torqueservo1`.
 
 In both competition TeleOps, **gamepad 2 right bumper** toggles the flower lever
-**ON=0.75 / OFF=0.415** (`FlowerLever`) using the Servo named **`flower`**. It moves to OFF as
+**ON=0.505 / OFF=0.155** (`FlowerLever`) using the Servo named **`flower`**. It moves to OFF as
 soon as INIT is pressed (and again at START), holds its position with PWM enabled while
 TeleOp runs, and displays its commanded state. These measured
 values are fixed TeleOp constants; calibration preferences do not override them.
@@ -153,7 +153,7 @@ the target position, not servo torque or supply power.
 
 Flower calibration values use separate preferences (`biobuzz_flower_calibration_v1`,
 keys `on` and `off`) and do not change gate calibration. Competition TeleOp uses
-the configured **ON=0.75 / OFF=0.415** `FlowerLever` constants; saving a new calibration pair does
+the configured **ON=0.505 / OFF=0.155** `FlowerLever` constants; saving a new calibration pair does
 not automatically change those competition endpoints.
 
 ## Pollen indicator setup

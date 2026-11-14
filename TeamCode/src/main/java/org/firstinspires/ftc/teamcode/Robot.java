@@ -32,7 +32,7 @@ import java.util.function.DoubleSupplier;
 public class Robot {
 
     public static final String CODE_VERSION =
-            "BIOBUZZ-FLOWER-ON0.75-OFF0.415-2026-11-13";
+            "BIOBUZZ-FLOWER-ON0.505-OFF0.155-2026-11-13";
 
     public enum Alliance { RED, BLUE }
     public enum BallColor { NONE, YELLOW, RED, BLUE }
@@ -171,7 +171,7 @@ public class Robot {
     // =========================================
 
     // Measured on the redesigned gate. Saved recalibration may override this pair.
-    public static final double GATE_OPEN = 0.41;
+    public static final double GATE_OPEN = 0.39;
     public static final double GATE_CLOSED = 0.59;
     public static final String GATE_PREFERENCES = "biobuzz_gate_model_v2";
     public static final double GATE_JOG_STEP = 0.002;
@@ -462,7 +462,10 @@ public class Robot {
         gate = hw.get(Servo.class, "torqueservo1");
         gateController = new GateController(gate,
                 gatePreferences(hw));
-        if (!gateController.calibrated()) gateController.release();
+        gateOpen = false;
+        // INIT always shuts the gate so no ball can reach the flywheel before a shot is requested.
+        if (gateController.calibrated()) gateController.commandSaved(false);
+        else gateController.release();
         led = hw.tryGet(Servo.class, "led");
         if (led != null) {
             led.setDirection(Servo.Direction.FORWARD);

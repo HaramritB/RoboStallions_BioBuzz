@@ -53,6 +53,11 @@ public final class MechanismIsolationRegression {
             if (method.getName().equals("setPosition")) { servoWrites++; gatePositions.add((double)args[0]); return null; }
             throw new AssertionError("Unexpected servo call " + method.getName());
         });
+        /** Robot init closes the gate once; check it, then forget it so later counts see only what follows. */
+        void expectInitClosed() {
+            check(gatePositions.equals(java.util.Collections.singletonList(Robot.GATE_CLOSED)),"INIT commands the gate CLOSED");
+            gatePositions.clear(); servoWrites=0;
+        }
         MapFixture() {
             super(null,null);
             for (String name:new String[]{"intake","transmission","turret","shooter","frontleft","frontright","backleft","backright"}) motors.put(name,new Motor());
@@ -89,7 +94,7 @@ public final class MechanismIsolationRegression {
         for (String name:new String[]{"frontleft","frontright","backleft","backright"}) {
             check(!only.lookups.contains(name) && only.motors.get(name).trace.isEmpty(),"Mechanism init cannot touch " + name);
         }
-        check(only.servoWrites==0,"INIT cannot move the gate");
+        only.expectInitClosed();
         check(!only.motors.get("turret").trace.toString().contains("STOP_AND_RESET"),"Mechanism-only init preserves turret zero");
         MapFixture whole=new MapFixture(); Robot robot=new TestRobot(); robot.init(whole,false);
         for (String name:new String[]{"intake","transmission","turret","shooter"}) {
@@ -109,10 +114,10 @@ public final class MechanismIsolationRegression {
                 check(only.motors.get(name).power==0,"Cleanup failure cannot skip stopping " + name);
             }
         }
-        check(only.servoWrites==0,"Unused mechanisms must not create an INIT/cleanup gate command");
+        check(only.servoWrites==0,"Unused mechanisms add no cleanup gate command after the INIT close");
         MapFixture intakeMap=new MapFixture();
         BioBuzzAutoMechanisms.RobotHardware intakePort=new BioBuzzAutoMechanisms.RobotHardware(new TestRobot());
-        intakePort.robot.initMechanismsOnly(intakeMap,false);
+        intakePort.robot.initMechanismsOnly(intakeMap,false); intakeMap.expectInitClosed();
         intakePort.control(BioBuzzAutoMechanisms.Kind.COLLECT);
         check(intakeMap.motors.get("intake").power==-Robot.INTAKE_POWER
                         && intakeMap.motors.get("transmission").power==-Robot.TRANSMISSION_INDEX_POWER,
@@ -166,6 +171,7 @@ public final class MechanismIsolationRegression {
     static BioBuzzAutoMechanisms.RobotHardware shootingPort(MapFixture map, java.util.function.LongSupplier clock) {
         Robot robot=new TestRobot() { @Override public void updateSensors() { } };
         robot.initMechanismsOnly(map,false);
+        map.expectInitClosed();
         robot.targetFresh=true; robot.targetVisible=true; robot.targetTx=0;
         robot.targetDistanceMeters=1.62; robot.ballPresent=true; robot.ballDistanceCm=2;
         return new BioBuzzAutoMechanisms.RobotHardware(robot,clock);
@@ -188,7 +194,7 @@ public final class MechanismIsolationRegression {
 
     static void continuousVolley() {
         MapFixture manualMap=new MapFixture();
-        Robot manual=new TestRobot(); manual.initMechanismsOnly(manualMap,false);
+        Robot manual=new TestRobot(); manual.initMechanismsOnly(manualMap,false); manualMap.expectInitClosed();
         manual.updateManualFeeder(false,-Robot.INTAKE_POWER); // Working TeleOp gamepad 1 RT.
         double intakeReference=manualMap.motors.get("intake").power;
         double transmissionReference=manualMap.motors.get("transmission").power;
@@ -203,15 +209,15 @@ public final class MechanismIsolationRegression {
         Runnable tick=()->{ mechanisms.update(); volley.done(); };
         volley.start();
         for(int i=0;i<3;i++) tick.run();
-        check(map.gatePositions.size()==1 && map.gatePositions.get(0)==Robot.GATE_CLOSED,
-                "One calibrated CLOSED command before shooting; no cycling while spinning up");
+        check(map.gatePositions.isEmpty(),
+                "Gate stays CLOSED from INIT before shooting; no cycling while spinning up");
         check(!port.robot.gateOpen && map.motors.get("intake").power==0 && map.motors.get("transmission").power==0,
                 "Gate closed and both feed motors stopped below target RPM");
         map.motors.get("shooter").velocity=ticks(3235);
         tick.run();
         check(!port.robot.gateOpen,"A single in-band sample must not open the gate");
         long opened=openGate(port,now,tick);
-        check(map.gatePositions.size()==2 && map.gatePositions.get(1)==Robot.GATE_OPEN,
+        check(map.gatePositions.size()==1 && map.gatePositions.get(0)==Robot.GATE_OPEN,
                 "One calibrated OPEN command starts the entire volley");
         check(map.motors.get("intake").power==0 && map.motors.get("transmission").power==0 && !port.shootingBurstActive(),
                 "The gate opens FIRST; intake and transmission stay stopped while it travels");
@@ -224,7 +230,7 @@ public final class MechanismIsolationRegression {
                 "After the gate has opened, both motors start together in RT direction");
         map.motors.get("shooter").velocity=ticks(2400);
         now[0]+=500_000_000L; tick.run();
-        check(port.robot.gateOpen && port.robot.shotsFired==0 && map.gatePositions.size()==2,
+        check(port.robot.gateOpen && port.robot.shotsFired==0 && map.gatePositions.size()==1,
                 "RPM dips and the old pulse duration cannot close the gate or fabricate a shot");
         check(map.motors.get("intake").power==intakeReference && map.motors.get("transmission").power==transmissionReference,
                 "Both feed motors stay running through RPM dips");
@@ -235,7 +241,7 @@ public final class MechanismIsolationRegression {
             if(ball<4) {
                 tick.run();
                 check(port.robot.shotsFired==ball,"Repeated empty readings cannot count another ball");
-                check(port.robot.gateOpen && map.gatePositions.size()==2,
+                check(port.robot.gateOpen && map.gatePositions.size()==1,
                         "Keep the gate open between balls without extra servo commands");
                 check(map.motors.get("intake").power==intakeReference && map.motors.get("transmission").power==transmissionReference,
                         "Keep both motors continuously in RT direction between balls");
@@ -246,7 +252,7 @@ public final class MechanismIsolationRegression {
         now[0]+=210_000_000L; mechanisms.update();
         check(volley.done(),"Four exits complete the burst after result settling");
         volley.end(com.pedropathing.ivy.behaviors.EndCondition.NATURALLY); mechanisms.stop();
-        check(map.gatePositions.equals(java.util.Arrays.asList(Robot.GATE_CLOSED,Robot.GATE_OPEN,Robot.GATE_CLOSED)),
+        check(map.gatePositions.equals(java.util.Arrays.asList(Robot.GATE_OPEN,Robot.GATE_CLOSED)),
                 "A complete four-ball volley commands CLOSED, OPEN, CLOSED exactly once each");
     }
 
@@ -371,7 +377,7 @@ public final class MechanismIsolationRegression {
         now[0]+=210_000_000L; mechanisms.update();
         check(volley.done(),"A completed timed burst does not throw the old overall mechanism timeout");
         volley.end(com.pedropathing.ivy.behaviors.EndCondition.NATURALLY); mechanisms.stop();
-        check(map.gatePositions.equals(java.util.Arrays.asList(Robot.GATE_CLOSED,Robot.GATE_OPEN,Robot.GATE_CLOSED)),
+        check(map.gatePositions.equals(java.util.Arrays.asList(Robot.GATE_OPEN,Robot.GATE_CLOSED)),
                 "Uncounted timed volley still commands the gate closed/open/closed once each");
     }
 
@@ -439,7 +445,7 @@ public final class MechanismIsolationRegression {
         check(port.robot.gateOpen && map.motors.get("intake").power==-Robot.INTAKE_POWER
                         && map.motors.get("transmission").power==-Robot.TRANSMISSION_INDEX_POWER,
                 "Losing the tag mid-burst keeps feeding the short volley instead of aborting the autonomous");
-        check(port.robot.targetRpm==3235 && map.gatePositions.size()==2,
+        check(port.robot.targetRpm==3235 && map.gatePositions.size()==1,
                 "Hold the latched calibrated RPM without cycling the gate");
         check(port.diagnostics().contains("aim lost 50 feed loops"),"Report aim loss during the burst");
         port.close();
@@ -569,7 +575,7 @@ public final class MechanismIsolationRegression {
                 @Override public void updateSensors() { }
                 @Override public String turretAimState() { return state; }
             };
-            robot.initMechanismsOnly(map,false);
+            robot.initMechanismsOnly(map,false); map.expectInitClosed();
             robot.targetFresh=false; robot.targetVisible=false; robot.targetDistanceMeters=Double.NaN;
             robot.ballPresent=true; robot.ballDistanceCm=2;
             BioBuzzAutoMechanisms.RobotHardware port=new BioBuzzAutoMechanisms.RobotHardware(robot,()->now[0]);
@@ -646,7 +652,7 @@ public final class MechanismIsolationRegression {
         mechanisms.setFaultTolerant(true);
         mechanisms.observe();
         mechanisms.manualIntake(false);
-        check(map.gatePositions.isEmpty(),"INIT idle still sends no gate command");
+        check(map.gatePositions.isEmpty(),"Idle after INIT sends no extra gate command");
         mechanisms.keepShooterReady(true);
         mechanisms.update();
         check(port.robot.shooterOn && Math.abs(map.motors.get("shooter").commandedVelocity-ticks(3235))<1e-8,

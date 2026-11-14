@@ -93,7 +93,7 @@ public class AutoPath extends LinearOpMode {
                 // Sweep for the HIVE whenever the tag is lost: at START it is behind the robot, and at
                 // the 2nd/3rd spots it is ~160 degrees from where it was first seen.
                 mechanisms.searchForTagWhenLost(true);
-                mechanisms.manualIntake(false); // Motors idle; no INIT gate position command.
+                mechanisms.manualIntake(false); // Motors idle; robot init already closed the gate.
             }
             while (opModeInInit()) {
                 if (useMechanisms()) {

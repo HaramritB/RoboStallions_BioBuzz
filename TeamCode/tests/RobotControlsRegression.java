@@ -97,7 +97,7 @@ public final class RobotControlsRegression {
         check(builtIn.calibrated() && builtIn.usingCodeDefaults, "Fresh installs use the measured code defaults");
         check(gate.writes == 0 && gate.enables == 0, "Loading defaults must not move the gate");
         builtIn.commandSaved(true);
-        near(gate.position, 0.41, "Code default OPEN must be the measured 0.41");
+        near(gate.position, 0.39, "Code default OPEN must be the measured 0.39");
         builtIn.commandSaved(false);
         near(gate.position, 0.59, "Code default CLOSED must be the measured 0.59");
         builtIn.forgetCalibration();

@@ -699,7 +699,7 @@ public final class BioBuzzAutoMechanisms {
             if (gateCommandOpen) gateMovedAt=clock.getAsLong();
             gateCommandOpen=false;
             robot.gateOpen=false;
-            // No INIT gate write. Commands require separately verified gate hardware/sequence.
+            // Robot init already closed the gate; this re-closes it after use.
             attempt(() -> { if (used && robot.gateController!=null) robot.gateController.commandSaved(false); },first);
         }
 

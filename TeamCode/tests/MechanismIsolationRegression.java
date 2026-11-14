@@ -471,6 +471,9 @@ public final class MechanismIsolationRegression {
         port.observe();
         port.headingCw=heading;
         check(port.diagnostics().contains("HIVE at"),"Telemetry reports the located HIVE");
+        BioBuzzAutoMechanisms logged=new BioBuzzAutoMechanisms(port);
+        check(logged.logRow().split(",",-1).length==BioBuzzAutoMechanisms.LOG_HEADER.split(",",-1).length,
+                "Run-log rows have one value per header column: " + logged.logRow());
 
         int fixes=port.hiveFixes;
         for (int i=0;i<25;i++) { now[0]+=STEP_NS; pose[1]+=0.5; port.control(BioBuzzAutoMechanisms.Kind.NONE); }

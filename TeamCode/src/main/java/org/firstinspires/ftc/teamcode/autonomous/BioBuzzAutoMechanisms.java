@@ -413,7 +413,8 @@ public final class BioBuzzAutoMechanisms {
     /** CSV columns for {@link #logRow()}. */
     public static final String LOG_HEADER="request,shot_phase,gate_open,turret_deg,turret_vel_dps,turret_state,"
             + "turret_req_power,turret_applied_power,turret_limit,target_fresh,target_visible,target_id,tx_deg,"
-            + "vision_err_deg,dist_m,frame_age_ms,aimed,still_s,hive_fixes,hive_x,hive_y,pre_aim_deg,shots_fired,tags";
+            + "vision_err_deg,dist_m,frame_age_ms,aimed,still_s,hive_fixes,hive_x,hive_y,pre_aim_deg,shots_fired,"
+            + "intake_power,intake_vel_tps,transmission_power,transmission_vel_tps,ball_present,feed_trigger,tags";
 
     /** One CSV row of turret/vision/shot state for AutoPath's run log (empty without real hardware). */
     public String logRow() {
@@ -445,6 +446,8 @@ public final class BioBuzzAutoMechanisms {
         double hiveX=Double.NaN, hiveY=Double.NaN;
         int hiveFixes;
         double preAimDeg=Double.NaN;
+        /** Last feed powers this adapter commanded (logged; reading them back costs a hub transaction). */
+        private double loggedIntakePower, loggedTransmissionPower;
         private double lastPoseX=Double.NaN, lastPoseY=Double.NaN;
         private long lastPoseAt=-1, stillSince=-1;
         private Phase phase=Phase.IDLE;
@@ -483,17 +486,26 @@ public final class BioBuzzAutoMechanisms {
         }
         @Override public boolean shootingBurstActive() { return phase==Phase.FEEDING; }
 
+        private static double motorVelocity(com.qualcomm.robotcore.hardware.DcMotorEx motor) {
+            // Served from the hub's bulk cache (AUTO mode), so this adds no hardware transaction.
+            try { return motor==null ? Double.NaN : motor.getVelocity(); } catch (RuntimeException e) { return Double.NaN; }
+        }
+
         String logRow() {
             long now=clock.getAsLong();
             double still=stillSince<0 ? 0 : (now-stillSince)/1e9;
             String tags=robot.visionTagDetails();
             return String.format(java.util.Locale.US,
-                    "%s,%d,%.2f,%.1f,%s,%.3f,%.3f,%s,%d,%d,%d,%.2f,%.2f,%.3f,%.0f,%d,%.2f,%d,%.1f,%.1f,%.1f,%d,\"%s\"",
+                    "%s,%d,%.2f,%.1f,%s,%.3f,%.3f,%s,%d,%d,%d,%.2f,%.2f,%.3f,%.0f,%d,%.2f,%d,%.1f,%.1f,%.1f,%d,"
+                            + "%.2f,%.0f,%.2f,%.0f,%d,%s,\"%s\"",
                     phase,robot.gateOpen ? 1 : 0,robot.turretDegrees(),robot.turretVelocityDegPerSec(),
                     robot.turretAimState(),robot.turretRequestedPower(),robot.turretAppliedPower(),robot.turretPowerLimit(),
                     robot.targetFresh ? 1 : 0,robot.targetVisible ? 1 : 0,robot.targetId,robot.targetTx,
                     robot.visionErrorDegrees(),robot.targetDistanceMeters,robot.targetFrameAgeMs(),
                     robot.aimedAtTarget() ? 1 : 0,still,hiveFixes,hiveX,hiveY,preAimDeg,robot.shotsFired,
+                    loggedIntakePower,motorVelocity(robot.intake),
+                    loggedTransmissionPower,motorVelocity(robot.transmission),
+                    robot.ballPresent ? 1 : 0,feedTrigger.isEmpty() ? "-" : feedTrigger.replace(',',';'),
                     tags==null ? "" : tags.replace('"','\''));
         }
         @Override public void setShooterIdle(boolean spinning) { idleSpin=spinning; }
@@ -673,9 +685,11 @@ public final class BioBuzzAutoMechanisms {
             robot.gateOpen=open;
             if (calibrated) robot.gateController.commandSaved(open);
             robot.intake.setPower(intakePower);
+            loggedIntakePower=intakePower;
             // While the gate moves, never push balls INTO it; backing them off is allowed.
             boolean intoGate=transmissionPower!=0 && Math.signum(transmissionPower)==Math.signum(INWARD_TRANSMISSION_POWER);
-            robot.transmission.setPower(calibrated && !(gateMoving && intoGate) ? transmissionPower : 0);
+            loggedTransmissionPower=calibrated && !(gateMoving && intoGate) ? transmissionPower : 0;
+            robot.transmission.setPower(loggedTransmissionPower);
         }
 
         private void closeGate(RuntimeException[] first) {
@@ -745,6 +759,7 @@ public final class BioBuzzAutoMechanisms {
                 attempt(() -> { if (robot.shooter!=null) robot.shooter.setPower(0); },first);
             }
             // An always-on intake keeps spinning; the transmission waits for the gate to close.
+            loggedIntakePower=intakeAlways ? INWARD_INTAKE_POWER : 0; loggedTransmissionPower=0;
             attempt(() -> { if (robot.intake!=null) robot.intake.setPower(intakeAlways ? INWARD_INTAKE_POWER : 0); },first);
             attempt(() -> { if (robot.transmission!=null) robot.transmission.setPower(0); },first);
             closeGate(first);
@@ -758,6 +773,7 @@ public final class BioBuzzAutoMechanisms {
             RuntimeException[] first={null};
             attempt(() -> { if (robot.turret!=null) robot.turret.setPower(0); },first);
             attempt(() -> { if (robot.shooter!=null) robot.shooter.setPower(0); },first);
+            loggedIntakePower=0; loggedTransmissionPower=0;
             attempt(() -> { if (robot.intake!=null) robot.intake.setPower(0); },first);
             attempt(() -> { if (robot.transmission!=null) robot.transmission.setPower(0); },first);
             closeGate(first);

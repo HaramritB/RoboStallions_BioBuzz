@@ -48,6 +48,11 @@ public final class BioBuzzAutoConfig {
     // gate closed until SHOOT_FORCE_FEED_SECONDS: the 2nd volley used to fire mid-turn.
     // HIVE memory: a sighting counts only when the chassis has been still this long, slower than
     // these limits, and the turret is not slewing fast (camera latency would misplace the HIVE).
+    // Where the turret points (clockwise degrees from the robot front) when it is zeroed with BACK
+    // in INIT. The team zeros it pointing straight BACKWARD (180) at START, so the HIVE (behind
+    // the robot) is near encoder 0. The HIVE memory converts encoder angles with this; assuming
+    // 0 (forward) put the HIVE mirrored behind START and aimed volley 2 ~130 degrees off.
+    public static final double TURRET_ZERO_DIRECTION_DEG = 180.0;
     public static final double HIVE_FIX_STILL_SECONDS = 0.25;
     public static final double HIVE_FIX_MAX_SPEED_IN_S = 3.0;
     public static final double HIVE_FIX_MAX_TURN_DEG_S = 5.0;

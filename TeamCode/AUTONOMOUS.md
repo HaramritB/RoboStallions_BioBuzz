@@ -18,7 +18,7 @@ speed except the two that drive into balls: **path 2** (into the four wall balls
 speeds so it rehearses the real run.
 
 1. INIT at (56, 8), heading 270°. A selects BLUE and B selects RED for tag filtering.
-   With the turret physically pointing forward, BACK zeros it.
+   With the turret pointing straight backward (180 deg, BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG), BACK zeros it.
 2. Shoot the four preloads at START before driving. The flywheel and turret stay active, and
    the **intake runs inward the entire time** from START to the end of the route (same
    direction as the feed), including during volleys. While driving, the transmission stacks
@@ -31,21 +31,24 @@ speeds so it rehearses the real run.
    Whenever the tag is out of view, the turret turns to the angle odometry predicts for the
    HIVE instead of sweeping, and counter-rotates against chassis turns. It sweeps only if
    stopped to shoot and nothing shows up within 1 s of reaching the prediction.
-   **Why volley 2 missed:** path 5 spins the chassis 180 degrees on the way to spot 2, and the
-   HIVE is behind the robot at both START and spot 2 (turret near its +194 / -251 degree cable
-   limits). (a) On blue, the START angle (~212 deg) is past the +194 limit: the turret saw the
-   tag at the limit, began the full-turn unwind to -148, lost the tag and fell back to the sweep,
-   so it never "locked" and the old code (which only learned the HIVE from a centered lock during
-   a volley) had no HIVE position for spot 2. (b) Pre-aim did not feed forward the chassis turn
-   and tracking was capped at 0.22 power, so a real (slower than ideal) turret arrived facing
-   roughly away from the HIVE. (c) The 2 s aim grace then opened the gate while the turret was
-   still turning right toward it. Now: the HIVE is learned from any still sighting (so the
-   START unwind continues to -148 and locks), pre-aim feeds forward chassis rotation at up to
+   **Why volley 2 missed (found 2026-11-13):** the team zeros the turret pointing straight
+   BACKWARD (180 deg) at START, but the HIVE memory assumed encoder 0 meant forward. The START
+   lock (encoder ~+32) was read as a HIVE in front of the robot, so the estimate landed mirrored
+   behind START at about (17, -55) instead of (95, 71), and at spot 2 the turret pre-aimed ~134
+   deg away from the real HIVE (the same wrong direction every run). With no tag in view there it
+   fell back to the sweep, and the 2 s aim grace opened the gate mid-sweep. Fix:
+   `BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG = 180` converts encoder angles; INIT telemetry
+   says to zero backward. If you ever zero it pointing forward, set that to 0. Also: the HIVE is learned from any still sighting, pre-aim feeds forward chassis rotation at up to
    0.45 power, autonomous tracking uses 0.45 power when more than 10 deg off, and the 2 s
    unaimed fallback applies only when the turret is blind (SEARCH / no camera). While it is
    still turning toward a known or visible HIVE (PRE-AIM, UNWIND, TRACK, REACQUIRE), the gate
    waits until the 3.5 s force-feed time (spot 2 already stops for 4 s). Telemetry shows
    `HIVE at (x, y)` and the turret state under Shooter / aiming / gate.
+   **Run log (2026-11-13):** every AutoPath run writes one CSV row per loop (pose, turn rate,
+   turret angle/speed/state/power, tag ids and offsets, distance, HIVE estimate, pre-aim angle,
+   shot phase, gate) to `/sdcard/FIRST/java/src/Datalogs/autopath_<millis>.csv` on the Control
+   Hub. Telemetry shows the file name. Pull with
+   `adb pull /sdcard/FIRST/java/src/Datalogs/` after a run.
 3. Collect on paths 1–2 and through the one-second stop at the wall after path 2. Path 2 drives
    all the way to (7.994, 0) and ends on Pedro's end-of-path signal; there is no early
    stop. As a safety net, if balls block the robot first, it continues after 1 s without 0.25 in

@@ -152,6 +152,7 @@ public final class MechanismIsolationRegression {
         alwaysOnIntake();
         hivePreAim();
         travellingTurretHoldsGate();
+        secondVolleyGeometry();
         System.out.println("Passed " + checks + " mechanism initialization/isolation/cleanup checks.");
     }
 
@@ -460,8 +461,11 @@ public final class MechanismIsolationRegression {
         for (int i=0;i<5;i++) { now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE); }
         check(port.hiveFixes==0,"Not still long enough yet: no HIVE fix");
         for (int i=0;i<15;i++) { now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE); }
-        check(port.hiveFixes>0 && Math.abs(port.hiveX-range)<1e-6 && Math.abs(port.hiveY)<1e-6,
-                "Still chassis + sighting, even between volleys: the HIVE is straight ahead at the tag distance");
+        // Encoder 0 points TURRET_ZERO_DIRECTION_DEG (180 = backward) from the robot front.
+        double zero=Math.toRadians(BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG);
+        check(port.hiveFixes>0 && Math.abs(port.hiveX-range*Math.cos(-zero))<1e-6 && Math.abs(port.hiveY-range*Math.sin(-zero))<1e-6,
+                "Still chassis + sighting at encoder 0, even between volleys: the HIVE is where the zeroed turret points");
+        check(Math.abs(port.hiveX+range)<1e-6,"Zeroed backward: a centered sighting at encoder 0 is behind the robot");
         java.util.function.DoubleSupplier heading=port.headingCw;
         port.headingCw=null; // observe() then uses the fixture's no-op sensor update
         port.observe();
@@ -484,12 +488,15 @@ public final class MechanismIsolationRegression {
 
         port.robot.targetFresh=false; port.robot.targetVisible=false; port.robot.targetTx=Double.NaN;
         port.stopFeed();
-        pose[1]=range; // drove left by the same distance, no vision
+        pose[1]=range; // drove left by the same distance, no vision; HIVE now behind-right
         now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE);
-        check(Math.abs(port.preAimDeg-45)<1e-6,"Odometry predicts the HIVE 45 deg to the right after driving left");
+        check(sameAngle(port.preAimDeg+BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG,135),
+                "Odometry predicts the HIVE 135 deg right of the robot front after driving left");
+        check(sameAngle(port.preAimDeg,-45),"...which is encoder -45 with the turret zeroed backward");
         pose[2]=-90; // and turned 90 deg left
         now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE);
-        check(Math.abs(port.preAimDeg-135)<1e-6,"A left turn adds 90 deg to the predicted right turn");
+        check(sameAngle(port.preAimDeg+BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG,225),
+                "A left turn adds 90 deg to the predicted right turn");
         port.close();
 
         // A tag that is not centered still locates the HIVE: turret angle plus the tag offset.
@@ -497,9 +504,10 @@ public final class MechanismIsolationRegression {
         off.headingCw=()->0; off.turnRateCw=()->0; off.xIn=()->0; off.yIn=()->0;
         off.robot.targetTx=10/Robot.TURRET_VISION_POWER_SIGN; // 10 deg clockwise of the camera center
         for (int i=0;i<20;i++) { now[0]+=STEP_NS; off.control(BioBuzzAutoMechanisms.Kind.NONE); }
+        double offBearing=-Math.toRadians(BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG+10);
         check(off.hiveFixes>0 && Math.abs(off.robot.visionErrorDegrees()-10)<1e-9
-                        && Math.abs(off.hiveX-range*Math.cos(Math.toRadians(10)))<1e-6
-                        && Math.abs(off.hiveY+range*Math.sin(Math.toRadians(10)))<1e-6,
+                        && Math.abs(off.hiveX-range*Math.cos(offBearing))<1e-6
+                        && Math.abs(off.hiveY-range*Math.sin(offBearing))<1e-6,
                 "An off-center sighting (e.g. while unwinding at START) still gives the HIVE position");
         off.close();
 
@@ -509,6 +517,44 @@ public final class MechanismIsolationRegression {
         check(noPose.hiveFixes==0 && Double.isNaN(noPose.preAimDeg),
                 "Without a pose supplier the turret keeps the original sweep");
         noPose.close();
+    }
+
+    static boolean sameAngle(double a,double b) {
+        double d=a-b; d-=360*Math.floor((d+180)/360); return Math.abs(d)<1e-6;
+    }
+
+    /** AutoPath's real geometry: START (56,8) facing 270, spot 2 (59.8,126.9) facing 90, blue HIVE ~(95,71). */
+    static void secondVolleyGeometry() {
+        long[] now={1_000_000_000L};
+        double[] turretEncoder={0};
+        Robot robot=new TestRobot() {
+            @Override public void updateSensors() { }
+            @Override public double turretDegrees() { return turretEncoder[0]; }
+        };
+        robot.initMechanismsOnly(new MapFixture(),false);
+        robot.targetFresh=true; robot.targetVisible=true; robot.targetTx=0; robot.ballPresent=true; robot.ballDistanceCm=2;
+        BioBuzzAutoMechanisms.RobotHardware port=new BioBuzzAutoMechanisms.RobotHardware(robot,()->now[0]);
+        double[] pose={56,8,-270}; // Pedro heading 270 -> clockwise -270
+        port.headingCw=()->pose[2]; port.turnRateCw=()->0; port.xIn=()->pose[0]; port.yIn=()->pose[1];
+        double hx=95.2, hy=70.7;
+        double physical=Robot.turretDegreesToward(56,8,-270,hx,hy); // HIVE ~148 deg left, behind the robot
+        double encoder=physical-BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG;
+        encoder-=360*Math.floor((encoder+180)/360);
+        check(Math.abs(encoder-32)<1,"Zeroed backward, the turret locks at START near encoder +32 (got " + encoder + ")");
+        turretEncoder[0]=encoder;
+        robot.targetDistanceMeters=Math.hypot(hx-56,hy-8)*0.0254;
+        for (int i=0;i<30;i++) { now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE); }
+        check(port.hiveFixes>0 && Math.abs(port.hiveX-hx)<1e-6 && Math.abs(port.hiveY-hy)<1e-6,
+                "The START lock puts the HIVE at its real field position (was mirrored behind START)");
+        robot.targetFresh=false; robot.targetVisible=false; robot.targetTx=Double.NaN;
+        pose[0]=59.7632; pose[1]=126.893; pose[2]=-90; // spot 2, Pedro heading 90
+        now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE);
+        double want=Robot.turretDegreesToward(59.7632,126.893,-90,hx,hy); // ~148 deg right
+        check(sameAngle(port.preAimDeg+BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG,want) && Math.abs(want-147.8)<1,
+                "At spot 2 the turret pre-aims ~148 deg right of the robot front, at the HIVE");
+        check(sameAngle(port.preAimDeg,-32.2) || Math.abs(port.preAimDeg+32.2)<0.1,
+                "...which is encoder ~-32, well inside the soft limits");
+        port.close();
     }
 
     /** The 2nd volley fired at the 2 s aim grace while the turret was still turning toward the HIVE. */

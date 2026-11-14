@@ -378,7 +378,7 @@ public final class BioBuzzAutoMechanisms {
     public void setAlliance(Robot.Alliance alliance) {
         if (hardware instanceof RobotHardware) ((RobotHardware) hardware).robot.alliance = alliance;
     }
-    /** Explicit INIT operator action, with the turret physically pointing forward. */
+    /** Explicit INIT operator action, with the turret pointing at BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG (backward). */
     public void zeroTurret() {
         if (closed || commandActive || request!=Kind.NONE) throw new IllegalStateException("Turret zero requires idle mechanisms");
         if (hardware instanceof RobotHardware) ((RobotHardware)hardware).robot.zeroTurret();
@@ -410,6 +410,18 @@ public final class BioBuzzAutoMechanisms {
         String mode=(shooterReady ? ", flywheel ready, turret tracking" : "") + (intakeAlways ? ", intake always on" : "");
         return mode.isEmpty() ? request.name() : request.name() + " (" + mode.substring(2) + ")";
     }
+    /** CSV columns for {@link #logRow()}. */
+    public static final String LOG_HEADER="request,shot_phase,gate_open,turret_deg,turret_vel_dps,turret_state,"
+            + "turret_req_power,turret_applied_power,turret_limit,target_fresh,target_visible,target_id,tx_deg,"
+            + "vision_err_deg,dist_m,frame_age_ms,aimed,still_s,hive_fixes,hive_x,hive_y,pre_aim_deg,shots_fired,tags";
+
+    /** One CSV row of turret/vision/shot state for AutoPath's run log (empty without real hardware). */
+    public String logRow() {
+        String head=request.name();
+        if (!(hardware instanceof RobotHardware)) return head;
+        return head+","+((RobotHardware)hardware).logRow();
+    }
+
     public String failure() { return failure; }
     /** Non-fatal problems the fault-tolerant route continued through. Empty when none. */
     public String warning() { return warning; }
@@ -470,6 +482,20 @@ public final class BioBuzzAutoMechanisms {
             return detail+readiness+burst;
         }
         @Override public boolean shootingBurstActive() { return phase==Phase.FEEDING; }
+
+        String logRow() {
+            long now=clock.getAsLong();
+            double still=stillSince<0 ? 0 : (now-stillSince)/1e9;
+            String tags=robot.visionTagDetails();
+            return String.format(java.util.Locale.US,
+                    "%s,%d,%.2f,%.1f,%s,%.3f,%.3f,%s,%d,%d,%d,%.2f,%.2f,%.3f,%.0f,%d,%.2f,%d,%.1f,%.1f,%.1f,%d,\"%s\"",
+                    phase,robot.gateOpen ? 1 : 0,robot.turretDegrees(),robot.turretVelocityDegPerSec(),
+                    robot.turretAimState(),robot.turretRequestedPower(),robot.turretAppliedPower(),robot.turretPowerLimit(),
+                    robot.targetFresh ? 1 : 0,robot.targetVisible ? 1 : 0,robot.targetId,robot.targetTx,
+                    robot.visionErrorDegrees(),robot.targetDistanceMeters,robot.targetFrameAgeMs(),
+                    robot.aimedAtTarget() ? 1 : 0,still,hiveFixes,hiveX,hiveY,preAimDeg,robot.shotsFired,
+                    tags==null ? "" : tags.replace('"','\''));
+        }
         @Override public void setShooterIdle(boolean spinning) { idleSpin=spinning; }
         @Override public void setIntakeAlways(boolean running) { intakeAlways=running; }
         @Override public void setSearchWhenTagLost(boolean search) { robot.setTurretSearchWhenTagLost(search); }
@@ -621,7 +647,8 @@ public final class BioBuzzAutoMechanisms {
             if (still && robot.targetFresh && Math.abs(turretSpeed)<=BioBuzzAutoConfig.HIVE_FIX_MAX_TURRET_DEG_S
                     && Double.isFinite(robot.targetDistanceMeters) && robot.targetDistanceMeters>0) {
                 // Where the turret pointed when the camera captured the frame.
-                double captureTurret=robot.turretDegrees()-turretSpeed*frameAge/1000.0;
+                double captureTurret=robot.turretDegrees()-turretSpeed*frameAge/1000.0
+                        +BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG; // Encoder -> angle from robot front.
                 double[] fix=Robot.hiveFieldPoint(x,y,heading,captureTurret,
                         robot.visionErrorDegrees(),robot.targetDistanceMeters/0.0254);
                 if (Double.isFinite(fix[0]) && Double.isFinite(fix[1])) {
@@ -631,7 +658,8 @@ public final class BioBuzzAutoMechanisms {
                     hiveY=Double.isFinite(hiveY) ? hiveY+(fix[1]-hiveY)*weight : fix[1];
                 }
             }
-            preAimDeg=Robot.turretDegreesToward(x,y,heading,hiveX,hiveY);
+            // Angle from robot front -> encoder angle; the controller picks the reachable equivalent.
+            preAimDeg=Robot.turretDegreesToward(x,y,heading,hiveX,hiveY)-BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG;
             // Sweep fallback only while stopped to shoot; while driving keep following the prediction.
             robot.setTurretPreAim(preAimDeg,stoppedToShoot);
         }

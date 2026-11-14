@@ -1211,6 +1211,16 @@ public class Robot {
                 : "GROUP MEAN (" + visionUsableMatches + " tags)";
     }
 
+    /** Raw Limelight tag list ("id tx=..; ..") for logs. */
+    public String visionTagDetails() {
+        return visionTagDetails;
+    }
+
+    /** Last power the aim controller (or manual) asked the turret for, before limits. */
+    public double turretRequestedPower() {
+        return turretRequestedPower;
+    }
+
     public double turretAimErrorDegrees() {
         return turretAim.lastTargetAngle - turretDegrees();
     }

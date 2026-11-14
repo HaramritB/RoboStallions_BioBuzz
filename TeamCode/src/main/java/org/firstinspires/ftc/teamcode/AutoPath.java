@@ -56,6 +56,7 @@ public class AutoPath extends LinearOpMode {
         Command route = null;
         Robot.Alliance alliance = Robot.lastAlliance;
         RuntimeException primaryFailure = null;
+        AutoRunLog runLog = null;
 
         try {
             follower.setPose(START);
@@ -105,10 +106,20 @@ public class AutoPath extends LinearOpMode {
             route = useMechanisms() ? route(follower, System::nanoTime, mechanisms, flowerLever)
                     : route(follower, System::nanoTime);
             Scheduler.schedule(route);
+            if (useMechanisms()) runLog = AutoRunLog.open("alliance,x_in,y_in,heading_deg,turn_rate_cw_dps,path_busy,"
+                    + BioBuzzAutoMechanisms.LOG_HEADER);
+            if (runLog != null) lastLogName = runLog.fileName;
             while (opModeIsActive() && Scheduler.isScheduled(route)) {
                 follower.update();
                 mechanisms.update(); // Use the chassis sample from Pedro; no second Pinpoint update.
                 Scheduler.execute();
+                if (runLog != null) {
+                    Pose p = follower.pose();
+                    runLog.row(System.nanoTime(), String.format(java.util.Locale.US, "%s,%.2f,%.2f,%.1f,%.1f,%d,%s",
+                            alliance, p.x(), p.y(), Math.toDegrees(p.heading()),
+                            -Math.toDegrees(follower.velocity().omega), follower.isBusy() ? 1 : 0,
+                            mechanisms.logRow()));
+                }
                 if (flowerLever != null) flowerLever.refresh(); // Re-enable PWM if the hub dropped it.
                 publish(follower, mechanisms, alliance);
                 idle();
@@ -120,6 +131,7 @@ public class AutoPath extends LinearOpMode {
             requestOpModeStop();
             throw error; // Let Driver Station show the original cause, not a cleanup exception.
         } finally {
+            if (runLog != null) runLog.close();
             try { stopAll(follower, mechanisms, route, flowerLever); }
             catch (RuntimeException cleanupError) {
                 if (primaryFailure != null) primaryFailure.addSuppressed(cleanupError);
@@ -128,18 +140,22 @@ public class AutoPath extends LinearOpMode {
         }
     }
 
+    private String lastLogName = "starts at START (/sdcard/FIRST/java/src/Datalogs/autopath_*.csv)";
+
     protected boolean useMechanisms() { return true; }
 
     private void publish(Follower follower, BioBuzzAutoMechanisms mechanisms, Robot.Alliance alliance) {
         telemetry.addData("Mode", useMechanisms() ? "BioBuzz FTC 2026: shoot + intake" : "Drive only");
         if (useMechanisms()) {
             telemetry.addData("Alliance", "%s (INIT: A blue / B red)", alliance);
-            telemetry.addData("Turret zero", "INIT: point turret forward, then BACK to zero");
+            telemetry.addData("Turret zero", "INIT: point turret straight BACKWARD (%.0f deg), then BACK to zero",
+                    BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG);
             telemetry.addData("Mechanisms", mechanisms.state());
             telemetry.addData("Shooter / aiming / gate", mechanisms.diagnostics());
             telemetry.addData("Feed RPM: start / target / minimum", mechanisms.feedRpmTelemetry());
             telemetry.addData("Mechanism failure", mechanisms.failure().isEmpty() ? "none" : mechanisms.failure());
             telemetry.addData("Mechanism warning", mechanisms.warning().isEmpty() ? "none" : mechanisms.warning());
+            telemetry.addData("Run log", lastLogName);
         }
         Pose pose = follower.pose();
         telemetry.addData("X (in)", "%.2f", pose.x());

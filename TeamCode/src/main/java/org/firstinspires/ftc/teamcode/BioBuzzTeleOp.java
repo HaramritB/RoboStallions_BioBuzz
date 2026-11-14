@@ -105,11 +105,6 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
 
             if (opModeIsActive()) commandFlower(flower, false);
 
-            boolean intakeForwardOn = false;
-            boolean intakeReverseOn = false;
-            boolean previousRightTrigger = false;
-            boolean previousLeftTrigger = false;
-
             while (opModeIsActive()) {
 
                 robot.updateSensors();
@@ -142,7 +137,8 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
                 // DRIVER 1: INTAKE
                 // =====================================
 
-                /*double intakePower = 0;
+                // Hold-to-run: RT in, LT out (tap-to-toggle was tried 2026-11-13 and was worse).
+                double intakePower = 0;
 
                 if (gamepad1.right_trigger > 0.2) {
 
@@ -151,26 +147,7 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
                 } else if (gamepad1.left_trigger > 0.2) {
 
                     intakePower = Robot.INTAKE_POWER;
-                }*/
-
-                boolean rightTrigger = gamepad1.right_trigger > 0.2;
-                boolean leftTrigger = gamepad1.left_trigger > 0.2;
-
-                if (rightTrigger && !previousRightTrigger) {
-                    intakeForwardOn = !intakeForwardOn;
-                    intakeReverseOn = false;
                 }
-
-                if (leftTrigger && !previousLeftTrigger) {
-                    intakeReverseOn = !intakeReverseOn;
-                    intakeForwardOn = false;
-                }
-
-                previousRightTrigger = rightTrigger;
-                previousLeftTrigger = leftTrigger;
-
-                double intakePower = intakeForwardOn ? -Robot.INTAKE_POWER
-                        : intakeReverseOn ? Robot.INTAKE_POWER : 0;
 
                 // =====================================
                 // DRIVER 2: SHOOTER

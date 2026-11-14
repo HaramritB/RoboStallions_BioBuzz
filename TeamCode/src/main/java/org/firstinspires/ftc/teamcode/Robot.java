@@ -103,10 +103,14 @@ public class Robot {
     public static final double TURRET_RETURN_TOLERANCE_DEG = 1;
     /**
      * AutoPath pre-aim: while no tag is in view, turn to the angle odometry predicts for the HIVE
-     * (learned from an earlier centered sighting) instead of sweeping from wherever the turret is.
+     * (learned from earlier sightings) instead of sweeping from wherever the turret is. It also
+     * counter-rotates against chassis turns (path 5 turns the robot 180 degrees on the way to the
+     * 2nd shooting spot); without that the turret arrived pointing roughly away from the HIVE.
      */
-    public static final double TURRET_PRE_AIM_MAX_POWER = 0.35;
+    public static final double TURRET_PRE_AIM_MAX_POWER = 0.45;
     public static final double TURRET_PRE_AIM_ARRIVED_DEG = 3.0;
+    /** Autonomous tracking uses TURRET_PRE_AIM_MAX_POWER beyond this error, TRACK power inside it. */
+    public static final double TURRET_FAST_TRACK_ERROR_DEG = 10.0;
     /** Stopped at a shooting spot with no tag this long after reaching the prediction: sweep. */
     public static final long TURRET_PRE_AIM_SEARCH_AFTER_MS = 1000;
     /** A prediction that moves this far restarts the wait (the robot is still driving). */
@@ -1231,6 +1235,16 @@ public class Robot {
         turretAim.preAimMaySearch = searchIfNotSeen;
     }
 
+    /** Measured turret speed, degrees per second clockwise. */
+    public double turretVelocityDegPerSec() {
+        return turret == null ? Double.NaN : turret.getVelocity() / TURRET_TICKS_PER_DEG;
+    }
+
+    /** Age of the current Limelight result (capture + pipeline + USB), milliseconds. */
+    public double targetFrameAgeMs() {
+        return targetFrameAgeMs;
+    }
+
     /** Turret-frame offset to the current tag, degrees clockwise (the aim controller's error), or NaN. */
     public double visionErrorDegrees() {
         return (targetTx - TURRET_AIM_OFFSET_DEG) * TURRET_VISION_POWER_SIGN;
@@ -1435,9 +1449,13 @@ public class Robot {
                 if (settled) return 0;
                 // D uses measured field angular velocity, avoiding derivative kicks from tag noise.
                 double damping = returning ? 0 : gains.d * (-rate - velocity);
+                // Autonomous: slew at pre-aim speed while far off a tag that just came into view
+                // (the gentle tracking cap made the 2nd-volley turn slow); gentle again when close.
+                double trackMax = searchWhenTagLost && Math.abs(trackingError) > TURRET_FAST_TRACK_ERROR_DEG
+                        ? Math.max(TURRET_TRACK_MAX_POWER, TURRET_PRE_AIM_MAX_POWER) : TURRET_TRACK_MAX_POWER;
                 return limited(angle, positionPower(trackingError, damping,
                         returning ? 0 : feedforward,
-                        returning ? TURRET_RETURN_MAX_POWER : TURRET_TRACK_MAX_POWER));
+                        returning ? TURRET_RETURN_MAX_POWER : trackMax));
             }
 
             // Autonomous with an odometry prediction: turn to where the HIVE should be instead of
@@ -1458,8 +1476,13 @@ public class Robot {
                     returning = Math.abs(preAimError) > 180;
                     state = returning ? (preAimError > 0 ? "UNWIND RIGHT" : "UNWIND LEFT") : "PRE-AIM";
                     settled = false;
-                    if (Math.abs(preAimError) < gains.deadbandDeg) return 0;
-                    return limited(angle, positionPower(preAimError, 0, TURRET_PRE_AIM_MAX_POWER));
+                    // The predicted angle moves opposite to the chassis turn: feed that forward so
+                    // the turret keeps up while the robot spins between shooting spots.
+                    double preAimFeedforward = Math.abs(rate) >= TURRET_ROTATION_DEADBAND_DEG_S
+                            ? -rate * gains.kV : 0;
+                    if (Math.abs(preAimError) < gains.deadbandDeg && preAimFeedforward == 0) return 0;
+                    return limited(angle, positionPower(preAimError, preAimFeedforward,
+                            TURRET_PRE_AIM_MAX_POWER));
                 }
             }
 

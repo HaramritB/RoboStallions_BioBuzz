@@ -43,6 +43,17 @@ public final class BioBuzzAutoConfig {
     // No fresh aimed tag by this long after a volley starts: shoot at the calibrated-table RPM
     // (latest filtered tag distance, or the 3215 RPM no-tag default) once the flywheel is stable.
     public static final double SHOOT_AIM_GRACE_SECONDS = 2.0;
+    // ...but while the turret is still turning toward a known or visible HIVE (PRE-AIM, UNWIND,
+    // TRACK or REACQUIRE, i.e. anything but a blind sweep), keep the
+    // gate closed until SHOOT_FORCE_FEED_SECONDS: the 2nd volley used to fire mid-turn.
+    // HIVE memory: a sighting counts only when the chassis has been still this long, slower than
+    // these limits, and the turret is not slewing fast (camera latency would misplace the HIVE).
+    public static final double HIVE_FIX_STILL_SECONDS = 0.25;
+    public static final double HIVE_FIX_MAX_SPEED_IN_S = 3.0;
+    public static final double HIVE_FIX_MAX_TURN_DEG_S = 5.0;
+    public static final double HIVE_FIX_MAX_TURRET_DEG_S = 120.0;
+    // Running average of the last ~N sightings (newer spots quickly outweigh odometry drift).
+    public static final int HIVE_FIX_AVERAGE_SAMPLES = 20;
     // Flywheel still outside the +/-50 RPM band by now (e.g. low battery): feed anyway if it is
     // at least SHOOT_FORCE_MIN_RPM_FRACTION of target, instead of waiting for the hard backstop.
     public static final double SHOOT_FORCE_FEED_SECONDS = 3.5;

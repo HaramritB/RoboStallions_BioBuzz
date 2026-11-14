@@ -24,15 +24,28 @@ speeds so it rehearses the real run.
    direction as the feed), including during volleys. While driving, the transmission stacks
    balls against the closed gate. For each volley it stops during spin-up, briefly backs the
    balls off the gate (0.10 s outward) as the gate opens, and never pushes balls into a moving
-   gate. **Turret pre-aim (2026-11-12):** while stopped and locked on during a volley, AutoPath
-   records where the HIVE is on the field (Pedro pose + turret angle + tag offset and distance).
-   Whenever the tag is out of view after that, the turret turns to the angle odometry predicts
-   for the HIVE instead of sweeping, so it reaches the 2nd and 3rd spots already pointed at it.
-   It sweeps only if stopped to shoot and nothing shows up within 1 s of reaching the
-   prediction. Before the first lock (the START volley) it sweeps as before. Previously it swept
-   the whole drive and could reach spot 2 sweeping away from the HIVE; a full sweep takes ~4 s,
-   longer than the 2 s aim wait, so shot 2 fired unaimed. Telemetry shows `HIVE at (x, y)` and
-   the turret state (`PRE-AIM`, `TRACK`, `SEARCH`) under Shooter / aiming / gate.
+   gate. **Turret pre-aim (2026-11-12, fixed 2026-11-13):** whenever the chassis
+   has been still for 0.25 s and a HIVE tag is in view (any time, not only during a volley, and
+   the tag need not be centered), AutoPath records where the HIVE is on the field (Pedro pose +
+   turret angle at frame capture + tag offset and distance; running average of ~20 sightings).
+   Whenever the tag is out of view, the turret turns to the angle odometry predicts for the
+   HIVE instead of sweeping, and counter-rotates against chassis turns. It sweeps only if
+   stopped to shoot and nothing shows up within 1 s of reaching the prediction.
+   **Why volley 2 missed:** path 5 spins the chassis 180 degrees on the way to spot 2, and the
+   HIVE is behind the robot at both START and spot 2 (turret near its +194 / -251 degree cable
+   limits). (a) On blue, the START angle (~212 deg) is past the +194 limit: the turret saw the
+   tag at the limit, began the full-turn unwind to -148, lost the tag and fell back to the sweep,
+   so it never "locked" and the old code (which only learned the HIVE from a centered lock during
+   a volley) had no HIVE position for spot 2. (b) Pre-aim did not feed forward the chassis turn
+   and tracking was capped at 0.22 power, so a real (slower than ideal) turret arrived facing
+   roughly away from the HIVE. (c) The 2 s aim grace then opened the gate while the turret was
+   still turning right toward it. Now: the HIVE is learned from any still sighting (so the
+   START unwind continues to -148 and locks), pre-aim feeds forward chassis rotation at up to
+   0.45 power, autonomous tracking uses 0.45 power when more than 10 deg off, and the 2 s
+   unaimed fallback applies only when the turret is blind (SEARCH / no camera). While it is
+   still turning toward a known or visible HIVE (PRE-AIM, UNWIND, TRACK, REACQUIRE), the gate
+   waits until the 3.5 s force-feed time (spot 2 already stops for 4 s). Telemetry shows
+   `HIVE at (x, y)` and the turret state under Shooter / aiming / gate.
 3. Collect on paths 1–2 and through the one-second stop at the wall after path 2. Path 2 drives
    all the way to (7.994, 0) and ends on Pedro's end-of-path signal; there is no early
    stop. As a safety net, if balls block the robot first, it continues after 1 s without 0.25 in
@@ -64,7 +77,8 @@ single continuous burst using the same manual feeder motor control:
   over 150 ms, and at least **300 ms** stopped at the spot (turret settle). A speed dip,
   overshoot, invalid aim/distance or target change over 25 RPM resets the stable window.
 - Fallbacks instead of aborting: with no fresh aimed tag after **2.0 s**
-  (SHOOT_AIM_GRACE_SECONDS), shoot at the calibrated-table RPM (last filtered distance, else
+  (SHOOT_AIM_GRACE_SECONDS) and the turret blind (sweeping / no camera; a turret still turning
+  toward the HIVE waits until 3.5 s), shoot at the calibrated-table RPM (last filtered distance, else
   the 3215 no-tag default) once the flywheel is stable. If the flywheel still is not in the
   band after **3.5 s** (e.g. low battery) but is at least 85% of target, feed anyway. If a
   volley cannot start within **6 s** (broken flywheel/gate), skip it and continue the route.

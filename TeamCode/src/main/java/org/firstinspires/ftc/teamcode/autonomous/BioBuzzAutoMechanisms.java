@@ -433,6 +433,8 @@ public final class BioBuzzAutoMechanisms {
         double hiveX=Double.NaN, hiveY=Double.NaN;
         int hiveFixes;
         double preAimDeg=Double.NaN;
+        private double lastPoseX=Double.NaN, lastPoseY=Double.NaN;
+        private long lastPoseAt=-1, stillSince=-1;
         private Phase phase=Phase.IDLE;
         private boolean idleSpin;
         private boolean intakeAlways;
@@ -531,7 +533,15 @@ public final class BioBuzzAutoMechanisms {
                 boolean aimed=validDistance && robot.aimedAtTarget();
                 if (phase==Phase.SPINUP) {
                     double waited=(now-shootingBegan)/1e9;
-                    boolean aimGraceOver=waited>=BioBuzzAutoConfig.SHOOT_AIM_GRACE_SECONDS;
+                    // Unaimed fallback only when there is nothing to turn to (sweeping, no camera); a
+                    // turret still turning toward a known or visible HIVE keeps the gate closed
+                    // until the force-feed time.
+                    String turretState=robot.turretAimState();
+                    boolean turretTravelling=turretState!=null && (turretState.startsWith("PRE-AIM")
+                            || turretState.startsWith("UNWIND") || turretState.startsWith("TRACK")
+                            || turretState.startsWith("REACQUIRE") || turretState.startsWith("LIMIT RECOVERY"));
+                    boolean aimGraceOver=waited>=BioBuzzAutoConfig.SHOOT_AIM_GRACE_SECONDS
+                            && (!turretTravelling || waited>=BioBuzzAutoConfig.SHOOT_FORCE_FEED_SECONDS);
                     // A single target crossing during acceleration is not a settled flywheel.
                     boolean stable=speedQualified(now,robot.gateCalibrated() && (aimed || aimGraceOver),
                             measuredRpm,targetRpm);
@@ -580,19 +590,45 @@ public final class BioBuzzAutoMechanisms {
         }
 
         /**
-         * Learns the HIVE's field position from centered sightings while stopped to shoot (no
-         * motion latency), and hands the turret the angle odometry predicts for it. Without a pose
-         * or a sighting yet, the prediction is NaN and the turret sweeps exactly as before.
+         * Learns the HIVE's field position from every sighting taken while the chassis is still
+         * (any request, not only while shooting, and the tag need not be centered: the turret
+         * angle at capture time plus the tag offset gives the bearing), and hands the turret the
+         * angle odometry predicts for it. Without a pose or a sighting yet the prediction is NaN
+         * and the turret sweeps exactly as before.
          */
         private void updateHivePreAim(boolean stoppedToShoot) {
             if (xIn==null || yIn==null || headingCw==null) return;
+            long now=clock.getAsLong();
             double x=xIn.getAsDouble(), y=yIn.getAsDouble(), heading=headingCw.getAsDouble();
-            if (stoppedToShoot && robot.targetFresh && robot.aimedAtTarget()
+            double turn=turnRateCw!=null ? turnRateCw.getAsDouble() : 0;
+            boolean slow=false;
+            if (lastPoseAt>=0 && now>lastPoseAt && Double.isFinite(lastPoseX) && Double.isFinite(lastPoseY)) {
+                double speed=Math.hypot(x-lastPoseX,y-lastPoseY)/((now-lastPoseAt)/1e9);
+                slow=speed<=BioBuzzAutoConfig.HIVE_FIX_MAX_SPEED_IN_S
+                        && (!Double.isFinite(turn) || Math.abs(turn)<=BioBuzzAutoConfig.HIVE_FIX_MAX_TURN_DEG_S);
+            } else if (lastPoseAt>=0 && now==lastPoseAt) {
+                slow=stillSince>=0; // Same timestamp: keep the previous verdict.
+            }
+            if (!slow) stillSince=-1;
+            else if (stillSince<0) stillSince=now;
+            lastPoseX=x; lastPoseY=y; lastPoseAt=now;
+            boolean still=stillSince>=0 && (now-stillSince)/1e9>=BioBuzzAutoConfig.HIVE_FIX_STILL_SECONDS;
+
+            double turretSpeed=robot.turretVelocityDegPerSec();
+            if (!Double.isFinite(turretSpeed)) turretSpeed=0;
+            double frameAge=robot.targetFrameAgeMs();
+            if (!Double.isFinite(frameAge) || frameAge<0) frameAge=0;
+            if (still && robot.targetFresh && Math.abs(turretSpeed)<=BioBuzzAutoConfig.HIVE_FIX_MAX_TURRET_DEG_S
                     && Double.isFinite(robot.targetDistanceMeters) && robot.targetDistanceMeters>0) {
-                double[] fix=Robot.hiveFieldPoint(x,y,heading,robot.turretDegrees(),
+                // Where the turret pointed when the camera captured the frame.
+                double captureTurret=robot.turretDegrees()-turretSpeed*frameAge/1000.0;
+                double[] fix=Robot.hiveFieldPoint(x,y,heading,captureTurret,
                         robot.visionErrorDegrees(),robot.targetDistanceMeters/0.0254);
                 if (Double.isFinite(fix[0]) && Double.isFinite(fix[1])) {
-                    hiveX=fix[0]; hiveY=fix[1]; hiveFixes++;
+                    hiveFixes++;
+                    double weight=1.0/Math.min(hiveFixes,Math.max(1,BioBuzzAutoConfig.HIVE_FIX_AVERAGE_SAMPLES));
+                    hiveX=Double.isFinite(hiveX) ? hiveX+(fix[0]-hiveX)*weight : fix[0];
+                    hiveY=Double.isFinite(hiveY) ? hiveY+(fix[1]-hiveY)*weight : fix[1];
                 }
             }
             preAimDeg=Robot.turretDegreesToward(x,y,heading,hiveX,hiveY);

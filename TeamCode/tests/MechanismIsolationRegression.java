@@ -151,6 +151,7 @@ public final class MechanismIsolationRegression {
         readyShooterBetweenCommands();
         alwaysOnIntake();
         hivePreAim();
+        travellingTurretHoldsGate();
         System.out.println("Passed " + checks + " mechanism initialization/isolation/cleanup checks.");
     }
 
@@ -449,32 +450,58 @@ public final class MechanismIsolationRegression {
         long[] now={1_000_000_000L};
         BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map,()->now[0]);
         double[] pose={0,0,0}; // x in, y in, heading clockwise degrees
-        port.headingCw=()->pose[2]; port.turnRateCw=()->0;
+        double[] turn={0};
+        port.headingCw=()->pose[2]; port.turnRateCw=()->turn[0];
         port.xIn=()->pose[0]; port.yIn=()->pose[1];
         map.motors.get("shooter").velocity=ticks(3235);
         double range=1.62/0.0254;
-        port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
-        check(port.hiveFixes==1 && Math.abs(port.hiveX-range)<1e-6 && Math.abs(port.hiveY)<1e-6,
-                "A centered sighting while stopped to shoot puts the HIVE straight ahead at the tag distance");
+        port.control(BioBuzzAutoMechanisms.Kind.NONE);
+        check(port.hiveFixes==0,"One pose sample cannot show the chassis is still");
+        for (int i=0;i<5;i++) { now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE); }
+        check(port.hiveFixes==0,"Not still long enough yet: no HIVE fix");
+        for (int i=0;i<15;i++) { now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE); }
+        check(port.hiveFixes>0 && Math.abs(port.hiveX-range)<1e-6 && Math.abs(port.hiveY)<1e-6,
+                "Still chassis + sighting, even between volleys: the HIVE is straight ahead at the tag distance");
         java.util.function.DoubleSupplier heading=port.headingCw;
         port.headingCw=null; // observe() then uses the fixture's no-op sensor update
         port.observe();
         port.headingCw=heading;
         check(port.diagnostics().contains("HIVE at"),"Telemetry reports the located HIVE");
 
+        int fixes=port.hiveFixes;
+        for (int i=0;i<25;i++) { now[0]+=STEP_NS; pose[1]+=0.5; port.control(BioBuzzAutoMechanisms.Kind.NONE); }
+        check(port.hiveFixes==fixes,"Sightings while driving are not used (camera latency would misplace the HIVE)");
+        pose[1]=0;
+        for (int i=0;i<25;i++) { now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE); }
+        fixes=port.hiveFixes; turn[0]=30;
+        for (int i=0;i<25;i++) { now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE); }
+        check(port.hiveFixes==fixes,"Sightings while the chassis turns are not used");
+        turn[0]=0;
+        map.motors.get("turret").velocity=300*Robot.TURRET_TICKS_PER_DEG;
+        for (int i=0;i<25;i++) { now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE); }
+        check(port.hiveFixes==fixes,"Sightings while the turret slews fast are not used");
+        map.motors.get("turret").velocity=0;
+
         port.robot.targetFresh=false; port.robot.targetVisible=false; port.robot.targetTx=Double.NaN;
         port.stopFeed();
         pose[1]=range; // drove left by the same distance, no vision
-        port.control(BioBuzzAutoMechanisms.Kind.NONE);
+        now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE);
         check(Math.abs(port.preAimDeg-45)<1e-6,"Odometry predicts the HIVE 45 deg to the right after driving left");
         pose[2]=-90; // and turned 90 deg left
-        port.control(BioBuzzAutoMechanisms.Kind.NONE);
+        now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE);
         check(Math.abs(port.preAimDeg-135)<1e-6,"A left turn adds 90 deg to the predicted right turn");
-
-        port.robot.targetFresh=true; port.robot.targetVisible=true; port.robot.targetTx=0;
-        port.control(BioBuzzAutoMechanisms.Kind.NONE);
-        check(port.hiveFixes==1,"Sightings while driving are not used (camera latency would misplace the HIVE)");
         port.close();
+
+        // A tag that is not centered still locates the HIVE: turret angle plus the tag offset.
+        BioBuzzAutoMechanisms.RobotHardware off=shootingPort(new MapFixture(),()->now[0]);
+        off.headingCw=()->0; off.turnRateCw=()->0; off.xIn=()->0; off.yIn=()->0;
+        off.robot.targetTx=10/Robot.TURRET_VISION_POWER_SIGN; // 10 deg clockwise of the camera center
+        for (int i=0;i<20;i++) { now[0]+=STEP_NS; off.control(BioBuzzAutoMechanisms.Kind.NONE); }
+        check(off.hiveFixes>0 && Math.abs(off.robot.visionErrorDegrees()-10)<1e-9
+                        && Math.abs(off.hiveX-range*Math.cos(Math.toRadians(10)))<1e-6
+                        && Math.abs(off.hiveY+range*Math.sin(Math.toRadians(10)))<1e-6,
+                "An off-center sighting (e.g. while unwinding at START) still gives the HIVE position");
+        off.close();
 
         BioBuzzAutoMechanisms.RobotHardware noPose=shootingPort(new MapFixture(),()->now[0]);
         noPose.headingCw=()->0; noPose.turnRateCw=()->0;
@@ -482,6 +509,33 @@ public final class MechanismIsolationRegression {
         check(noPose.hiveFixes==0 && Double.isNaN(noPose.preAimDeg),
                 "Without a pose supplier the turret keeps the original sweep");
         noPose.close();
+    }
+
+    /** The 2nd volley fired at the 2 s aim grace while the turret was still turning toward the HIVE. */
+    static void travellingTurretHoldsGate() {
+        for (String state:new String[]{"PRE-AIM","UNWIND RIGHT","TRACK","REACQUIRE LAST TAG","SEARCH RIGHT","NO CAMERA"}) {
+            MapFixture map=new MapFixture();
+            long[] now={1_000_000_000L};
+            Robot robot=new TestRobot() {
+                @Override public void updateSensors() { }
+                @Override public String turretAimState() { return state; }
+            };
+            robot.initMechanismsOnly(map,false);
+            robot.targetFresh=false; robot.targetVisible=false; robot.targetDistanceMeters=Double.NaN;
+            robot.ballPresent=true; robot.ballDistanceCm=2;
+            BioBuzzAutoMechanisms.RobotHardware port=new BioBuzzAutoMechanisms.RobotHardware(robot,()->now[0]);
+            map.motors.get("shooter").velocity=ticks(Robot.TELEOP_DEFAULT_RPM);
+            long began=now[0];
+            port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
+            long opened=openGate(port,now,()->port.control(BioBuzzAutoMechanisms.Kind.SHOOT));
+            double waited=(opened-began)/1e9;
+            boolean blind=state.startsWith("SEARCH") || state.equals("NO CAMERA");
+            check(waited>=BioBuzzAutoConfig.SHOOT_AIM_GRACE_SECONDS,state + ": never feeds unaimed before the aim grace");
+            check(blind ? waited<BioBuzzAutoConfig.SHOOT_FORCE_FEED_SECONDS : waited>=BioBuzzAutoConfig.SHOOT_FORCE_FEED_SECONDS,
+                    state + (blind ? ": nothing to turn to, so the 2 s grace applies"
+                            : ": turret still turning to the HIVE keeps the gate closed until the force-feed time"));
+            port.close();
+        }
     }
 
     static void alwaysOnIntake() {

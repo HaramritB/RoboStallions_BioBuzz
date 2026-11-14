@@ -148,6 +148,31 @@ public final class TurretTrackingRegression {
                         && Math.abs(pre.update(0, false, Double.NaN, 7, 0, 0)) == Robot.TURRET_SEARCH_POWER,
                 "No prediction: the original sweep");
 
+        // Path 5 spins the chassis 180 deg on the way to the 2nd spot: pre-aim must counter-rotate.
+        Robot.TurretGains g = new Robot.TurretGains();
+        Aim spin = new Aim();
+        spin.controller.searchWhenTagLost = true;
+        spin.controller.preAimAngle = 90;
+        near(spin.update(90, false, Double.NaN, 0, 0, 60), -60 * g.kV - g.kS,
+                "On the prediction while the chassis turns right 60 deg/s, feed the turret left");
+        near(spin.update(90, false, Double.NaN, 0, 0, 0), 0, "...and hold still once the chassis stops turning");
+        near(spin.update(0, false, Double.NaN, 0, 0, 0), Robot.TURRET_PRE_AIM_MAX_POWER,
+                "Far from the prediction the turret turns at full pre-aim power");
+        check(Robot.TURRET_PRE_AIM_MAX_POWER <= Robot.TURRET_MAX_POWER, "Pre-aim stays under the turret power cap");
+
+        // AutoPath: a tag that comes into view far off center is reached at pre-aim speed.
+        Aim fast = new Aim();
+        fast.controller.searchWhenTagLost = true;
+        near(fast.update(0, true, 30, 1, 0, 0), Robot.TURRET_PRE_AIM_MAX_POWER,
+                "AutoPath: a tag 30 deg off slews at pre-aim power, not the gentle tracking cap");
+        Aim close = new Aim();
+        close.controller.searchWhenTagLost = true;
+        check(close.update(0, true, 5, 1, 0, 0) <= Robot.TURRET_TRACK_MAX_POWER + 1e-9,
+                "AutoPath: close to the tag it tracks gently again");
+        Aim teleOp = new Aim();
+        near(teleOp.update(0, true, 30, 1, 0, 0), Robot.TURRET_TRACK_MAX_POWER,
+                "TeleOp tracking keeps its gentle cap");
+
         // Geometry helpers used by AutoPath to learn and predict the HIVE position.
         double[] fix = Robot.hiveFieldPoint(0, 0, 0, 30, 0, 100);
         near(fix[0], 100 * Math.cos(Math.toRadians(-30)), "Turret 30 deg right of forward: HIVE ahead-right (x)");

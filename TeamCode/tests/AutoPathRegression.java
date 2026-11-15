@@ -47,7 +47,7 @@ public final class AutoPathRegression {
         checkFlowerExit(false);
         checkFlowerExit(true);
         checkAutoTurretSearch();
-        System.out.println("Passed eight-path geometry (park), no wall shuffle, headings, speed, pauses, FLOWER recovery, and registration checks.");
+        System.out.println("Passed eight-path geometry (park), FLOWER shuffle, headings, speed, pauses, FLOWER recovery, and registration checks.");
     }
 
     /** AutoPath's turret sweeps whenever the tag is lost, even though the heading is known. */
@@ -168,6 +168,38 @@ public final class AutoPathRegression {
             }
             Pose atFlower = navigation.state().pose();
             tickRoute();
+            // FLOWER shuffle: one short pickup-speed follow from where path 7 stopped.
+            double pickupSpeed = org.firstinspires.ftc.teamcode.autonomous.BioBuzzAutoConfig.PICKUP_SPEED_FRACTION;
+            if (follower.pathsStarted != 8 || follower.idle() || Constants.foresightConfig.maxPathSpeed.get() != pickupSpeed) {
+                throw new AssertionError("The FLOWER shuffle starts at pickup speed right after path 7");
+            }
+            Path shuffle = follower.currentPath();
+            assertPoint(shuffle.get(0), atFlower.x(), atFlower.y());
+            double h = atFlower.heading();
+            assertPoint(shuffle.endPose(), atFlower.x() + AutoPath.FLOWER_SHUFFLE_PUSH_IN * Math.cos(h),
+                    atFlower.y() + AutoPath.FLOWER_SHUFFLE_PUSH_IN * Math.sin(h));
+            assertHeading(shuffle.heading(.5), h);
+            // Right first, then left (robot-relative; robot right = (sin h, -cos h)).
+            double firstSide = -Math.sin(h) * (shuffle.get(0.1).x() - atFlower.x()) + Math.cos(h) * (shuffle.get(0.1).y() - atFlower.y());
+            if (firstSide >= 0) throw new AssertionError("The FLOWER shuffle must move RIGHT first, then left");
+            double maxLeft = 0, maxRight = 0, maxBack = 0;
+            for (int i = 0; i <= 400; i++) {
+                Pose q = shuffle.get(i / 400.0);
+                double dx = q.x() - atFlower.x(), dy = q.y() - atFlower.y();
+                double left = -Math.sin(h) * dx + Math.cos(h) * dy;
+                maxLeft = Math.max(maxLeft, left); maxRight = Math.max(maxRight, -left);
+                maxBack = Math.max(maxBack, -(Math.cos(h) * dx + Math.sin(h) * dy));
+            }
+            if (Math.abs(maxLeft - AutoPath.FLOWER_SHUFFLE_LEFT_IN) > 0.05 || Math.abs(maxRight - AutoPath.FLOWER_SHUFFLE_RIGHT_IN) > 0.05
+                    || Math.abs(maxBack - AutoPath.FLOWER_SHUFFLE_BACK_IN) > 0.05 || maxLeft > 2 || maxRight > 2 || maxBack > 2) {
+                throw new AssertionError("The FLOWER shuffle is slight: " + maxLeft + " / " + maxRight + " / " + maxBack);
+            }
+            // Pressed into the FLOWER: no movement, so the shuffle ends after its stall window.
+            now[0] += AutoPath.FLOWER_SHUFFLE_STALL_NS - 1_000_000L;
+            tickRoute();
+            if (follower.pathsStarted != 8 || follower.idle()) throw new AssertionError("Keep shuffling until the stall window ends");
+            now[0] += 1_000_000L;
+            tickRoute();
             assertStep(follower, 8);
             assertPoint(follower.currentPath().get(0), atFlower.x(), atFlower.y());
             assertPoint(follower.currentPath().get(1), 15.7092, 122.0158);
@@ -197,12 +229,12 @@ public final class AutoPathRegression {
         for (int i = 0; i < 3; i++) Scheduler.execute();
     }
 
-    /** step = route path number 1-8 (one follow per path; there is no wall shuffle any more). */
+    /** step = route path number 1-8 (one follow per path, plus the FLOWER shuffle between 7 and 8). */
     private static void assertStep(Tracking follower, int step) {
         // Only path 2 (into the wall balls) and path 7 (FLOWER intake) run slower than the route speed.
         double expected = step == 2 || step == 7
                 ? org.firstinspires.ftc.teamcode.autonomous.BioBuzzAutoConfig.PICKUP_SPEED_FRACTION : AutoPath.SPEED_FRACTION;
-        int started = step;
+        int started = step >= 8 ? step + 1 : step; // The FLOWER shuffle is one extra follow before path 8.
         if (follower.pathsStarted != started || Constants.foresightConfig.maxPathSpeed.get() != expected) {
             throw new AssertionError("Expected path " + step + " at " + expected + " speed, saw path "
                     + follower.pathsStarted + " at " + Constants.foresightConfig.maxPathSpeed.get());

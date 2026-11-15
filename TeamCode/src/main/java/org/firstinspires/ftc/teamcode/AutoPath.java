@@ -16,6 +16,7 @@ import java.util.function.LongSupplier;
 
 import static com.pedropathing.api.Paths.curve;
 import static com.pedropathing.api.Paths.line;
+import static com.pedropathing.api.Paths.path;
 import static com.pedropathing.ivy.commands.Commands.instant;
 import static com.pedropathing.ivy.commands.Commands.lazy;
 import static com.pedropathing.ivy.groups.Groups.parallel;
@@ -65,6 +66,16 @@ public class AutoPath extends LinearOpMode {
      * the zone before 30 s. If the robot is not at the FLOWER yet by then, it parks immediately.
      */
     static final double PARK_LEAVE_BY_S = 27.5;
+    // FLOWER shuffle (2026-11-14): once path 7 stops at the FLOWER, shift slightly right, left, back
+    // off and push 1 in past the stop point (heading held, pickup speed, still shooting), so the
+    // intake picks up every ball there. Robot-relative offsets from where the robot actually stopped.
+    static final double FLOWER_SHUFFLE_LEFT_IN = 1.5;
+    static final double FLOWER_SHUFFLE_RIGHT_IN = 1.5;
+    static final double FLOWER_SHUFFLE_BACK_IN = 1.5;
+    static final double FLOWER_SHUFFLE_PUSH_IN = 1.0;
+    // Ends at Pedro's end of path, after this long without 0.25 in of movement, or at the time cap.
+    static final long FLOWER_SHUFFLE_STALL_NS = 350_000_000L;
+    static final long FLOWER_SHUFFLE_MAX_NS = 1_750_000_000L;
     private static final PoseFactory POSES = PoseFactory.degrees();
     private static final Pose START = POSES.of(54.6728, 8.1648, 270);
     private static final Pose POINT_1 = POSES.of(7.4387, 15.6441, 270);
@@ -220,7 +231,8 @@ public class AutoPath extends LinearOpMode {
                 toSecondShot, pauseDrive(follower, clock, SECOND_SHOT_PAUSE_NS),
                 follow(follower, atRouteSpeed(path6())),
                 approach(follower, clock, atPickupSpeed(path7()), flower, false),
-                park(follower, clock)); // Drive-only parks straight from the FLOWER.
+                flowerShuffle(follower, clock),
+                park(follower, clock)); // Drive-only parks right after the FLOWER shuffle.
         // Volley 2 accuracy: stopped at least 4 s, full feed window, and still for 0.5 s after feeding.
         // Continuous feeding is armed as volley 2 starts, so when its feed window ends the gate never
         // closes: gate open, intake + transmission feeding and turret tracking stay on to the end.
@@ -235,7 +247,8 @@ public class AutoPath extends LinearOpMode {
                     mechanisms.continuousFeedRpm(FLOWER_RPM);
                     if (flowerLever != null) flowerLever.setDeployed(true);
                 }),
-                approach(follower, clock, atPickupSpeed(path7()), flower, false));
+                approach(follower, clock, atPickupSpeed(path7()), flower, false),
+                flowerShuffle(follower, clock)); // Slight shuffle at the FLOWER, still shooting.
         long[] routeStart = {0};
         return sequential(
                 parallel(instant(() -> routeStart[0] = clock.getAsLong()), // START time for PARK_LEAVE_BY_S
@@ -253,6 +266,47 @@ public class AutoPath extends LinearOpMode {
                 endBy(follower, mechanisms, sequential(toFlower, pauseDrive(follower, clock, Long.MAX_VALUE)),
                         clock, routeStart, PARK_LEAVE_BY_S),
                 park(follower, clock)); // Still feeding at FLOWER_RPM while parking.
+    }
+
+    /** Slight side-to-side, then back-and-forth moves from wherever path 7 stopped at the FLOWER. */
+    private static Command flowerShuffle(Follower follower, LongSupplier clock) {
+        long[] started = {0}, lastMove = {0};
+        Pose[] anchor = {null};
+        return Command.build().setStart(() -> {
+            Pose from = follower.pose();
+            follower.follow(atPickupSpeed(flowerShufflePath(from)));
+            started[0] = lastMove[0] = clock.getAsLong();
+            anchor[0] = from;
+        }).setDone(() -> {
+            long now = clock.getAsLong();
+            Pose pose = follower.pose();
+            if (!Double.isFinite(pose.x()) || !Double.isFinite(pose.y())) {
+                throw new IllegalStateException("Invalid Pinpoint pose during the FLOWER shuffle");
+            }
+            if (pose.distance(anchor[0]) >= APPROACH_PROGRESS_IN) { anchor[0] = pose; lastMove[0] = now; }
+            boolean done = follower.atParametricEnd() || now - lastMove[0] >= FLOWER_SHUFFLE_STALL_NS
+                    || now - started[0] >= FLOWER_SHUFFLE_MAX_NS;
+            if (done) stopDrive(follower);
+            return done;
+        });
+    }
+
+    /** Right, then left, back to center, back off, then push FLOWER_SHUFFLE_PUSH_IN past the start, holding heading. */
+    static Path flowerShufflePath(Pose from) {
+        double h = from.heading();
+        double fx = Math.cos(h), fy = Math.sin(h); // forward: into the FLOWER
+        double lx = -fy, ly = fx;                  // robot left
+        Pose left = shifted(from, lx * FLOWER_SHUFFLE_LEFT_IN, ly * FLOWER_SHUFFLE_LEFT_IN);
+        Pose right = shifted(from, -lx * FLOWER_SHUFFLE_RIGHT_IN, -ly * FLOWER_SHUFFLE_RIGHT_IN);
+        Pose back = shifted(from, -fx * FLOWER_SHUFFLE_BACK_IN, -fy * FLOWER_SHUFFLE_BACK_IN);
+        Pose push = shifted(from, fx * FLOWER_SHUFFLE_PUSH_IN, fy * FLOWER_SHUFFLE_PUSH_IN);
+        return path(line(from, right).constant(from), line(right, left).constant(from),
+                line(left, from).constant(from), line(from, back).constant(from),
+                line(back, push).constant(from));
+    }
+
+    private static Pose shifted(Pose pose, double dx, double dy) {
+        return POSES.of(pose.x() + dx, pose.y() + dy, Math.toDegrees(pose.heading()));
     }
 
     /** Path 8 from wherever the robot is, at route speed, then hold still until the auto ends. */

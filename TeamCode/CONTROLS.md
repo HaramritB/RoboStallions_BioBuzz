@@ -85,8 +85,8 @@ if its current mode is uncertain. The code cannot identify that programmed mode.
 
 For the turret, **gamepad 2 right stick X** overrides auto-aim. Gamepad 2 **Y** toggles
 auto-aim; hold **B** to center. With the turret physically pointing straight forward,
-**gamepad 2 Back** resets its encoder zero. Software limits are **-709 to +548 ticks**,
-inside the measured physical endpoints of -724/+563. Positive ticks turn right from above.
+**gamepad 2 Back** resets its encoder zero. Software limits are **+/-270 deg (-762 to +762
+ticks)** from the INIT position (2026-11-14 turret update). Positive ticks turn right from above.
 
 Telemetry shows requested/applied power, raw encoder ticks, limit blocking, and Pinpoint
 heading-compensation status. See [Turret tracking setup](TURRET_TRACKING.md) for deployment,

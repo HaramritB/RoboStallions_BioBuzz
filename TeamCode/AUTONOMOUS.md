@@ -68,7 +68,10 @@ speeds so it rehearses the real run.
    from the start of path 7 the flywheel runs at a fixed **3180 RPM** (`AutoPath.FLOWER_RPM`), not the
    distance table. The flower lever stays OFF through path 6 and deploys right before path 7.
 6. **Volley 3 = staying at the FLOWER.** Path 7 drives in at pickup speed; after 1 s without
-   progress (`FLOWER_STALL_NS`) the drive stops and the robot stays there, still shooting at 3180 RPM,
+   progress (`FLOWER_STALL_NS`) the robot does a **slight shuffle** from where it stopped (1.5 in right,
+   then 1.5 in left, back to center, back off 1.5 in, push 1 in past the stop point; heading held, pickup
+   speed, still shooting; ends after 0.35 s without movement or at 1.75 s; `FLOWER_SHUFFLE_*`), then
+   stays there, still shooting at 3180 RPM,
    until **27.5 s** after START (`PARK_LEAVE_BY_S`). There is no separate pickup or volley-3 start time.
 7. **Park (path 8):** at 27.5 s the robot drives the ~35 in park curve to (15.7092, 122.0158) from
    wherever it is (~1.9 s at 90% by the old path-8 log), still shooting, and holds still there. If it

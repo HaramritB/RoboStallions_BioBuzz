@@ -213,18 +213,23 @@ public final class AutoPathMechanismRegression {
                 f.advance(.001);
             } else f.arrive();
             f.drain();
-            check(f.follower.idle() && f.follower.pathsStarted==7,"At the FLOWER the drive stops");
+            check(f.follower.pathsStarted==8 && !f.follower.idle()
+                            && Constants.foresightConfig.maxPathSpeed.get()==BioBuzzAutoConfig.PICKUP_SPEED_FRACTION,
+                    "At the FLOWER the slight shuffle runs at pickup speed");
+            check(f.hardware.feeding() && f.hardware.continuousRpm==3180,"Still shooting at 3180 RPM during the FLOWER shuffle");
+            f.arrive(); f.drain();
+            check(f.follower.idle() && f.follower.pathsStarted==8,"After the shuffle the drive stops at the FLOWER");
             long leaveAt=f.startedAt+Math.round(AutoPath.PARK_LEAVE_BY_S*1e9);
             check(f.now<leaveAt-1_000_000_000L,"Test reaches the FLOWER well before the park time");
             f.now=leaveAt-1_000_000L; f.tick(); f.drain();
-            check(f.follower.idle() && f.follower.pathsStarted==7 && Scheduler.isScheduled(f.route),
+            check(f.follower.idle() && f.follower.pathsStarted==8 && Scheduler.isScheduled(f.route),
                     "The robot stays at the FLOWER until the park time");
             check(f.hardware.feeding() && f.hardware.continuousRpm==3180 && f.hardware.fullStops==0,
                     "Volley 3: the shooting sequence stays on at 3180 RPM at the FLOWER");
             check(f.lever.position==FlowerLever.DEPLOYED_POSITION,"The flower stays ON at the FLOWER (cleanup retracts it)");
             Pose atFlower=f.nav.state().pose();
             f.now=leaveAt; f.tick(); f.drain(); f.drain();
-            check(f.follower.pathsStarted==8 && f.follower.currentPath().get(0).distance(atFlower)<1e-8
+            check(f.follower.pathsStarted==9 && f.follower.currentPath().get(0).distance(atFlower)<1e-8
                             && f.follower.currentPath().endPose().distance(PoseFactory.degrees().of(15.7092,122.0158,90))<1e-6,
                     "At PARK_LEAVE_BY_S the robot parks with path 8 from where it is");
             check(Constants.foresightConfig.maxPathSpeed.get()==AutoPath.SPEED_FRACTION,"The park runs at route speed");
@@ -265,7 +270,8 @@ public final class AutoPathMechanismRegression {
             f.nav.setPose(PoseFactory.degrees().of(42.10,121.0,90)); f.now=leaveAt-1_000_000L; f.tick(); f.drain();
             check(f.follower.pathsStarted==7,"Before the park time, path 7 keeps going");
             f.nav.setPose(PoseFactory.degrees().of(42.10,122.0,90)); f.now=leaveAt; f.tick(); f.drain(); f.drain();
-            check(f.follower.pathsStarted==8 && f.follower.currentPath().get(0).distance(PoseFactory.degrees().of(42.10,122.0,90))<1e-8,
+            check(f.follower.pathsStarted==8 && f.follower.currentPath().get(0).distance(PoseFactory.degrees().of(42.10,122.0,90))<1e-8
+                            && f.follower.currentPath().endPose().distance(PoseFactory.degrees().of(15.7092,122.0158,90))<1e-6,
                     "At the park time the robot parks from wherever it is, even mid path 7");
         } finally { f.close(false); }
     }

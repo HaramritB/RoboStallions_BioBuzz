@@ -75,8 +75,8 @@ public final class TurretTrackingRegression {
 
         near(Robot.TURRET_MOTOR_TICKS_PER_REV, 145.0909090909091, "1150 RPM encoder ratio");
         near(Robot.TURRET_TICKS_PER_DEG, 2.8212121212121213, "12:84 external gearing");
-        check(Robot.TURRET_MIN_TICKS == -709 && Robot.TURRET_MAX_TICKS == 548,
-                "Soft limits must have clearance inside measured -724/+563 endpoints");
+        check(Robot.TURRET_MIN_TICKS == -762 && Robot.TURRET_MAX_TICKS == 762,
+                "Soft limits are +/-270 deg from the INIT position (2026-11-14 turret update)");
         check(Robot.TURRET_MAX_DEG - Robot.TURRET_MIN_DEG > 360,
                 "Measured multi-turn travel must remain available");
 
@@ -139,9 +139,12 @@ public final class TurretTrackingRegression {
         pre.now += 500;
         near(pre.update(170, false, Double.NaN, 7, 0, 0), 0, "...so it does not sweep only 0.5 s after arriving");
         pre.controller.preAimAngle = 200;
+        check(pre.update(170, false, Double.NaN, 7, 0, 0) > 0,
+                "With +/-270 deg limits a 200 deg prediction is reached directly");
+        pre.controller.preAimAngle = 300;
         check(pre.update(170, false, Double.NaN, 7, 0, 0) < 0
                         && text(pre.controller, "state").equals("UNWIND LEFT"),
-                "A prediction past the cable limit uses the equivalent angle a turn away");
+                "A prediction past the +270 deg cable limit uses the equivalent angle a turn away");
         pre.controller.preAimAngle = Double.NaN;
         pre.now += 401;
         check(text(pre.controller, "state").length() > 0
@@ -256,10 +259,10 @@ public final class TurretTrackingRegression {
                 "A stale frame is not counted as an observation");
 
         aim = new Aim();
-        aim.update(190, true, 10, 1, 0, 0);
-        near(field(aim.controller, "lastTargetAngle"), -160,
-                "A target beyond the cable limit must select its legal equivalent angle");
-        check(aim.update(190, true, 10, 1, 0, 0) < 0, "Unwind toward that equivalent angle");
+        aim.update(265, true, 10, 1, 0, 0);
+        near(field(aim.controller, "lastTargetAngle"), -85,
+                "A target beyond the +270 deg cable limit must select its legal equivalent angle");
+        check(aim.update(265, true, 10, 1, 0, 0) < 0, "Unwind toward that equivalent angle");
         aim = new Aim(-150, 150);
         check(aim.update(149, true, 30, 1, 0, 0) > 0,
                 "An unreachable target moves only up to the nearest legal limit");
@@ -331,6 +334,21 @@ public final class TurretTrackingRegression {
         near(robot.turretDegrees(), 254 / Robot.TURRET_TICKS_PER_DEG, "Production encoder conversion");
         robot.zeroTurret();
         near(motor.power, 0, "Re-zero must stop the motor first");
+        // Turret angles are relative to the INIT position; BACK must make the zeroed position read 0.
+        Robot offset = new Robot();
+        Motor offsetMotor = new Motor();
+        offset.turret = offsetMotor.device;
+        java.lang.reflect.Field start = Robot.class.getDeclaredField("turretStartTicks");
+        start.setAccessible(true);
+        start.setInt(offset, 300); // INIT happened with the encoder at 300 (turret moved earlier, no power cycle).
+        offsetMotor.ticks = 300;
+        near(offset.turretDegrees(), 0, "At INIT the turret reads 0 from its start position");
+        offset.zeroTurret();
+        offsetMotor.ticks = 0; // STOP_AND_RESET_ENCODER
+        near(offset.turretDegrees(), 0, "After BACK (zeroTurret) the zeroed position reads 0 deg");
+        offsetMotor.ticks = Robot.TURRET_MAX_TICKS;
+        offset.aimTurret(false, 0.3);
+        near(offsetMotor.power, 0, "Soft limits are measured from the BACK zero too");
         robot.targetTx = 10.06;
         robot.targetFresh = true;
         robot.targetVisible = true;

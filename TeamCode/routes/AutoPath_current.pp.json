@@ -164,9 +164,114 @@
       "color": "#edc948",
       "locked": false,
       "waitBeforeMs": 0,
-      "waitAfterMs": 2500,
+      "waitAfterMs": 0,
       "waitBeforeName": "3180 RPM from here, still shooting",
-      "waitAfterName": "Volley 3: stay at the FLOWER shooting at 3180 RPM until 27.5 s"
+      "waitAfterName": "FLOWER stall (<=1 s), then slight shuffle (still shooting)"
+    },
+    {
+      "kind": "atomic",
+      "id": "autopath-flower-shuffle-1",
+      "name": "FLOWER shuffle 1 - right",
+      "endPoint": {
+        "x": 43.5231,
+        "y": 139.2817,
+        "name": "right"
+      },
+      "controlPoints": [],
+      "heading": {
+        "type": "constant",
+        "degrees": 90
+      },
+      "color": "#ff9da7",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 0,
+      "waitBeforeName": "",
+      "waitAfterName": ""
+    },
+    {
+      "kind": "atomic",
+      "id": "autopath-flower-shuffle-2",
+      "name": "FLOWER shuffle 2 - left",
+      "endPoint": {
+        "x": 40.5231,
+        "y": 139.2817,
+        "name": "left"
+      },
+      "controlPoints": [],
+      "heading": {
+        "type": "constant",
+        "degrees": 90
+      },
+      "color": "#ff9da7",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 0,
+      "waitBeforeName": "",
+      "waitAfterName": ""
+    },
+    {
+      "kind": "atomic",
+      "id": "autopath-flower-shuffle-3",
+      "name": "FLOWER shuffle 3 - center",
+      "endPoint": {
+        "x": 42.0231,
+        "y": 139.2817,
+        "name": "center"
+      },
+      "controlPoints": [],
+      "heading": {
+        "type": "constant",
+        "degrees": 90
+      },
+      "color": "#ff9da7",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 0,
+      "waitBeforeName": "",
+      "waitAfterName": ""
+    },
+    {
+      "kind": "atomic",
+      "id": "autopath-flower-shuffle-4",
+      "name": "FLOWER shuffle 4 - back",
+      "endPoint": {
+        "x": 42.0231,
+        "y": 137.7817,
+        "name": "back"
+      },
+      "controlPoints": [],
+      "heading": {
+        "type": "constant",
+        "degrees": 90
+      },
+      "color": "#ff9da7",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 0,
+      "waitBeforeName": "",
+      "waitAfterName": ""
+    },
+    {
+      "kind": "atomic",
+      "id": "autopath-flower-shuffle-5",
+      "name": "FLOWER shuffle 5 - push",
+      "endPoint": {
+        "x": 42.0231,
+        "y": 140.2817,
+        "name": "push"
+      },
+      "controlPoints": [],
+      "heading": {
+        "type": "constant",
+        "degrees": 90
+      },
+      "color": "#ff9da7",
+      "locked": false,
+      "waitBeforeMs": 0,
+      "waitAfterMs": 1500,
+      "waitBeforeName": "",
+      "waitAfterName": "Stay at the FLOWER shooting at 3180 RPM until 27.5 s"
     },
     {
       "kind": "atomic",
@@ -385,6 +490,26 @@
     {
       "kind": "path",
       "lineId": "autopath-seg-12"
+    },
+    {
+      "kind": "path",
+      "lineId": "autopath-flower-shuffle-1"
+    },
+    {
+      "kind": "path",
+      "lineId": "autopath-flower-shuffle-2"
+    },
+    {
+      "kind": "path",
+      "lineId": "autopath-flower-shuffle-3"
+    },
+    {
+      "kind": "path",
+      "lineId": "autopath-flower-shuffle-4"
+    },
+    {
+      "kind": "path",
+      "lineId": "autopath-flower-shuffle-5"
     },
     {
       "kind": "path",

@@ -1162,6 +1162,8 @@ public class Robot {
         turret.setMode(
                 DcMotor.RunMode.RUN_WITHOUT_ENCODER
         );
+        // The encoder now reads 0 here, so angles are measured from this zero, not the INIT position.
+        turretStartTicks = 0;
     }
 
     public boolean aimedAtTarget() {

@@ -6,9 +6,9 @@ per output revolution and **2.82121 ticks per turret degree** after the external
 The observed 272 ticks for an estimated 90-degree turn is about 7% higher; check the
 physical angle accurately before substituting an empirical conversion.
 
-The measured endpoints are **-724/+563 raw ticks** from forward zero. Software adds
-15 ticks of inward clearance at each end, giving **-709/+548**. Turret encoder angles
-remain unwrapped across the full measured travel, which exceeds 360 degrees.
+Since the 2026-11-14 turret update, turret angles are measured from where the turret is when the
+OpMode is INITed (`turretStartTicks`), with soft limits of **+/-270 deg (-762/+762 ticks)** from
+there and no stall/snag recovery. Angles stay unwrapped across the 540 degree travel.
 
 ## Run on the robot
 

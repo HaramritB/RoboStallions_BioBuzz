@@ -236,9 +236,9 @@ public final class V2Regression {
         near(FieldAimV2.nearestReachableAngle(100, -200, -250, 194), 100, 1e-9,
                 "Only in-range equivalents are chosen");
         a = aim();
-        a.update(withFrame(pose(150, 0, 0, 0), 0, 100, 0)); // target at turret 150
+        a.update(withFrame(pose(250, 0, 0, 0), 0, 100, 0)); // target at turret 250
         T[0] += 10;
-        a.update(pose(150, 0, 0, 50)); // robot turns 50 CCW -> wants 200 -> beyond 194
+        a.update(pose(250, 0, 0, 30)); // robot turns 30 CCW -> wants 280 -> beyond the +270 limit
         check(a.state.equals("UNWIND LEFT") && a.returning(), "Passing the cable limit unwinds a full turn");
 
         // F) No odometry: camera-only, then search (as the original).

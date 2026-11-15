@@ -5,8 +5,8 @@ import com.qualcomm.robotcore.hardware.Servo;
 
 /** Shared measured flower-lever positions and PWM behavior for TeleOp and Auto. */
 public final class FlowerLever {
-    public static final double DEPLOYED_POSITION = 0.505;
-    public static final double RETRACTED_POSITION = 0.14;
+    public static final double DEPLOYED_POSITION = 0.5;
+    public static final double RETRACTED_POSITION = 0.145;
     private final Servo servo;
     private boolean commanded;
     private boolean deployed;

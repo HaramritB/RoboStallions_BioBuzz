@@ -29,7 +29,7 @@ public final class AutoPathRegression {
                 AutoPath.path5(), AutoPath.path6(), AutoPath.path7(), AutoPath.path8()};
         double[][] xy = {{54.6728, 8.1648}, {7.4387, 15.6441}, {7.3833, 0.0881}, {7.2845, 15.5174},
                 {26.4473, 15.5231}, {59.3283, 124.8302}, {43.2211, 110.6879},
-                {42.0421, 139.2817}, {59.5702, 124.8013}};
+                {42.0231, 139.2817}, {15.7092, 122.0158}};
         for (int i = 0; i < paths.length; i++) {
             assertPoint(paths[i].get(0), xy[i][0], xy[i][1]);
             assertPoint(paths[i].get(1), xy[i + 1][0], xy[i + 1][1]);
@@ -44,12 +44,10 @@ public final class AutoPathRegression {
         assertPoint(paths[0].get(.5), (54.6728 + 2 * 37.8335 + 7.4387) / 4, (8.1648 + 2 * 44.6525 + 15.6441) / 4);
         assertPoint(paths[4].get(.5), (26.4473 + 2 * 16.3139 + 59.3283) / 4,
                 (15.5231 + 2 * 96.4996 + 124.8302) / 4);
-        assertPoint(paths[7].get(.5), (42.0421 + 2 * 49.7351 + 59.5702) / 4,
-                (139.2817 + 2 * 98.8256 + 124.8013) / 4);
         checkFlowerExit(false);
         checkFlowerExit(true);
         checkAutoTurretSearch();
-        System.out.println("Passed eight-path geometry, no wall shuffle, headings, speed, pauses, FLOWER recovery, and registration checks.");
+        System.out.println("Passed eight-path geometry (park), no wall shuffle, headings, speed, pauses, FLOWER recovery, and registration checks.");
     }
 
     /** AutoPath's turret sweeps whenever the tag is lost, even though the heading is known. */
@@ -137,9 +135,8 @@ public final class AutoPathRegression {
                 arrive(follower, navigation);
             }
             if (!follower.idle()) throw new AssertionError("Path 5 must end at a stopped shooting spot");
-            if (AutoPath.FLOWER_STALL_NS != 1_000_000_000L || AutoPath.FLOWER_PICKUP_NS != 2_000_000_000L
-                    || AutoPath.FLOWER_LEAVE_BY_S != 24.5) {
-                throw new AssertionError("FLOWER stall 1 s, pickup 2 s, leave by 24.5 s after START");
+            if (AutoPath.FLOWER_STALL_NS != 1_000_000_000L || AutoPath.FLOWER_RPM != 3180 || AutoPath.PARK_LEAVE_BY_S != 27.5) {
+                throw new AssertionError("FLOWER stall 1 s; FLOWER volley at 3180 RPM; park leaves at 27.5 s");
             }
             now[0] += 3_999_000_000L;
             tickRoute();
@@ -165,18 +162,20 @@ public final class AutoPathRegression {
                 int stopsBeforeEscape = drive.stops;
                 now[0] += 1_000_000L;
                 tickRoute();
-                assertStep(follower, 8);
                 if (drive.stops <= stopsBeforeEscape) throw new AssertionError("Stall must stop pushing");
-                assertPoint(follower.currentPath().get(0), 42.10, 131.0);
             } else {
                 arrive(follower, navigation);
-                assertStep(follower, 8);
-                assertPoint(follower.currentPath().get(0), 42.0421, 139.2817);
             }
-            assertPoint(follower.currentPath().get(1), 59.5702, 124.8013);
+            Pose atFlower = navigation.state().pose();
+            tickRoute();
+            assertStep(follower, 8);
+            assertPoint(follower.currentPath().get(0), atFlower.x(), atFlower.y());
+            assertPoint(follower.currentPath().get(1), 15.7092, 122.0158);
             assertHeading(follower.currentPath().heading(.5), Math.PI / 2);
             arrive(follower, navigation);
-            if (Scheduler.isScheduled(route)) throw new AssertionError("Path 8 must finish the route");
+            if (!follower.idle() || !Scheduler.isScheduled(route)) {
+                throw new AssertionError("Drive-only parks with path 8 from the FLOWER, then holds still");
+            }
         } finally {
             Scheduler.cancel(route);
             follower.stop();

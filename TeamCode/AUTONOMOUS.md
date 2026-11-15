@@ -12,7 +12,7 @@ Select **AutoPath (Drive Only)** to run the same route and pauses without
 initializing mechanism hardware. The separate **BioBuzz Auto** from the latest pull is
 unchanged. The older BioBuzz Pedro Auto description below refers to its own implementation.
 
-AutoPath follows the supplied eight-segment route. Every segment runs at the 90% modeled
+AutoPath follows the supplied eight-segment route (path 8 = park, 2026-11-14). Every segment runs at the 90% modeled
 speed except the two that drive into balls: **path 2** (into the four wall balls) and
 **path 7** (FLOWER intake), which use 35% / 18 in/s. AutoPath (Drive Only) uses the same
 speeds so it rehearses the real run.
@@ -22,7 +22,7 @@ speeds so it rehearses the real run.
 2. Shoot the four preloads at START before driving. The flywheel and turret stay active, and
    the **intake roller runs inward the entire time** from START to the end of the route (same
    direction as the feed), including during volleys. The **transmission runs only while
-   collecting** (path 1 → path 2 → wall pause, paths 6–7 → FLOWER pickup, and path 8), stacking balls
+   collecting** (path 1 → path 2 → wall pause, paths 6–7 → FLOWER pickup), stacking balls
    against the closed gate, and while feeding a volley; it is off between pickups (since
    2026-11-13). For each volley it stops during spin-up, briefly backs the
    balls off the gate (0.10 s outward) as the gate opens, and never pushes balls into a moving
@@ -60,16 +60,20 @@ speeds so it rehearses the real run.
    window. For accuracy the robot stays stopped at least **4 s** after arriving and at least
    **0.5 s** after the feed window ends (`VOLLEY2_MIN_STOP_NS`, `VOLLEY2_HOLD_AFTER_NS`).
    The flower lever stays OFF.
-5. The flower deploys ON as path 6 starts (moving away from spot 2). Collect on paths 6–7, then
-   **2 s** stopped at FLOWER (`FLOWER_PICKUP_NS`). The FLOWER physically stops the robot near
-   y = 127.5 (run logs), short of POINT_7, so path 7 ends by stalling: after **1 s** pressed in
-   without 0.25 in of progress (`FLOWER_STALL_NS`, was 4 s) the stopped pickup starts.
-6. The flower stays ON leaving the FLOWER and retracts once path 8 is 10 in from where it left
-   (`FLOWER_RETRACT_AFTER_IN`; OFF by the end of path 8 either way). Path 8 starts from the robot's actual pose and keeps
-   collecting (transmission on) on the way to the 3rd spot, then the final volley and cleanup.
-   **Time cutoff:** whatever it is doing at the FLOWER, the robot leaves for volley 3 at
-   `AutoPath.FLOWER_LEAVE_BY_S = 24.5` s after START. From the logs, path 8 takes ~1.8 s and the gate
-   opens ~1.1 s after arrival, so the 1.25 s feed is done by ~28.9 s.
+5. **From the start of volley 2 to the end of the auto the shooting sequence stays on**
+   (2026-11-14): volley 2 still waits for a stable, aimed flywheel and keeps its 4 s stop, but when
+   its feed window ends the gate never closes. Gate open, intake + transmission feeding and turret
+   tracking continue through paths 6–7 and at the FLOWER (`continueFeedingAfterShot()`; the run log's
+   shot_phase column shows `CONTINUOUS`). Path 6 holds volley 2's RPM, so volley 2 is not affected;
+   from the start of path 7 the flywheel runs at a fixed **3180 RPM** (`AutoPath.FLOWER_RPM`), not the
+   distance table. The flower lever stays OFF through path 6 and deploys right before path 7.
+6. **Volley 3 = staying at the FLOWER.** Path 7 drives in at pickup speed; after 1 s without
+   progress (`FLOWER_STALL_NS`) the drive stops and the robot stays there, still shooting at 3180 RPM,
+   until **27.5 s** after START (`PARK_LEAVE_BY_S`). There is no separate pickup or volley-3 start time.
+7. **Park (path 8):** at 27.5 s the robot drives the ~35 in park curve to (15.7092, 122.0158) from
+   wherever it is (~1.9 s at 90% by the old path-8 log), still shooting, and holds still there. If it
+   has not reached the FLOWER by 27.5 s it parks immediately. Only part of the robot needs to be in
+   the zone. Cleanup at the end of the OpMode closes the gate, stops the motors and retracts the flower.
 
 **Timing (2026-11-14, from the run log of that day).** The previous run spent 0 s at the FLOWER: it
 arrived at 23.9 s and the 24 s cutoff fired. Time found: volleys 1 and 3 feed for **1.25 s**
@@ -132,9 +136,9 @@ missing frames before using the 3215 no-tag default. Once the gate opens, latch 
 the stationary burst. No fixed 4000 RPM/color-based shooting target replaces the measured table.
 
 AutoPath commands the `flower` servo OFF as soon as INIT is pressed (and again at START). It stays
-OFF through path 5 and volley 2, deploys ON as path 6 starts (moving away from the 2nd spot),
-stays ON through path 7 and the FLOWER pickup, retracts once path 8 is 10 in from the FLOWER (not right after the pickup), and stays OFF
-for the final volley. The end of the OpMode, STOP or a failure also retracts it. FlowerLever shares TeleOp's ON=0.505/OFF=0.14 positions and
+OFF through path 5, volley 2 and path 6, deploys ON right before path 7,
+stays ON through path 7 and the FLOWER pickup, and stays ON for the final volley shot from the FLOWER; only the end of the OpMode
+retracts it. The end of the OpMode, STOP or a failure also retracts it. FlowerLever shares TeleOp's ON=0.5/OFF=0.145 positions and
 PWM-enable/restore behavior. AutoPath (Drive Only) never maps or commands it.
 
 Scoring needs intake, transmission, turret, shooter, torqueservo1, **flower**, a working Limelight and
@@ -335,8 +339,8 @@ power, and cancels scheduler commands before reset.
 heading profiles and speeds. Path 2 runs to its end at (7.994, 0), with a 1-second
 no-progress safety stop. The second shooting stop is after path 5. Path 7 targets (42.0421, 139.2817);
 if the approach stalls for one second without 0.25 inch of new progress, the pickup starts and
-path 8 then starts from the measured pose. Scoring keeps a two-second stopped intake window,
-collects on path 8, and leaves the FLOWER by 24.5 s after START. Verify wall and FLOWER contact and total run time on the field.
+the robot stops there and keeps shooting,
+then keeps shooting at 3180 RPM from the FLOWER (no path 8) until the auto ends. Verify wall and FLOWER contact and total run time on the field.
 
 ## Earlier scoring integration
 

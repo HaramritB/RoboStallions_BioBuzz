@@ -124,7 +124,7 @@
       "waitBeforeMs": 0,
       "waitAfterMs": 4000,
       "waitBeforeName": "",
-      "waitAfterName": "Volley 2 (>=4 s still, 2 s feed, 0.5 s hold)"
+      "waitAfterName": "Volley 2 (>=4 s still, 2 s feed, 0.5 s hold); shooting stays on from here"
     },
     {
       "kind": "atomic",
@@ -144,7 +144,7 @@
       "locked": false,
       "waitBeforeMs": 0,
       "waitAfterMs": 0,
-      "waitBeforeName": "",
+      "waitBeforeName": "Shooting continues at volley 2 RPM",
       "waitAfterName": ""
     },
     {
@@ -152,7 +152,7 @@
       "id": "autopath-seg-12",
       "name": "Path 7 - FLOWER intake",
       "endPoint": {
-        "x": 42.0421,
+        "x": 42.0231,
         "y": 139.2817,
         "name": "point7"
       },
@@ -164,23 +164,23 @@
       "color": "#edc948",
       "locked": false,
       "waitBeforeMs": 0,
-      "waitAfterMs": 3000,
-      "waitBeforeName": "",
-      "waitAfterName": "FLOWER stall (<=1 s) + pickup 2 s (leave by 24.5 s)"
+      "waitAfterMs": 2500,
+      "waitBeforeName": "3180 RPM from here, still shooting",
+      "waitAfterName": "Volley 3: stay at the FLOWER shooting at 3180 RPM until 27.5 s"
     },
     {
       "kind": "atomic",
-      "id": "autopath-seg-13",
-      "name": "Path 8 - to 3rd shot",
+      "id": "autopath-park",
+      "name": "Path 8 - park",
       "endPoint": {
-        "x": 59.5702,
-        "y": 124.8013,
-        "name": "point8"
+        "x": 15.7092,
+        "y": 122.0158,
+        "name": "park"
       },
       "controlPoints": [
         {
-          "x": 49.7351,
-          "y": 98.8256
+          "x": 46.9474,
+          "y": 110.7735
         }
       ],
       "heading": {
@@ -190,9 +190,9 @@
       "color": "#b07aa1",
       "locked": false,
       "waitBeforeMs": 0,
-      "waitAfterMs": 2400,
-      "waitBeforeName": "Flower OFF, intake collecting",
-      "waitAfterName": "Final volley (~2.4 s, 1.25 s feed)"
+      "waitAfterMs": 0,
+      "waitBeforeName": "Leave the FLOWER at 27.5 s (still shooting)",
+      "waitAfterName": "Parked"
     }
   ],
   "shapes": [
@@ -388,7 +388,7 @@
     },
     {
       "kind": "path",
-      "lineId": "autopath-seg-13"
+      "lineId": "autopath-park"
     }
   ],
   "fieldPoints": [],

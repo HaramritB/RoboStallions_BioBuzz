@@ -73,6 +73,12 @@ public final class BioBuzzAutoMechanisms {
         default void stopFeed() { stopOutputs(); }
         /** Keep the flywheel at calibrated RPM and the turret tracking while no feed is requested. */
         default void setShooterIdle(boolean spinning) { }
+        /**
+         * After the current shot, keep shooting for every request but SHOOT: gate open, intake +
+         * transmission feeding, turret tracking. The flywheel holds the last volley's RPM, or
+         * {@code rpm} when finite. {@code on=false} turns it off.
+         */
+        default void setContinuousFeed(boolean on, double rpm) { }
         /** Run the intake inward for the whole run, not only during collect commands. */
         default void setIntakeAlways(boolean running) { }
         /** Sweep the turret for the HIVE whenever the tag has been lost, instead of holding a bearing. */
@@ -171,6 +177,21 @@ public final class BioBuzzAutoMechanisms {
         if (closed) return;
         intakeAlways=running;
         if (hardware!=null) hardware.setIntakeAlways(running);
+    }
+
+    /**
+     * AutoPath (2026-11-14): once the current volley's feed window ends, keep the whole shooting
+     * sequence on (gate open, intake + transmission feeding, turret tracking) until cleanup, with
+     * the flywheel holding that volley's RPM until {@link #continuousFeedRpm(double)} changes it.
+     */
+    public void continueFeedingAfterShot() {
+        if (hardware!=null && !closed) hardware.setContinuousFeed(true,Double.NaN);
+    }
+
+    /** Continuous feeding at a fixed flywheel RPM instead of the distance table. */
+    public void continuousFeedRpm(double rpm) {
+        if (!Double.isFinite(rpm) || rpm<=0) throw new IllegalArgumentException("Continuous feed RPM must be positive");
+        if (hardware!=null && !closed) hardware.setContinuousFeed(true,rpm);
     }
 
     /**
@@ -452,6 +473,10 @@ public final class BioBuzzAutoMechanisms {
         private long lastPoseAt=-1, stillSince=-1;
         private Phase phase=Phase.IDLE;
         private boolean idleSpin;
+        private boolean continuousFeed; // Keep feeding between/after shots (AutoPath from volley 2 on).
+        private double continuousFeedRpm=Double.NaN; // NaN: hold the last volley's RPM.
+        private double lastVolleyRpm=Double.NaN;
+        private boolean continuousActive;
         private boolean intakeAlways;
         private boolean gateCommandOpen;
         private long gateMovedAt=-1;
@@ -498,7 +523,7 @@ public final class BioBuzzAutoMechanisms {
             return String.format(java.util.Locale.US,
                     "%s,%d,%.2f,%.1f,%s,%.3f,%.3f,%s,%d,%d,%d,%.2f,%.2f,%.3f,%.0f,%d,%.2f,%d,%.1f,%.1f,%.1f,%d,"
                             + "%.2f,%.0f,%.2f,%.0f,%d,%s,\"%s\"",
-                    phase,robot.gateOpen ? 1 : 0,robot.turretDegrees(),robot.turretVelocityDegPerSec(),
+                    continuousActive ? "CONTINUOUS" : phase.toString(),robot.gateOpen ? 1 : 0,robot.turretDegrees(),robot.turretVelocityDegPerSec(),
                     robot.turretAimState(),robot.turretRequestedPower(),robot.turretAppliedPower(),robot.turretPowerLimit(),
                     robot.targetFresh ? 1 : 0,robot.targetVisible ? 1 : 0,robot.targetId,robot.targetTx,
                     robot.visionErrorDegrees(),robot.targetDistanceMeters,robot.targetFrameAgeMs(),
@@ -509,6 +534,9 @@ public final class BioBuzzAutoMechanisms {
                     tags==null ? "" : tags.replace('"','\''));
         }
         @Override public void setShooterIdle(boolean spinning) { idleSpin=spinning; }
+        @Override public void setContinuousFeed(boolean on, double rpm) {
+            continuousFeed=on; continuousFeedRpm=on ? rpm : Double.NaN;
+        }
         @Override public void setIntakeAlways(boolean running) { intakeAlways=running; }
         @Override public void setSearchWhenTagLost(boolean search) { robot.setTurretSearchWhenTagLost(search); }
 
@@ -538,13 +566,15 @@ public final class BioBuzzAutoMechanisms {
             used=true;
             long now=clock.getAsLong();
             boolean shooting=request==Kind.SHOOT;
-            boolean spin=shooting || idleSpin;
+            boolean continuous=continuousFeed && !shooting && request!=Kind.CENTER_TURRET;
+            continuousActive=continuous;
+            boolean spin=shooting || idleSpin || continuous;
             updateHivePreAim(shooting);
             if (request==Kind.CENTER_TURRET) robot.turretToAngle(0);
             else if (spin) {
                 robot.aimTurret(true,0); // TeleOp keeps auto-aim on all match.
                 // Never sweep for a tag while the gate is open: hold the turret where it is.
-                if (shooting && phase!=Phase.IDLE && phase!=Phase.SPINUP
+                if (((shooting && phase!=Phase.IDLE && phase!=Phase.SPINUP) || continuous)
                         && robot.turretAimState().startsWith("SEARCH")) robot.turret.setPower(0);
             }
             else robot.turret.setPower(0);
@@ -554,7 +584,11 @@ public final class BioBuzzAutoMechanisms {
                     && robot.targetDistanceMeters>0;
             if (validDistance) recordDistance(robot.targetDistanceMeters,now);
             boolean latched=(phase==Phase.GATE_OPENING || phase==Phase.FEEDING) && Double.isFinite(burstBaseRpm);
-            double baseRpm=latched ? burstBaseRpm : Robot.rpmForDistance(filteredDistance(now));
+            double distanceRpm=Robot.rpmForDistance(filteredDistance(now));
+            double baseRpm=continuous
+                    ? (Double.isFinite(continuousFeedRpm) ? continuousFeedRpm
+                       : Double.isFinite(lastVolleyRpm) ? lastVolleyRpm : distanceRpm)
+                    : latched ? burstBaseRpm : distanceRpm;
             robot.shooterOn=spin;
             robot.updateShooter(baseRpm);
             double measuredRpm=robot.shooterRpm();
@@ -592,6 +626,7 @@ public final class BioBuzzAutoMechanisms {
                         phase=Phase.GATE_OPENING;
                         gateOpenedAt=now;
                         burstBaseRpm=baseRpm;
+                        lastVolleyRpm=baseRpm; // Continuous feeding holds this until told otherwise.
                         feedTrigger=forced ? String.format(java.util.Locale.US,"forced at %.1f s",waited)
                                 : aimed ? "aimed" : "no aimed tag: calibrated fallback";
                         feedStartRpm=measuredRpm; feedTargetRpm=targetRpm; minBurstRpm=measuredRpm;
@@ -617,6 +652,10 @@ public final class BioBuzzAutoMechanisms {
                         feeding || intakeAlways ? INWARD_INTAKE_POWER : 0,
                         feeding ? INWARD_TRANSMISSION_POWER
                                 : relieving ? -Math.signum(INWARD_TRANSMISSION_POWER)*BioBuzzAutoConfig.GATE_RELIEF_TRANSMISSION_POWER : 0);
+            } else if (continuous) {
+                // Shooting sequence stays on: gate open, both feed motors inward, fixed RPM.
+                resetShot();
+                driveFeeder(now,true,INWARD_INTAKE_POWER,INWARD_TRANSMISSION_POWER);
             } else {
                 resetShot();
                 // Collect in the same direction as the shot, gate closed: balls stack against the gate.
@@ -753,6 +792,8 @@ public final class BioBuzzAutoMechanisms {
         }
 
         @Override public void stopFeed() {
+            // A volley handing over to continuous feeding keeps the gate open and both motors running.
+            if (continuousFeed) { resetShot(); return; }
             if (!idleSpin && !intakeAlways) { stopOutputs(); return; }
             resetShot();
             RuntimeException[] first={null};
@@ -770,6 +811,7 @@ public final class BioBuzzAutoMechanisms {
         }
 
         @Override public void stopOutputs() {
+            continuousFeed=false; continuousFeedRpm=Double.NaN; continuousActive=false;
             robot.shooterOn=false;
             resetShot();
             distanceCount=distanceNext=0; lastDistanceAt=-1;

@@ -12,7 +12,7 @@ remain unwrapped across the full measured travel, which exceeds 360 degrees.
 
 ## Run on the robot
 
-1. Deploy the debug APK. Check `Robot code` reads `BIOBUZZ-FLOWER-ON0.505-OFF0.14-2026-11-14`.
+1. Deploy the debug APK. Check `Robot code` reads `BIOBUZZ-FLOWER-ON0.5-OFF0.145-2026-11-14`.
 2. Select **BioBuzz Blue TeleOp** or **BioBuzz Red TeleOp** for the correct alliance.
    During INIT, point the shooter physically forward
    and press **gamepad 2 Back** to establish the same zero used to measure the limits.

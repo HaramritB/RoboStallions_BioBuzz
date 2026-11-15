@@ -154,6 +154,7 @@ public final class MechanismIsolationRegression {
         forcedFeed();
         lostAim();
         readyShooterBetweenCommands();
+        continuousFeedAfterVolley();
         alwaysOnIntake();
         hivePreAim();
         travellingTurretHoldsGate();
@@ -644,6 +645,53 @@ public final class MechanismIsolationRegression {
         check(map.motors.get("intake").power==0 && map.motors.get("transmission").power==0,"STOP still stops the intake");
     }
 
+    /** AutoPath from volley 2 on: the gate never closes after the volley; feeding continues, then at 3180 RPM. */
+    static void continuousFeedAfterVolley() {
+        MapFixture map=new MapFixture();
+        long[] now={1_000_000_000L};
+        BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map,()->now[0]);
+        BioBuzzAutoMechanisms mechanisms=new BioBuzzAutoMechanisms(port);
+        mechanisms.keepShooterReady(true); mechanisms.keepIntakeRunning(true);
+        mechanisms.observe();
+        mechanisms.continueFeedingAfterShot();
+        com.pedropathing.ivy.Command volley=mechanisms.command(
+                BioBuzzAutoMechanisms.Action.shootFor(4,2.0,6.0),()->now[0],reason->{throw new AssertionError(reason);});
+        Runnable tick=()->{ mechanisms.update(); volley.done(); };
+        volley.start();
+        tick.run();
+        check(!port.robot.gateOpen,"Armed continuous feeding does not skip volley 2's normal spin-up gate");
+        map.motors.get("shooter").velocity=ticks(3235);
+        openGate(port,now,tick);
+        double volleyVelocity=map.motors.get("shooter").commandedVelocity;
+        qualifySpeed(port,now,tick);
+        double intakeFeed=map.motors.get("intake").power, transmissionFeed=map.motors.get("transmission").power;
+        check(intakeFeed!=0 && transmissionFeed!=0,"Volley 2 feeds with both motors");
+        int gateWrites=map.gatePositions.size();
+        for(int i=0;i<150 && !volley.done();i++) { now[0]+=STEP_NS; mechanisms.update(); }
+        check(volley.done(),"Volley 2's feed window still ends its command");
+        volley.end(com.pedropathing.ivy.behaviors.EndCondition.NATURALLY);
+        now[0]+=STEP_NS; mechanisms.update();
+        check(port.robot.gateOpen && map.gatePositions.size()==gateWrites,
+                "After volley 2 the gate stays OPEN (no close command)");
+        check(map.motors.get("intake").power==intakeFeed && map.motors.get("transmission").power==transmissionFeed,
+                "Intake and transmission keep feeding after volley 2");
+        check(Math.abs(map.motors.get("shooter").commandedVelocity-volleyVelocity)<1e-6,
+                "Path 6: the flywheel holds volley 2's RPM");
+        port.robot.targetDistanceMeters=3.0; now[0]+=STEP_NS; mechanisms.update();
+        check(Math.abs(map.motors.get("shooter").commandedVelocity-volleyVelocity)<1e-6,
+                "A new distance reading does not change the held RPM");
+        mechanisms.continuousFeedRpm(3180);
+        now[0]+=STEP_NS; mechanisms.update();
+        check(Math.abs(map.motors.get("shooter").commandedVelocity-ticks(3180+port.robot.rpmTrim))<1e-6,
+                "Path 7 onward: the flywheel runs at a fixed 3180 RPM");
+        check(port.robot.gateOpen && map.motors.get("intake").power==intakeFeed
+                        && map.motors.get("transmission").power==transmissionFeed,
+                "The whole shooting sequence stays on at the FLOWER");
+        check(port.logRow().startsWith("CONTINUOUS"),"The run log marks continuous feeding");
+        mechanisms.stop();
+        check(!port.robot.gateOpen && map.motors.get("transmission").power==0 && map.motors.get("intake").power==0,
+                "Cleanup still closes the gate and stops both feed motors");
+    }
     static void readyShooterBetweenCommands() {
         MapFixture map=new MapFixture();
         long[] now={1_000_000_000L};

@@ -68,16 +68,16 @@ public class Robot {
     public static final double TURRET_TICKS_PER_DEG = TURRET_TICKS_PER_TURRET_REV / 360.0;
 
     // Measured physical endpoints, clockwise-positive from the forward zero.
-    public static final int TURRET_MEASURED_MIN_TICKS = -724;
-    public static final int TURRET_MEASURED_MAX_TICKS = 563;
-    public static final double TURRET_LIMIT_CLEARANCE_DEG = 5.0;
-    public static final int TURRET_LIMIT_CLEARANCE_TICKS =
-            (int) Math.ceil(TURRET_LIMIT_CLEARANCE_DEG * TURRET_TICKS_PER_DEG);
-    public static final int TURRET_MIN_TICKS = TURRET_MEASURED_MIN_TICKS + TURRET_LIMIT_CLEARANCE_TICKS;
-    public static final int TURRET_MAX_TICKS = TURRET_MEASURED_MAX_TICKS - TURRET_LIMIT_CLEARANCE_TICKS;
+
+    public static final double TURRET_LIMIT_CLEARANCE_DEG = 0.0;
+    public static final int TURRET_MIN_TICKS = (int) Math.round(-270.0 * TURRET_TICKS_PER_DEG);
+    public static final int TURRET_MAX_TICKS = (int) Math.round(270.0 * TURRET_TICKS_PER_DEG);
     public static final double TURRET_MIN_DEG = TURRET_MIN_TICKS / TURRET_TICKS_PER_DEG;
     public static final double TURRET_MAX_DEG = TURRET_MAX_TICKS / TURRET_TICKS_PER_DEG;
-
+    //public static final int TURRET_MEASURED_MIN_TICKS = 0;
+    //public static final int TURRET_MEASURED_MAX_TICKS = 1000;
+    public static final int TURRET_MEASURED_MIN_TICKS = TURRET_MIN_TICKS;
+    public static final int TURRET_MEASURED_MAX_TICKS = TURRET_MAX_TICKS;
     public static final double TURRET_KP = 0.02;
     public static final double TURRET_KD = 0.0;
     public static final double TURRET_KS = 0.04;
@@ -292,6 +292,7 @@ public class Robot {
     private boolean turretStalled;
     private int turretMinTicks = TURRET_MIN_TICKS;
     private int turretMaxTicks = TURRET_MAX_TICKS;
+    private int turretStartTicks = 0;
     private int turretRecoveryDirection;
     private boolean turretBackingOff;
     private String turretPowerLimit = "none";
@@ -427,6 +428,8 @@ public class Robot {
         }
 
         turret.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+
+        turretStartTicks = turret.getCurrentPosition();
 
         // Read the existing localizer without resetting the Auto-to-TeleOp heading/pose.
         pinpoint = hw.tryGet(GoBildaPinpointDriver.class, "pinpoint");
@@ -994,9 +997,13 @@ public class Robot {
     // TURRET
     // =========================================
 
-    public double turretDegrees() {
+    /*public double turretDegrees() {
 
         return turret.getCurrentPosition()
+                / TURRET_TICKS_PER_DEG;
+    }*/
+    public double turretDegrees() {
+        return (turret.getCurrentPosition() - turretStartTicks)
                 / TURRET_TICKS_PER_DEG;
     }
 
@@ -1066,7 +1073,8 @@ public class Robot {
     }
 
     public boolean turretRecovering() {
-        return turretRecoveryDirection != 0;
+        //return turretRecoveryDirection != 0;
+        return false;
     }
 
     public String turretPowerLimit() {
@@ -1079,66 +1087,29 @@ public class Robot {
 
     /** Applies soft limits, stall detection and snag recovery. Public so V2 controllers reuse it. */
     public void setTurretPower(double power) {
-
-        turretRequestedPower =
-                Double.isFinite(power) ? power : 0;
+        turretRequestedPower = Double.isFinite(power) ? power : 0;
 
         if (!Double.isFinite(power)) power = 0;
 
-        power = Range.clip(
-                power,
-                -TURRET_MAX_POWER,
-                TURRET_MAX_POWER
-        );
+        power = Range.clip(power, -TURRET_MAX_POWER, TURRET_MAX_POWER);
 
-        int ticks = turret.getCurrentPosition();
+        int ticks = turret.getCurrentPosition() - turretStartTicks;
 
         turretPowerLimit = "none";
-        if (turretRecoveryDirection != 0) {
-            power = turretRecoveryPower(ticks);
-        }
 
-        if (ticks >= turretMaxTicks && power > 0) {
-
+        if (ticks >= TURRET_MAX_TICKS && power > 0) {
             power = 0;
             turretPowerLimit = "RIGHT ENCODER LIMIT";
-
-        } else if (
-                ticks <= turretMinTicks && power < 0
-        ) {
-
+        } else if (ticks <= TURRET_MIN_TICKS && power < 0) {
             power = 0;
             turretPowerLimit = "LEFT ENCODER LIMIT";
-        }
-
-        // Use the command after soft limits so an intentional stop does not count as a stall.
-        double velocity = turret.getVelocity();
-        boolean stalledUnderPower = Math.abs(power) >= TURRET_STALL_MIN_POWER
-                && Double.isFinite(velocity) && Math.abs(velocity) <= TURRET_STALL_SPEED_TICKS_S;
-        if (!stalledUnderPower) {
-            turretStallPending = false;
-        } else if (!turretStallPending) {
-            turretStallPending = true;
-            turretStallTimer.reset();
-        } else if (turretStallTimer.milliseconds() >= TURRET_STALL_MS) {
-            turretStallPending = false;
-            if (turretRecoveryDirection != 0 || !beginTurretRecovery(ticks, power)) {
-                turretStalled = true;
-                turretRecoveryDirection = 0;
-            }
-            power = 0;
-        }
-        if (turretStalled) {
-            power = 0;
-            turretPowerLimit = "STALL - CHECK TURRET AND WIRING";
-            turretAimState = "STALL STOP";
         }
 
         turretAppliedPower = power;
         turret.setPower(power);
     }
 
-    private boolean beginTurretRecovery(int ticks, double stalledPower) {
+    /*private boolean beginTurretRecovery(int ticks, double stalledPower) {
         int newMin = stalledPower < 0 ? Math.max(turretMinTicks, ticks + TURRET_SNAG_CLEARANCE_TICKS)
                 : turretMinTicks;
         int newMax = stalledPower > 0 ? Math.min(turretMaxTicks, ticks - TURRET_SNAG_CLEARANCE_TICKS)
@@ -1170,10 +1141,11 @@ public class Robot {
         }
         turretAimState = turretBackingOff ? "SNAG BACKOFF" : "SNAG RECOVERY SWEEP";
         return turretRecoveryDirection * (turretBackingOff ? TURRET_SNAG_BACKOFF_POWER : TURRET_SEARCH_POWER);
-    }
+    }*/
 
     public boolean isTurretStalled() {
-        return turretStalled;
+        //return turretStalled;
+        return false;
     }
 
     public void zeroTurret() {

@@ -179,6 +179,11 @@ public final class BioBuzzAutoMechanisms {
         if (hardware!=null) hardware.setIntakeAlways(running);
     }
 
+    /** AutoPath START: the TeleOp that follows inherits this turret zero (pointing backward). */
+    public void carryTurretReferenceToTeleOp() {
+        if (hardware instanceof RobotHardware) ((RobotHardware) hardware).robot.carryTurretReference();
+    }
+
     /**
      * AutoPath (2026-11-14): once the current volley's feed window ends, keep the whole shooting
      * sequence on (gate open, intake + transmission feeding, turret tracking) until cleanup, with

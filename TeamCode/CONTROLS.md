@@ -10,7 +10,7 @@ The gamepad 2 references below describe the original two-person TeleOps and cali
 V2 details are in [V2.md](V2.md).
 
 V2 calibration additions: up/down trims **10 RPM**, or **1 RPM** with LB held; left stick click
-freezes/unfreezes the table RPM; right stick click logs a point while calibrating; Back after
+freezes/unfreezes the table RPM; right stick click logs a point while calibrating, otherwise re-localizes at the park corner (V2); Back after
 START clears trim only. V2 TeleOp's ready indication uses **+/-10 RPM for 150 ms**, while X/RT
 retain manual gate/feed control. Original TeleOp trim remains 50 RPM per press.
 

@@ -13,10 +13,12 @@ import org.firstinspires.ftc.teamcode.Robot;
  *  - RT/LT intake in/out, A shooter toggle, X gate toggle, Y auto-aim toggle, B center
  *  - right stick X steers the chassis; held D-pad left/right jogs the turret
  *  - D-pad up/down trims 10 RPM (LB = 1 RPM), RB toggles flower, LB enables slow drive
- *  - left stick click freezes/unfreezes table RPM for calibration; right stick click logs a point
- *  - Back zeros turret during INIT; after START it only clears RPM trim
- *  - turret keeps pointing at the remembered field target while driving (FieldAimV2)
- *  - aims at the upward HIVE CELL only; RPM from a filtered distance; voltage-compensated F
+ *  - left stick click freezes/unfreezes table RPM for calibration; while frozen, right stick click
+ *    logs a point; otherwise right stick click re-localizes at the park corner (2026-11-14)
+ *  - Back zeros turret (pointing BACKWARD) during INIT; after START it only clears RPM trim
+ *  - turret aims purely from odometry at the fixed HIVE position (FieldAimV2 odometry-only);
+ *    the Limelight is still used for shot distance. Turret zero is carried over from AutoPath.
+ *  - RPM from a filtered distance; voltage-compensated F
  *  - rumble on gamepad 1 when ready to shoot; loop time on telemetry
  */
 public abstract class BioBuzzTeleOpV2 extends LinearOpMode {
@@ -75,7 +77,8 @@ public abstract class BioBuzzTeleOpV2 extends LinearOpMode {
                 telemetry.addLine("===== BIOBUZZ V2 INIT =====");
                 telemetry.addData("Alliance", "%s (fixed by selected TeleOp)", robot.alliance);
                 telemetry.addData("Controls", "original one-person layout (gamepad 1)");
-                telemetry.addData("Turret zero", "point forward, gamepad 1 BACK (INIT only)");
+                telemetry.addData("Turret zero", "%s; to re-zero: point turret BACKWARD, gamepad 1 BACK",
+                        v2.turretZeroSource);
                 v2.addTelemetry(telemetry);
                 robot.addGateTelemetry(telemetry);
                 telemetry.update();
@@ -130,7 +133,8 @@ public abstract class BioBuzzTeleOpV2 extends LinearOpMode {
                 v2.runShooter(robot.shooterOn, calibration.trimRpm, calibration.baseRpmOverride());
                 if (operator.rightStickButtonWasPressed()) {
                     if (!calibration.enabled()) {
-                        logger.lastMessage = "Click LEFT STICK to enter calibration before logging";
+                        // Not calibrating: right stick click re-localizes at the park corner.
+                        if (v2.relocalizeAtParkCorner()) operator.rumble(300);
                     } else if (!v2.cameraUsable || !Double.isFinite(v2.hive.distanceM)) {
                         logger.lastMessage = "Point not logged: need a visible HIVE tag with distance";
                     } else {

@@ -41,6 +41,9 @@ public final class V2Regression {
         calibrationSpeed();
         preciseSpeedReadiness();
         burstEarlyEnd();
+        odometryOnlyAim();
+        parkCornerRelocalize();
+        carriedTurretZero();
         System.out.println("Passed " + checks + " V2 regression checks.");
     }
 
@@ -596,5 +599,109 @@ public final class V2Regression {
             @Override public void close() { }
         };
         check(!plain.burstFinishedEarly(4), "The original adapter keeps the full timed burst");
+    }
+
+    /** TeleOp 2026-11-14: the turret aims only from odometry at a fixed CELL position. */
+    static void odometryOnlyAim() {
+        double hx = RobotV2.hiveXIn(), farY = RobotV2.cellYIn(true);
+        near(RobotV2.fieldCenterIn(), 70.5, 1e-9, "Field center for a 141 in field");
+        near(hx - RobotV2.fieldCenterIn(), 12.75, 1e-9, "Our HIVE is half of the official 25.5 in from center, on +x");
+        near(farY - RobotV2.cellYIn(false), 18.84, 1e-9, "The two CELLS are the official 18.84 in apart");
+        FieldAimV2 a = aim();
+        a.setFieldTarget(hx, farY);
+        check(a.odometryOnly && a.targetConfirmed() && !a.targetIsGuess(), "A fixed field target is set");
+        double x = 59.3283, y = 124.8302; // Spot 2, facing the far wall.
+        double bearing = Math.toDegrees(Math.atan2(farY - y, hx - x));
+        double expected = 90 - bearing; // Clockwise from the robot front.
+        check(expected > 100 && expected < 180, "From spot 2 the HIVE is behind-right, as in AutoPath: " + expected);
+        FieldAimV2.Inputs in = pose(expected, x, y, 90);
+        in.minDeg = Robot.TURRET_MIN_DEG + RobotV2.TURRET_ZERO_DIRECTION_DEG;
+        in.maxDeg = Robot.TURRET_MAX_DEG + RobotV2.TURRET_ZERO_DIRECTION_DEG;
+        in.cameraUsable = false;
+        a.update(in);
+        near(a.goalDeg, expected, 1e-6, "Goal = bearing to the fixed CELL from the odometry pose");
+        check(a.state.startsWith("ODOMETRY"), "State reports odometry aiming: " + a.state);
+        check(a.aimed(expected), "Aimed needs no camera confirmation in odometry-only mode");
+        check(!a.aimed(expected + 10), "Off by 10 deg is not aimed");
+        FieldAimV2.Inputs cam = withFrame(pose(expected, x, y, 90), 25, 60, 0);
+        cam.minDeg = in.minDeg; cam.maxDeg = in.maxDeg;
+        a.update(cam);
+        near(a.targetX(), hx, 1e-9, "Camera frames never move the odometry target (x)");
+        near(a.targetY(), farY, 1e-9, "Camera frames never move the odometry target (y)");
+        near(a.goalDeg, expected, 1e-6, "Camera error does not change the odometry goal");
+        T[0] += 20000;
+        a.update(in);
+        check(a.state.startsWith("ODOMETRY"), "No search without the camera: " + a.state);
+        a.clearTarget();
+        check(a.hasTarget() && a.targetX() == hx, "Re-zero keeps the fixed target");
+        FieldAimV2.Inputs blind = pose(10, Double.NaN, Double.NaN, Double.NaN);
+        blind.poseValid = false;
+        near(a.update(blind), 0, 0, "Without odometry the turret holds still");
+        check(a.state.equals("NO ODOMETRY: HOLD") && !a.aimed(10), "...and is not aimed");
+        near(RobotV2.TURRET_ZERO_DIRECTION_DEG, 180, 0, "TeleOp turret zero points backward, like AutoPath");
+
+        // The CELL on the robot's half: START half -> near CELL, far half -> far CELL, with hysteresis.
+        for (Robot.Alliance alliance : Robot.Alliance.values()) {
+            RobotV2 v2 = new RobotV2();
+            v2.odometryAim = true;
+            v2.setPose(54.67, 8.16, Math.toRadians(270), 0, true); // AutoPath START
+            v2.setAlliance(alliance);
+            v2.chooseAimCell();
+            check(!v2.aimFarCell && v2.aim.targetY() == RobotV2.cellYIn(false) && v2.aim.targetX() == hx,
+                    alliance + ": in the START half the turret aims at the near CELL of our HIVE");
+            v2.setPose(59.3, RobotV2.fieldCenterIn() + 2, Math.toRadians(90), 0, true);
+            v2.chooseAimCell();
+            check(!v2.aimFarCell, alliance + ": just past the center line it does not flicker to the far CELL");
+            v2.setPose(59.3, 124.8, Math.toRadians(90), 0, true); // Spot 2
+            v2.chooseAimCell();
+            check(v2.aimFarCell && v2.aim.targetY() == RobotV2.cellYIn(true) && v2.aim.targetX() == hx,
+                    alliance + ": in the far half it aims at the far CELL");
+            v2.setPose(59.3, RobotV2.fieldCenterIn() - 2, Math.toRadians(90), 0, true);
+            v2.chooseAimCell();
+            check(v2.aimFarCell, alliance + ": hysteresis keeps the far CELL just past center");
+            v2.setPose(59.3, 30, Math.toRadians(90), 0, true);
+            v2.chooseAimCell();
+            check(!v2.aimFarCell, alliance + ": back in the START half it returns to the near CELL");
+        }
+    }
+
+    /** Right stick click re-localizes at the field corner next to the parking zone. */
+    static void parkCornerRelocalize() {
+        double len = org.firstinspires.ftc.teamcode.autonomous.BioBuzzAutoConfig.ROBOT_LENGTH_IN;
+        double wid = org.firstinspires.ftc.teamcode.autonomous.BioBuzzAutoConfig.ROBOT_WIDTH_IN;
+        double f = RobotV2.FIELD_SIZE_IN;
+        double[] blue = RobotV2.parkCornerPose(Robot.Alliance.BLUE, Math.toRadians(93));
+        near(blue[0], wid / 2, 1e-9, "Corner x: half the robot width from the x=0 wall");
+        near(blue[1], f - len / 2, 1e-9, "Corner y: half the robot length from the far wall");
+        near(Math.toDegrees(blue[2]), 90, 1e-9, "Heading snaps to the nearest 90 deg");
+        double[] side = RobotV2.parkCornerPose(Robot.Alliance.BLUE, Math.toRadians(-178));
+        near(side[0], len / 2, 1e-9, "Facing along x, the robot length sets x");
+        near(side[1], f - wid / 2, 1e-9, "...and the width sets y");
+        near(Math.abs(Math.toDegrees(side[2])), 180, 1e-9, "Heading snaps to 180");
+        double[] red = RobotV2.parkCornerPose(Robot.Alliance.RED, Math.toRadians(90));
+        near(red[0], blue[0], 1e-9, "Red uses the same corner in its own frame (same AutoPath)");
+        near(red[1], blue[1], 1e-9, "Red corner y matches blue");
+        check(Math.hypot(blue[0] - 15.7092, blue[1] - 122.0158) < 20, "The corner is next to the AutoPath park point");
+    }
+
+    /** TeleOp inherits AutoPath's turret zero (pointing backward) in the same power session. */
+    static void carriedTurretZero() {
+        Integer saved = Robot.carriedTurretReferenceTicks;
+        try {
+            Robot.carriedTurretReferenceTicks = null;
+            Robot fresh = new Robot();
+            check(!fresh.adoptCarriedTurretReference(), "No AutoPath this session: keep the INIT position as zero");
+            Robot.carriedTurretReferenceTicks = 123;
+            Robot teleOp = new Robot();
+            check(teleOp.adoptCarriedTurretReference() && teleOp.turretReferenceTicks() == 123,
+                    "After AutoPath, TeleOp measures the turret from AutoPath's zero");
+            Robot auto = new Robot();
+            auto.adoptCarriedTurretReference();
+            Robot.carriedTurretReferenceTicks = null;
+            auto.carryTurretReference();
+            check(Robot.carriedTurretReferenceTicks == 123, "AutoPath START hands its zero on");
+        } finally {
+            Robot.carriedTurretReferenceTicks = saved;
+        }
     }
 }

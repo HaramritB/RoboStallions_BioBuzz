@@ -141,6 +141,8 @@ public class AutoPath extends LinearOpMode {
                 // Intake roller runs inward from START to the end of the route; the transmission runs only
                 // while collecting (wall, FLOWER) and feeding volleys.
                 mechanisms.keepIntakeRunning(true);
+                // TeleOp starts where this auto ends: hand it the turret zero (pointing backward).
+                mechanisms.carryTurretReferenceToTeleOp();
             }
             mechanisms.observe();
             if (flowerLever != null) flowerLever.setDeployed(false);

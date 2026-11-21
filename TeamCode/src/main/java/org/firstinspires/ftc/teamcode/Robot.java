@@ -293,6 +293,11 @@ public class Robot {
     private int turretMinTicks = TURRET_MIN_TICKS;
     private int turretMaxTicks = TURRET_MAX_TICKS;
     private int turretStartTicks = 0;
+    /**
+     * Turret encoder reference handed from AutoPath to the next TeleOp in the same power session
+     * (the encoder keeps counting between OpModes). Null until AutoPath starts or BACK zeros.
+     */
+    public static Integer carriedTurretReferenceTicks = null;
     private int turretRecoveryDirection;
     private boolean turretBackingOff;
     private String turretPowerLimit = "none";
@@ -1164,6 +1169,24 @@ public class Robot {
         );
         // The encoder now reads 0 here, so angles are measured from this zero, not the INIT position.
         turretStartTicks = 0;
+        carriedTurretReferenceTicks = 0; // Later OpModes in this power session share this zero.
+    }
+
+    /** Encoder count that reads as turret angle 0 (the INIT position, or 0 after zeroTurret). */
+    public int turretReferenceTicks() {
+        return turretStartTicks;
+    }
+
+    /** AutoPath START: hand this turret zero to the TeleOp that follows. */
+    public void carryTurretReference() {
+        carriedTurretReferenceTicks = turretStartTicks;
+    }
+
+    /** TeleOp INIT: use AutoPath's turret zero instead of the INIT position, if there is one. */
+    public boolean adoptCarriedTurretReference() {
+        if (carriedTurretReferenceTicks == null) return false;
+        turretStartTicks = carriedTurretReferenceTicks;
+        return true;
     }
 
     public boolean aimedAtTarget() {

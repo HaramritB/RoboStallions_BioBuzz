@@ -94,6 +94,12 @@ public final class FieldAimV2 {
     public boolean searchIfLost;
     /** Auto: hold still instead of sweeping (e.g. while the gate is open). */
     public boolean suppressSearch;
+    /**
+     * TeleOp (2026-11-14): aim purely from odometry at the fixed field target given to
+     * {@link #setFieldTarget}. Camera frames never move the target, the turret never sweeps, and
+     * "aimed" needs no camera confirmation.
+     */
+    public boolean odometryOnly;
     /** Operator trim added to the aim goal, degrees clockwise. Applies immediately. */
     public double aimTrimDeg;
 
@@ -145,8 +151,26 @@ public final class FieldAimV2 {
         }
     }
 
+    /** Odometry-only aiming: the HIVE's fixed field position (inches, same frame as the pose). */
+    public void setFieldTarget(double x, double y) {
+        odometryOnly = true;
+        guessX = x;
+        guessY = y;
+        targetX = x;
+        targetY = y;
+        targetValid = Double.isFinite(x) && Double.isFinite(y);
+        targetConfirmed = targetValid;
+        targetIsGuess = false;
+        guessAimStartMs = Double.NaN;
+    }
+
     /** Forget every target (alliance change, re-zero, or a deliberate reset). */
     public void clearTarget() {
+        if (odometryOnly) { // The fixed field target survives a re-zero; only state resets.
+            settled = returning = false;
+            pendingJumpFrames = 0;
+            return;
+        }
         targetValid = targetConfirmed = targetIsGuess = false;
         targetX = targetY = Double.NaN;
         guessAimStartMs = Double.NaN;
@@ -181,6 +205,11 @@ public final class FieldAimV2 {
 
     /** True when the turret is on a camera-confirmed target, within tolerance and not unwinding. */
     public boolean aimed(double turretDeg) {
+        if (odometryOnly) {
+            return targetValid && !returning && Double.isFinite(goalDeg) && Double.isFinite(turretDeg)
+                    && Math.abs(goalDeg - turretDeg) < AIM_TOLERANCE_DEG
+                    && state.startsWith("ODOMETRY");
+        }
         return targetConfirmed && !returning && Double.isFinite(goalDeg) && Double.isFinite(turretDeg)
                 && observationAgeMs() < AIM_MAX_OBSERVATION_AGE_MS
                 && Math.abs(goalDeg - turretDeg) < AIM_TOLERANCE_DEG
@@ -204,8 +233,8 @@ public final class FieldAimV2 {
         record(now, in.turretDeg, poseOk, in.xIn, in.yIn, in.headingRad);
         updateChassisVelocity(now, poseOk, in);
 
-        // 1) A new camera frame moves the target point.
-        if (in.cameraUsable && in.observationFresh && Double.isFinite(in.errorDeg)
+        // 1) A new camera frame moves the target point (never in odometry-only mode).
+        if (!odometryOnly && in.cameraUsable && in.observationFresh && Double.isFinite(in.errorDeg)
                 && Double.isFinite(in.frameTimestamp) && Double.isFinite(in.frameAgeMs)
                 && in.frameAgeMs >= 0 && in.frameAgeMs < STALE_MS
                 && in.frameTimestamp != lastFrameTimestamp) {
@@ -231,6 +260,12 @@ public final class FieldAimV2 {
         double desired;
         double desiredRate;
         String label;
+        if (odometryOnly && (!poseOk || !targetValid)) {
+            state = !poseOk ? "NO ODOMETRY: HOLD" : "NO FIELD TARGET: HOLD";
+            goalDeg = turret;
+            settled = false;
+            return 0;
+        }
         if (poseOk) {
             if (!targetValid) {
                 if (searchIfLost) return search(turret, in, "SEARCH");
@@ -260,7 +295,8 @@ public final class FieldAimV2 {
             double bearingRate = (relY * chassisVxInS - relX * chassisVyInS) / r2;
             desiredRate = omegaDegS - Math.toDegrees(bearingRate);
             boolean freshVision = now - lastObservationMs < CAMERA_REACQUIRE_MS;
-            label = targetIsGuess ? "PRE-AIM GUESS"
+            label = odometryOnly ? "ODOMETRY"
+                    : targetIsGuess ? "PRE-AIM GUESS"
                     : !targetConfirmed ? "FIELD HOLD"
                     : freshVision ? "TRACK" : "FIELD TRACK (odometry)";
         } else {

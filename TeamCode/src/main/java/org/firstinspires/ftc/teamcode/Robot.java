@@ -32,7 +32,7 @@ import java.util.function.DoubleSupplier;
 public class Robot {
 
     public static final String CODE_VERSION =
-            "BIOBUZZ-FLOWER-ON0.32-OFF0-2026-11-11";
+            "BIOBUZZ-FLOWER-ON0.5-OFF0.145-2026-11-14";
 
     public enum Alliance { RED, BLUE }
     public enum BallColor { NONE, YELLOW, RED, BLUE }
@@ -68,16 +68,16 @@ public class Robot {
     public static final double TURRET_TICKS_PER_DEG = TURRET_TICKS_PER_TURRET_REV / 360.0;
 
     // Measured physical endpoints, clockwise-positive from the forward zero.
-    public static final int TURRET_MEASURED_MIN_TICKS = -724;
-    public static final int TURRET_MEASURED_MAX_TICKS = 563;
-    public static final double TURRET_LIMIT_CLEARANCE_DEG = 5.0;
-    public static final int TURRET_LIMIT_CLEARANCE_TICKS =
-            (int) Math.ceil(TURRET_LIMIT_CLEARANCE_DEG * TURRET_TICKS_PER_DEG);
-    public static final int TURRET_MIN_TICKS = TURRET_MEASURED_MIN_TICKS + TURRET_LIMIT_CLEARANCE_TICKS;
-    public static final int TURRET_MAX_TICKS = TURRET_MEASURED_MAX_TICKS - TURRET_LIMIT_CLEARANCE_TICKS;
+
+    public static final double TURRET_LIMIT_CLEARANCE_DEG = 0.0;
+    public static final int TURRET_MIN_TICKS = (int) Math.round(-270.0 * TURRET_TICKS_PER_DEG);
+    public static final int TURRET_MAX_TICKS = (int) Math.round(270.0 * TURRET_TICKS_PER_DEG);
     public static final double TURRET_MIN_DEG = TURRET_MIN_TICKS / TURRET_TICKS_PER_DEG;
     public static final double TURRET_MAX_DEG = TURRET_MAX_TICKS / TURRET_TICKS_PER_DEG;
-
+    //public static final int TURRET_MEASURED_MIN_TICKS = 0;
+    //public static final int TURRET_MEASURED_MAX_TICKS = 1000;
+    public static final int TURRET_MEASURED_MIN_TICKS = TURRET_MIN_TICKS;
+    public static final int TURRET_MEASURED_MAX_TICKS = TURRET_MAX_TICKS;
     public static final double TURRET_KP = 0.02;
     public static final double TURRET_KD = 0.0;
     public static final double TURRET_KS = 0.04;
@@ -101,6 +101,20 @@ public class Robot {
     public static final double TURRET_RETURN_MAX_POWER = 0.35;
     public static final double TURRET_RETURN_MARGIN_DEG = 5;
     public static final double TURRET_RETURN_TOLERANCE_DEG = 1;
+    /**
+     * AutoPath pre-aim: while no tag is in view, turn to the angle odometry predicts for the HIVE
+     * (learned from earlier sightings) instead of sweeping from wherever the turret is. It also
+     * counter-rotates against chassis turns (path 5 turns the robot 180 degrees on the way to the
+     * 2nd shooting spot); without that the turret arrived pointing roughly away from the HIVE.
+     */
+    public static final double TURRET_PRE_AIM_MAX_POWER = 0.45;
+    public static final double TURRET_PRE_AIM_ARRIVED_DEG = 3.0;
+    /** Autonomous tracking uses TURRET_PRE_AIM_MAX_POWER beyond this error, TRACK power inside it. */
+    public static final double TURRET_FAST_TRACK_ERROR_DEG = 10.0;
+    /** Stopped at a shooting spot with no tag this long after reaching the prediction: sweep. */
+    public static final long TURRET_PRE_AIM_SEARCH_AFTER_MS = 1000;
+    /** A prediction that moves this far restarts the wait (the robot is still driving). */
+    public static final double TURRET_PRE_AIM_MOVED_DEG = 10.0;
 
     public static final double TURRET_AIM_OFFSET_DEG = 0.0;
 
@@ -113,7 +127,7 @@ public class Robot {
     public static final double AIM_TOLERANCE_DEG = 3.0;
 
     // =========================================
-    // SHOOTER - 4000 RPM, TUNED PIDF
+    // SHOOTER - MEASURED DISTANCE/RPM TABLE, TUNED PIDF
     // =========================================
 
     // ServoCity 5000 Series
@@ -121,13 +135,13 @@ public class Robot {
 
     public static final double SHOOTER_TICKS_PER_REV = 28.0;
 
-    public static final double RPM_YELLOW = 4000.0;
-    public static final double RPM_RED = 4000.0;
-    public static final double RPM_BLUE = 4000.0;
-
-    public static final double TELEOP_DEFAULT_RPM = 3150.0;
-    private static final double[] SHOOTER_DISTANCE_METERS = {1.41, 1.60, 1.76, 1.90};
-    private static final double[] SHOOTER_DISTANCE_RPM = {3150, 3150, 3200, 3250};
+    public static final double TELEOP_DEFAULT_RPM = 3215.0;
+    private static final double[] SHOOTER_DISTANCE_METERS = {1.39, 1.52, 1.62};
+    private static final double[] SHOOTER_DISTANCE_RPM = {3215, 3220, 3235};
+    // Legacy color API uses the calibrated fallback; competition shots are distance-based.
+    public static final double RPM_YELLOW = TELEOP_DEFAULT_RPM;
+    public static final double RPM_RED = TELEOP_DEFAULT_RPM;
+    public static final double RPM_BLUE = TELEOP_DEFAULT_RPM;
 
     public static final double SHOOTER_RPM_TOLERANCE = 100.0;
     public static final double RPM_TRIM_STEP = 50.0;
@@ -136,13 +150,28 @@ public class Robot {
     public static final double SHOOTER_I = 0.0;
     public static final double SHOOTER_D = 0.0;
     public static final double SHOOTER_F = 13.83;
+    /** F is expressed at this fixed reference voltage; the tuner and V2 use the same scale. */
+    public static final double SHOOTER_F_REFERENCE_VOLTS = 13.3;
+    /**
+     * V2 TeleOp's trial shooter tune (reference F at SHOOTER_F_REFERENCE_VOLTS). Flywheel Tuning
+     * starts from this F, so tuner results and V2 TeleOp stay on the same numbers. Original
+     * OpModes and V2 Auto keep SHOOTER_P / SHOOTER_F above.
+     */
+    public static final double V2_TELEOP_SHOOTER_P = 180.0; // 90 before 2026-11-12; 180 looked better on video.
+    public static final double V2_TELEOP_SHOOTER_F = 12.71;
+
+    public static double compensatedShooterF(double referenceF, double batteryVolts) {
+        if (!Double.isFinite(batteryVolts) || batteryVolts <= 0) return referenceF;
+        double volts = Math.max(9.0, Math.min(14.5, batteryVolts));
+        return referenceF * SHOOTER_F_REFERENCE_VOLTS / volts;
+    }
 
     // =========================================
     // GATE / INTAKE / TRANSMISSION
     // =========================================
 
     // Measured on the redesigned gate. Saved recalibration may override this pair.
-    public static final double GATE_OPEN = 0.41;
+    public static final double GATE_OPEN = 0.39;
     public static final double GATE_CLOSED = 0.59;
     public static final String GATE_PREFERENCES = "biobuzz_gate_model_v2";
     public static final double GATE_JOG_STEP = 0.002;
@@ -263,6 +292,12 @@ public class Robot {
     private boolean turretStalled;
     private int turretMinTicks = TURRET_MIN_TICKS;
     private int turretMaxTicks = TURRET_MAX_TICKS;
+    private int turretStartTicks = 0;
+    /**
+     * Turret encoder reference handed from AutoPath to the next TeleOp in the same power session
+     * (the encoder keeps counting between OpModes). Null until AutoPath starts or BACK zeros.
+     */
+    public static Integer carriedTurretReferenceTicks = null;
     private int turretRecoveryDirection;
     private boolean turretBackingOff;
     private String turretPowerLimit = "none";
@@ -298,7 +333,7 @@ public class Robot {
     public BallColor shotColor = BallColor.YELLOW;
 
     public double rpmTrim = 0.0;
-    public double targetRpm = RPM_YELLOW;
+    public double targetRpm = TELEOP_DEFAULT_RPM;
 
     public boolean gateOpen = false;
     public int shotsFired = 0;
@@ -399,6 +434,8 @@ public class Robot {
 
         turret.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
 
+        turretStartTicks = turret.getCurrentPosition();
+
         // Read the existing localizer without resetting the Auto-to-TeleOp heading/pose.
         pinpoint = hw.tryGet(GoBildaPinpointDriver.class, "pinpoint");
 
@@ -433,7 +470,10 @@ public class Robot {
         gate = hw.get(Servo.class, "torqueservo1");
         gateController = new GateController(gate,
                 gatePreferences(hw));
-        if (!gateController.calibrated()) gateController.release();
+        gateOpen = false;
+        // INIT always shuts the gate so no ball can reach the flywheel before a shot is requested.
+        if (gateController.calibrated()) gateController.commandSaved(false);
+        else gateController.release();
         led = hw.tryGet(Servo.class, "led");
         if (led != null) {
             led.setDirection(Servo.Direction.FORWARD);
@@ -962,9 +1002,13 @@ public class Robot {
     // TURRET
     // =========================================
 
-    public double turretDegrees() {
+    /*public double turretDegrees() {
 
         return turret.getCurrentPosition()
+                / TURRET_TICKS_PER_DEG;
+    }*/
+    public double turretDegrees() {
+        return (turret.getCurrentPosition() - turretStartTicks)
                 / TURRET_TICKS_PER_DEG;
     }
 
@@ -1024,67 +1068,53 @@ public class Robot {
         setTurretPower(power);
     }
 
-    private void setTurretPower(double power) {
+    /** Current soft limits in turret degrees; snag recovery may shrink them during an OpMode. */
+    public double turretMinDegrees() {
+        return turretMinTicks / TURRET_TICKS_PER_DEG;
+    }
 
-        turretRequestedPower =
-                Double.isFinite(power) ? power : 0;
+    public double turretMaxDegrees() {
+        return turretMaxTicks / TURRET_TICKS_PER_DEG;
+    }
+
+    public boolean turretRecovering() {
+        //return turretRecoveryDirection != 0;
+        return false;
+    }
+
+    public String turretPowerLimit() {
+        return turretPowerLimit;
+    }
+
+    public double turretAppliedPower() {
+        return turretAppliedPower;
+    }
+
+    /** Applies soft limits, stall detection and snag recovery. Public so V2 controllers reuse it. */
+    public void setTurretPower(double power) {
+        turretRequestedPower = Double.isFinite(power) ? power : 0;
 
         if (!Double.isFinite(power)) power = 0;
 
-        power = Range.clip(
-                power,
-                -TURRET_MAX_POWER,
-                TURRET_MAX_POWER
-        );
+        power = Range.clip(power, -TURRET_MAX_POWER, TURRET_MAX_POWER);
 
-        int ticks = turret.getCurrentPosition();
+        int ticks = turret.getCurrentPosition() - turretStartTicks;
 
         turretPowerLimit = "none";
-        if (turretRecoveryDirection != 0) {
-            power = turretRecoveryPower(ticks);
-        }
 
-        if (ticks >= turretMaxTicks && power > 0) {
-
+        if (ticks >= TURRET_MAX_TICKS && power > 0) {
             power = 0;
             turretPowerLimit = "RIGHT ENCODER LIMIT";
-
-        } else if (
-                ticks <= turretMinTicks && power < 0
-        ) {
-
+        } else if (ticks <= TURRET_MIN_TICKS && power < 0) {
             power = 0;
             turretPowerLimit = "LEFT ENCODER LIMIT";
-        }
-
-        // Use the command after soft limits so an intentional stop does not count as a stall.
-        double velocity = turret.getVelocity();
-        boolean stalledUnderPower = Math.abs(power) >= TURRET_STALL_MIN_POWER
-                && Double.isFinite(velocity) && Math.abs(velocity) <= TURRET_STALL_SPEED_TICKS_S;
-        if (!stalledUnderPower) {
-            turretStallPending = false;
-        } else if (!turretStallPending) {
-            turretStallPending = true;
-            turretStallTimer.reset();
-        } else if (turretStallTimer.milliseconds() >= TURRET_STALL_MS) {
-            turretStallPending = false;
-            if (turretRecoveryDirection != 0 || !beginTurretRecovery(ticks, power)) {
-                turretStalled = true;
-                turretRecoveryDirection = 0;
-            }
-            power = 0;
-        }
-        if (turretStalled) {
-            power = 0;
-            turretPowerLimit = "STALL - CHECK TURRET AND WIRING";
-            turretAimState = "STALL STOP";
         }
 
         turretAppliedPower = power;
         turret.setPower(power);
     }
 
-    private boolean beginTurretRecovery(int ticks, double stalledPower) {
+    /*private boolean beginTurretRecovery(int ticks, double stalledPower) {
         int newMin = stalledPower < 0 ? Math.max(turretMinTicks, ticks + TURRET_SNAG_CLEARANCE_TICKS)
                 : turretMinTicks;
         int newMax = stalledPower > 0 ? Math.min(turretMaxTicks, ticks - TURRET_SNAG_CLEARANCE_TICKS)
@@ -1116,10 +1146,11 @@ public class Robot {
         }
         turretAimState = turretBackingOff ? "SNAG BACKOFF" : "SNAG RECOVERY SWEEP";
         return turretRecoveryDirection * (turretBackingOff ? TURRET_SNAG_BACKOFF_POWER : TURRET_SEARCH_POWER);
-    }
+    }*/
 
     public boolean isTurretStalled() {
-        return turretStalled;
+        //return turretStalled;
+        return false;
     }
 
     public void zeroTurret() {
@@ -1136,6 +1167,26 @@ public class Robot {
         turret.setMode(
                 DcMotor.RunMode.RUN_WITHOUT_ENCODER
         );
+        // The encoder now reads 0 here, so angles are measured from this zero, not the INIT position.
+        turretStartTicks = 0;
+        carriedTurretReferenceTicks = 0; // Later OpModes in this power session share this zero.
+    }
+
+    /** Encoder count that reads as turret angle 0 (the INIT position, or 0 after zeroTurret). */
+    public int turretReferenceTicks() {
+        return turretStartTicks;
+    }
+
+    /** AutoPath START: hand this turret zero to the TeleOp that follows. */
+    public void carryTurretReference() {
+        carriedTurretReferenceTicks = turretStartTicks;
+    }
+
+    /** TeleOp INIT: use AutoPath's turret zero instead of the INIT position, if there is one. */
+    public boolean adoptCarriedTurretReference() {
+        if (carriedTurretReferenceTicks == null) return false;
+        turretStartTicks = carriedTurretReferenceTicks;
+        return true;
     }
 
     public boolean aimedAtTarget() {
@@ -1160,13 +1211,80 @@ public class Robot {
                 : "GROUP MEAN (" + visionUsableMatches + " tags)";
     }
 
+    /** Raw Limelight tag list ("id tx=..; ..") for logs. */
+    public String visionTagDetails() {
+        return visionTagDetails;
+    }
+
+    /** Last power the aim controller (or manual) asked the turret for, before limits. */
+    public double turretRequestedPower() {
+        return turretRequestedPower;
+    }
+
     public double turretAimErrorDegrees() {
         return turretAim.lastTargetAngle - turretDegrees();
     }
 
-    /** Autonomous: sweep for the HIVE until a tag is first seen. TeleOp leaves this off. */
-    public void setTurretSearchUntilTagSeen(boolean search) {
-        turretAim.searchUntilFirstTag = search;
+    /**
+     * Autonomous: sweep for the HIVE whenever no tag has been seen for TURRET_REACQUIRE_MS,
+     * instead of holding the old field bearing (which points the wrong way after the robot moves
+     * across the field). TeleOp leaves this off and keeps the field hold.
+     */
+    public void setTurretSearchWhenTagLost(boolean search) {
+        turretAim.searchWhenTagLost = search;
+    }
+
+    /**
+     * Autonomous: the turret angle odometry predicts for the HIVE (NaN = none, sweep as before).
+     * While no tag is in view the turret turns there instead of sweeping. It falls back to a sweep
+     * only when searchIfNotSeen (stopped to shoot) and no tag appears within
+     * TURRET_PRE_AIM_SEARCH_AFTER_MS of reaching the predicted angle.
+     */
+    public void setTurretPreAim(double turretDegrees, boolean searchIfNotSeen) {
+        turretAim.preAimAngle = turretDegrees;
+        turretAim.preAimMaySearch = searchIfNotSeen;
+    }
+
+    /** Measured turret speed, degrees per second clockwise. */
+    public double turretVelocityDegPerSec() {
+        return turret == null ? Double.NaN : turret.getVelocity() / TURRET_TICKS_PER_DEG;
+    }
+
+    /** Age of the current Limelight result (capture + pipeline + USB), milliseconds. */
+    public double targetFrameAgeMs() {
+        return targetFrameAgeMs;
+    }
+
+    /** Turret-frame offset to the current tag, degrees clockwise (the aim controller's error), or NaN. */
+    public double visionErrorDegrees() {
+        return (targetTx - TURRET_AIM_OFFSET_DEG) * TURRET_VISION_POWER_SIGN;
+    }
+
+    /**
+     * Field position of the HIVE from one sighting: robot pose (inches, heading in clockwise
+     * degrees), turret angle, the tag's turret-frame offset and its distance. Returns {x, y} or NaNs.
+     */
+    public static double[] hiveFieldPoint(double xIn, double yIn, double headingCwDeg, double turretDeg,
+                                          double visionErrorDeg, double distanceIn) {
+        if (!Double.isFinite(xIn) || !Double.isFinite(yIn) || !Double.isFinite(headingCwDeg)
+                || !Double.isFinite(turretDeg) || !Double.isFinite(visionErrorDeg)
+                || !Double.isFinite(distanceIn) || distanceIn <= 0) {
+            return new double[] {Double.NaN, Double.NaN};
+        }
+        // Field bearing (CCW) = chassis heading (CCW) minus the clockwise turret angle to the tag.
+        double bearing = Math.toRadians(-headingCwDeg - (turretDeg + visionErrorDeg));
+        return new double[] {xIn + distanceIn * Math.cos(bearing), yIn + distanceIn * Math.sin(bearing)};
+    }
+
+    /** Clockwise turret angle that points at a field position from a pose (heading clockwise degrees). */
+    public static double turretDegreesToward(double xIn, double yIn, double headingCwDeg,
+                                             double targetX, double targetY) {
+        if (!Double.isFinite(xIn) || !Double.isFinite(yIn) || !Double.isFinite(headingCwDeg)
+                || !Double.isFinite(targetX) || !Double.isFinite(targetY)
+                || Math.hypot(targetX - xIn, targetY - yIn) < 1e-6) {
+            return Double.NaN;
+        }
+        return -headingCwDeg - Math.toDegrees(Math.atan2(targetY - yIn, targetX - xIn));
     }
 
     public void resetTurretAim() {
@@ -1203,12 +1321,17 @@ public class Robot {
 
     static final class TurretAimController {
 
-        /** Autonomous only: sweep for the HIVE until the first tag observation, then hold/track. */
-        boolean searchUntilFirstTag;
-
-        private boolean awaitingFirstTag() {
-            return searchUntilFirstTag && lastObservationMs == Double.NEGATIVE_INFINITY;
-        }
+        /**
+         * Autonomous only: track a tag while it was seen within TURRET_REACQUIRE_MS, otherwise sweep.
+         * A held field bearing goes stale once the robot drives to a different shooting spot.
+         */
+        boolean searchWhenTagLost;
+        /** Autonomous: odometry-predicted HIVE angle used instead of a sweep (NaN = none). */
+        double preAimAngle = Double.NaN;
+        /** Allow the sweep fallback once the prediction has shown no tag (only while stopped). */
+        boolean preAimMaySearch;
+        private double preAimArrivedMs = Double.NaN;
+        private double preAimArrivedAngle = Double.NaN;
 
         private double minDeg;
         private double maxDeg;
@@ -1267,7 +1390,7 @@ public class Robot {
 
             double nowMs = clockMs.getAsDouble();
             boolean headingAvailable = Double.isFinite(heading);
-            if (headingAvailable && !Double.isFinite(lastTargetAngle) && !awaitingFirstTag()) {
+            if (headingAvailable && !Double.isFinite(lastTargetAngle) && !searchWhenTagLost) {
                 // With no tag observation yet, hold the direction the turret starts at.
                 lastTargetAngle = angle;
             }
@@ -1307,8 +1430,9 @@ public class Robot {
             double goal = nearestReachableAngle(lastTargetAngle, angle);
             boolean recentObservation = cameraUsable
                     && nowMs - lastObservationMs < TURRET_REACQUIRE_MS;
-            boolean fieldHold = headingAvailable && !awaitingFirstTag();
+            boolean fieldHold = headingAvailable && !searchWhenTagLost;
             if (fieldHold || (recentObservation && Double.isFinite(goal))) {
+                preAimArrivedMs = preAimArrivedAngle = Double.NaN; // A sighting restarts any pre-aim wait.
                 boolean atFieldHoldLimit = !Double.isFinite(goal);
                 if (atFieldHoldLimit) {
                     // Keep the field target so it can be recovered when chassis rotation allows it.
@@ -1335,12 +1459,44 @@ public class Robot {
                 if (settled) return 0;
                 // D uses measured field angular velocity, avoiding derivative kicks from tag noise.
                 double damping = returning ? 0 : gains.d * (-rate - velocity);
+                // Autonomous: slew at pre-aim speed while far off a tag that just came into view
+                // (the gentle tracking cap made the 2nd-volley turn slow); gentle again when close.
+                double trackMax = searchWhenTagLost && Math.abs(trackingError) > TURRET_FAST_TRACK_ERROR_DEG
+                        ? Math.max(TURRET_TRACK_MAX_POWER, TURRET_PRE_AIM_MAX_POWER) : TURRET_TRACK_MAX_POWER;
                 return limited(angle, positionPower(trackingError, damping,
                         returning ? 0 : feedforward,
-                        returning ? TURRET_RETURN_MAX_POWER : TURRET_TRACK_MAX_POWER));
+                        returning ? TURRET_RETURN_MAX_POWER : trackMax));
             }
 
-            // Without heading (or in autonomous before the first tag), search for the HIVE.
+            // Autonomous with an odometry prediction: turn to where the HIVE should be instead of
+            // sweeping from wherever the turret happens to be when the robot arrives.
+            double preAimGoal = searchWhenTagLost ? nearestReachableAngle(preAimAngle, angle) : Double.NaN;
+            if (Double.isFinite(preAimGoal)) {
+                double preAimError = preAimGoal - angle;
+                boolean moved = Double.isFinite(preAimArrivedAngle)
+                        && Math.abs(preAimGoal - preAimArrivedAngle) > TURRET_PRE_AIM_MOVED_DEG;
+                if (moved) preAimArrivedMs = preAimArrivedAngle = Double.NaN;
+                if (Math.abs(preAimError) <= TURRET_PRE_AIM_ARRIVED_DEG && Double.isNaN(preAimArrivedMs)) {
+                    preAimArrivedMs = nowMs;
+                    preAimArrivedAngle = preAimGoal;
+                }
+                boolean predictionEmpty = preAimMaySearch && Double.isFinite(preAimArrivedMs)
+                        && nowMs - preAimArrivedMs >= TURRET_PRE_AIM_SEARCH_AFTER_MS;
+                if (!predictionEmpty) {
+                    returning = Math.abs(preAimError) > 180;
+                    state = returning ? (preAimError > 0 ? "UNWIND RIGHT" : "UNWIND LEFT") : "PRE-AIM";
+                    settled = false;
+                    // The predicted angle moves opposite to the chassis turn: feed that forward so
+                    // the turret keeps up while the robot spins between shooting spots.
+                    double preAimFeedforward = Math.abs(rate) >= TURRET_ROTATION_DEADBAND_DEG_S
+                            ? -rate * gains.kV : 0;
+                    if (Math.abs(preAimError) < gains.deadbandDeg && preAimFeedforward == 0) return 0;
+                    return limited(angle, positionPower(preAimError, preAimFeedforward,
+                            TURRET_PRE_AIM_MAX_POWER));
+                }
+            }
+
+            // Without heading (or in autonomous once the tag is lost), search for the HIVE.
             // Reverse near either endpoint instead of latching a return to the far endpoint.
             if (angle >= maxDeg - TURRET_RETURN_MARGIN_DEG) searchDirection = -1;
             if (angle <= minDeg + TURRET_RETURN_MARGIN_DEG) searchDirection = 1;
@@ -1369,6 +1525,7 @@ public class Robot {
             lastTargetAngle = Double.NaN;
             lastHeading = Double.NaN;
             lastObservationMs = Double.NEGATIVE_INFINITY;
+            preAimArrivedMs = preAimArrivedAngle = Double.NaN;
             settled = false;
             pTerm = dTerm = velocityTerm = staticTerm = 0;
         }
@@ -1397,6 +1554,11 @@ public class Robot {
     // =========================================
     // SHOOTER
     // =========================================
+
+    /** Independent copy for tuning/test presets, so the shared shot table cannot be mutated. */
+    public static double[] shooterCalibrationRpms() {
+        return SHOOTER_DISTANCE_RPM.clone();
+    }
 
     /** Interpolate measured camera-to-AprilTag distances; clamp beyond the measured range. */
     public static double rpmForDistance(double meters) {
@@ -1438,7 +1600,7 @@ public class Robot {
             shotColor = ballColor;
         }
 
-        updateShooter(rpmFor(shotColor));
+        updateShooter(distanceBasedShooterRpm());
     }
 
     /** TeleOp supplies a distance-based base RPM; keep motor output/readiness on one target. */

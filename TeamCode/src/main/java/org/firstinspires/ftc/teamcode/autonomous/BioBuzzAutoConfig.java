@@ -35,9 +35,30 @@ public final class BioBuzzAutoConfig {
     // Gate servo travel time: command OPEN, wait this long, THEN start intake + transmission.
     // Feeding into a gate that is still moving scrubs speed off the first ball.
     public static final double GATE_OPEN_WAIT_SECONDS = 0.25;
+    // With the intake always on (AutoPath), the transmission has been packing balls against the
+    // closed gate. For the first part of the gate-open wait, run it briefly OUTWARD to take that
+    // load off the gate so the servo can open freely. Set the seconds to 0 to disable.
+    public static final double GATE_RELIEF_SECONDS = 0.10;
+    public static final double GATE_RELIEF_TRANSMISSION_POWER = 0.30;
     // No fresh aimed tag by this long after a volley starts: shoot at the calibrated-table RPM
-    // (latest filtered tag distance, or the 3150 RPM no-tag default) once the flywheel is stable.
+    // (latest filtered tag distance, or the 3215 RPM no-tag default) once the flywheel is stable.
     public static final double SHOOT_AIM_GRACE_SECONDS = 2.0;
+    // ...but while the turret is still turning toward a known or visible HIVE (PRE-AIM, UNWIND,
+    // TRACK or REACQUIRE, i.e. anything but a blind sweep), keep the
+    // gate closed until SHOOT_FORCE_FEED_SECONDS: the 2nd volley used to fire mid-turn.
+    // HIVE memory: a sighting counts only when the chassis has been still this long, slower than
+    // these limits, and the turret is not slewing fast (camera latency would misplace the HIVE).
+    // Where the turret points (clockwise degrees from the robot front) when it is zeroed with BACK
+    // in INIT. The team zeros it pointing straight BACKWARD (180) at START, so the HIVE (behind
+    // the robot) is near encoder 0. The HIVE memory converts encoder angles with this; assuming
+    // 0 (forward) put the HIVE mirrored behind START and aimed volley 2 ~130 degrees off.
+    public static final double TURRET_ZERO_DIRECTION_DEG = 180.0;
+    public static final double HIVE_FIX_STILL_SECONDS = 0.25;
+    public static final double HIVE_FIX_MAX_SPEED_IN_S = 3.0;
+    public static final double HIVE_FIX_MAX_TURN_DEG_S = 5.0;
+    public static final double HIVE_FIX_MAX_TURRET_DEG_S = 120.0;
+    // Running average of the last ~N sightings (newer spots quickly outweigh odometry drift).
+    public static final int HIVE_FIX_AVERAGE_SAMPLES = 20;
     // Flywheel still outside the +/-50 RPM band by now (e.g. low battery): feed anyway if it is
     // at least SHOOT_FORCE_MIN_RPM_FRACTION of target, instead of waiting for the hard backstop.
     public static final double SHOOT_FORCE_FEED_SECONDS = 3.5;
@@ -46,8 +67,8 @@ public final class BioBuzzAutoConfig {
     // change the shot), and reuses that distance for at most DISTANCE_HOLD_SECONDS without a tag.
     public static final int DISTANCE_FILTER_SAMPLES = 5;
     public static final double DISTANCE_HOLD_SECONDS = 1.0;
-    // AutoPath runs every segment at 70% except the two that drive into balls: path 2 (into the
-    // four wall balls) and path 7 (FLOWER intake). 70% there bats the balls away.
+    // AutoPath runs every segment at 85% (AutoPath.SPEED_FRACTION) except the two that drive into balls: path 2 (into the
+    // four wall balls) and path 7 (FLOWER intake). Route speed there bats the balls away.
     public static final double PICKUP_SPEED_FRACTION = 0.35;
     public static final double PICKUP_MAX_VELOCITY_IN_S = 18.0;
 

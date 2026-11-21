@@ -6,13 +6,13 @@ per output revolution and **2.82121 ticks per turret degree** after the external
 The observed 272 ticks for an estimated 90-degree turn is about 7% higher; check the
 physical angle accurately before substituting an empirical conversion.
 
-The measured endpoints are **-724/+563 raw ticks** from forward zero. Software adds
-15 ticks of inward clearance at each end, giving **-709/+548**. Turret encoder angles
-remain unwrapped across the full measured travel, which exceeds 360 degrees.
+Since the 2026-11-14 turret update, turret angles are measured from where the turret is when the
+OpMode is INITed (`turretStartTicks`), with soft limits of **+/-270 deg (-762/+762 ticks)** from
+there and no stall/snag recovery. Angles stay unwrapped across the 540 degree travel.
 
 ## Run on the robot
 
-1. Deploy the debug APK. Check `Robot code` reads `BIOBUZZ-FLOWER-ON0.32-OFF0-2026-11-11`.
+1. Deploy the debug APK. Check `Robot code` reads `BIOBUZZ-FLOWER-ON0.5-OFF0.145-2026-11-14`.
 2. Select **BioBuzz Blue TeleOp** or **BioBuzz Red TeleOp** for the correct alliance.
    During INIT, point the shooter physically forward
    and press **gamepad 2 Back** to establish the same zero used to measure the limits.
@@ -28,11 +28,12 @@ remain unwrapped across the full measured travel, which exceeds 360 degrees.
    Check `TRACK`, the compensated goal, and requested/applied power. Brief dropouts use
    `REACQUIRE LAST TAG` for up to 400 ms from the observation's estimated capture time.
 
-Aim now locks one alliance tag, initially choosing a tag nearest the crosshair. It
-keeps that ID as the number/order of other detections changes. If the selected tag
-disappears, it waits 250 ms before selecting another visible alliance tag. The
-`Aim target` line identifies the selected tag; distance/face-angle telemetry uses
-that same tag. This prevents a changing multi-tag average from moving the aim point.
+Aim uses the **average TX of every visible alliance tag** (`TURRET_AIM_TAG_ID = -1`,
+shown as `GROUP MEAN` on the `Aim target` line); distance/face-angle telemetry uses the
+nearest matching tag. Each alliance HIVE has two CELLS with their own 4-tag cluster
+(RED 30-33 / 34-37, BLUE 38-41 / 42-45), so a frame that shows both clusters aims
+between the CELLS. The V2 OpModes aim at the upward CELL's cluster only; see
+[V2.md](V2.md).
 
 Search reverses near either software endpoint. Readings outside a software limit get
 a short inward `LIMIT RECOVERY` movement. A target beyond an endpoint can use an

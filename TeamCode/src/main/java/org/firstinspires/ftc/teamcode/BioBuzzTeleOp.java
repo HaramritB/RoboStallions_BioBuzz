@@ -11,7 +11,7 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
 
     static final double SLOW_MODE_SCALE = 0.4;
     static final double STICK_DEADBAND = 0.1;
-    static final double SINGLE_CONTROLLER_TURRET_JOG_POWER = 0.15;
+    static final double SINGLE_CONTROLLER_TURRET_JOG_POWER = 0.375;
     static final double FLOWER_ON = FlowerLever.DEPLOYED_POSITION;
     static final double FLOWER_OFF = FlowerLever.RETRACTED_POSITION;
 
@@ -92,7 +92,7 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
             robot.addVisionTelemetry(telemetry);
             robot.addGateTelemetry(telemetry);
             addPollenLedTelemetry(robot);
-            telemetry.addData("Flower", "OFF from INIT (%.2f); gamepad %d RB toggles ON/OFF", FLOWER_OFF, operatorNumber);
+            telemetry.addData("Flower", "OFF from INIT (%.4f); gamepad %d RB toggles ON/OFF", FLOWER_OFF, operatorNumber);
 
             telemetry.update();
         }
@@ -137,6 +137,7 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
                 // DRIVER 1: INTAKE
                 // =====================================
 
+                // Hold-to-run: RT in, LT out (tap-to-toggle was tried 2026-11-13 and was worse).
                 double intakePower = 0;
 
                 if (gamepad1.right_trigger > 0.2) {
@@ -218,8 +219,16 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
                 // GATE / FEEDER
                 // =====================================
 
-                boolean toggleGate =
-                        operator.xWasPressed();
+                double gateTargetRpm = robot.targetRpm + robot.rpmTrim;
+                double gateCurrentRpm = robot.shooterRpm();
+
+                boolean toggleGate = operator.xWasPressed()
+                        && (robot.gateOpen
+                        || (robot.shooterOn
+                        && Double.isFinite(gateTargetRpm)
+                        && gateTargetRpm > 0
+                        && Double.isFinite(gateCurrentRpm)
+                        && Math.abs(gateCurrentRpm - gateTargetRpm) <= 50));
 
                 boolean gateWasOpen = robot.gateOpen;
 
@@ -438,7 +447,7 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
                         robot.ballDistanceCm
                 );
                 addPollenLedTelemetry(robot);
-                telemetry.addData("Flower", "%s (%.2f); gamepad %d RB toggles",
+                telemetry.addData("Flower", "%s (%.4f); gamepad %d RB toggles",
                         flowerOn ? "ON" : "OFF", flowerOn ? FLOWER_ON : FLOWER_OFF, operatorNumber);
 
                 telemetry.addData(
@@ -481,6 +490,6 @@ public abstract class BioBuzzTeleOp extends LinearOpMode {
         telemetry.addData("Shooter RPM source", hasDistance
                 ? String.format(java.util.Locale.US, "Tag %d: %.2f m", robot.targetDistanceTagId,
                         robot.targetDistanceMeters)
-                : "No fresh tag distance: default 3150 RPM");
+                : String.format(java.util.Locale.US, "No fresh tag distance: default %.0f RPM", Robot.TELEOP_DEFAULT_RPM));
     }
 }

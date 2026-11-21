@@ -42,6 +42,8 @@ public class RobotTest extends LinearOpMode {
         boolean wheelTestMode = false;
         boolean testShooterOn = false;
         double testRpm = 1000;  // start slow so you can check the spin direction safely
+        double[] calibratedRpms = Robot.shooterCalibrationRpms();
+        int calibratedPreset = -1;
         double peakRpm = 0;
         boolean autoAim = false;
         boolean wasRunningSequence = false;
@@ -90,7 +92,8 @@ public class RobotTest extends LinearOpMode {
             if (gamepad1.dpadUpWasPressed()) testRpm = Math.min(MAX_RPM, testRpm + RPM_STEP);
             if (gamepad1.dpadDownWasPressed()) testRpm = Math.max(0, testRpm - RPM_STEP);
             if (gamepad1.rightStickButtonWasPressed()) {
-                testRpm = testRpm == Robot.RPM_YELLOW ? Robot.RPM_RED : Robot.RPM_YELLOW;
+                calibratedPreset = (calibratedPreset + 1) % calibratedRpms.length;
+                testRpm = calibratedRpms[calibratedPreset];
             }
 
             // ---------------- Gate settings ----------------
@@ -104,7 +107,7 @@ public class RobotTest extends LinearOpMode {
 
             boolean runSequence = !wheelTestMode && gamepad1.y;
             if (runSequence) {
-                // Competition logic: shooter speed by ball color, gate only opens on our HIVE tag.
+                // Competition distance table; gate only opens on our HIVE tag.
                 robot.shooterOn = true;
                 robot.updateShooter();
                 robot.updateFeeder(true, intakePower);
@@ -148,8 +151,7 @@ public class RobotTest extends LinearOpMode {
 
             telemetry.addLine("--- Shooter ---");
             if (runSequence) {
-                telemetry.addData("Mode", "SEQUENCE   target %.0f rpm for %s",
-                        robot.targetRpm, robot.shotColor);
+                telemetry.addData("Mode", "SEQUENCE   distance-based target %.0f rpm", robot.targetRpm);
             } else {
                 telemetry.addData("Mode", "MANUAL   %s   target %.0f rpm", testShooterOn ? "ON" : "OFF", testRpm);
             }

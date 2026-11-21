@@ -1,5 +1,19 @@
 # Competition TeleOp, gate calibration and turret controls
 
+**One-person layout:** select the original **BioBuzz Blue/Red TeleOp (Single Controller)**
+or **BioBuzz Blue/Red TeleOp V2**. Both use gamepad 1: left stick drive/strafe, right stick X
+rotate, LB slow drive, hold RT / LT for intake in / out, A shooter toggle, X gate toggle
+(V2: X toggles the whole shooting sequence: gate open, intake in, LED purple; starts only within +/-50 RPM),
+Y auto-aim toggle, B hold to center the turret, D-pad left/right hold to jog the turret,
+D-pad up/down RPM trim, and RB flower toggle. Back zeros the turret during INIT only.
+The gamepad 2 references below describe the original two-person TeleOps and calibration tools.
+V2 details are in [V2.md](V2.md).
+
+V2 calibration additions: up/down trims **10 RPM**, or **1 RPM** with LB held; left stick click
+freezes/unfreezes the table RPM; right stick click logs a point while calibrating, otherwise re-localizes at the park corner (V2); Back after
+START clears trim only. V2 TeleOp's ready indication uses **+/-10 RPM for 150 ms**, while X/RT
+retain manual gate/feed control. Original TeleOp trim remains 50 RPM per press.
+
 Choose **BioBuzz Blue TeleOp** or **BioBuzz Red TeleOp** on the Driver Station.
 The selected OpMode fixes the alliance automatically, including the HIVE tag filter;
 X/B during INIT cannot change it. Both entries share the same driving, shooter,
@@ -8,14 +22,14 @@ turret, and gate controls. The old generic BioBuzz TeleOp entry is removed.
 BioBuzz Auto still uses X/B during INIT to choose its alliance. After Auto, select
 its matching Blue or Red TeleOp; Auto no longer preselects the removed generic entry.
 
-The redesigned gate's measured code defaults are **OPEN=0.41** and **CLOSED=0.59**.
+The redesigned gate's measured code defaults are **OPEN=0.39** and **CLOSED=0.59**.
 Both competition TeleOps, Auto, Robot Test, and Flywheel Tuning share these values. A complete
 saved calibration overrides the code defaults. With no saved pair, fresh installs
 use the measured defaults; loading them sends no position command during INIT.
 The configured gate servo remains named `torqueservo1`.
 
 In both competition TeleOps, **gamepad 2 right bumper** toggles the flower lever
-**ON=0.32 / OFF=0** using the Servo named **`flower`**. It moves to OFF as
+**ON=0.5 / OFF=0.145** (`FlowerLever`) using the Servo named **`flower`**. It moves to OFF as
 soon as INIT is pressed (and again at START), holds its position with PWM enabled while
 TeleOp runs, and displays its commanded state. These measured
 values are fixed TeleOp constants; calibration preferences do not override them.
@@ -71,8 +85,8 @@ if its current mode is uncertain. The code cannot identify that programmed mode.
 
 For the turret, **gamepad 2 right stick X** overrides auto-aim. Gamepad 2 **Y** toggles
 auto-aim; hold **B** to center. With the turret physically pointing straight forward,
-**gamepad 2 Back** resets its encoder zero. Software limits are **-709 to +548 ticks**,
-inside the measured physical endpoints of -724/+563. Positive ticks turn right from above.
+**gamepad 2 Back** resets its encoder zero. Software limits are **+/-270 deg (-762 to +762
+ticks)** from the INIT position (2026-11-14 turret update). Positive ticks turn right from above.
 
 Telemetry shows requested/applied power, raw encoder ticks, limit blocking, and Pinpoint
 heading-compensation status. See [Turret tracking setup](TURRET_TRACKING.md) for deployment,
@@ -84,19 +98,22 @@ Use Gate Calibration to change endpoints; Robot Test cannot expand the saved tra
 
 ## TeleOp shooter RPM by AprilTag distance
 
+For PIDF tuning and distance calibration, use [the shooter tuning walkthrough](SHOOTER_TUNING.md).
+The tuner tests 3215, 3220, 3235 and 3300 RPM, starts from V2 TeleOp's reference F, and saves
+a per-volley summary to `/sdcard/FIRST/java/src/Datalogs/shooter_volleys.csv`.
+
 Both competition TeleOps select the base shooter RPM from the fresh, locked HIVE
 AprilTag's camera-to-tag distance in meters:
 
 | Distance (m) | Base RPM |
 | --- | --- |
-| 1.41 | 3150 |
-| 1.60 | 3150 |
-| 1.76 | 3200 |
-| 1.90 | 3250 |
+| 1.39 | 3215 |
+| 1.52 | 3220 |
+| 1.62 | 3235 |
 
-Values between points are linearly interpolated. Closer than the table uses 3150;
-farther than the table uses 3250. A missing tag or unavailable/invalid pose immediately
-uses **3150 base RPM**, even during the brief retained turret-target visibility period.
+Values between points are linearly interpolated. Closer than the table uses 3215;
+farther than the table uses 3235. A missing tag or unavailable/invalid pose immediately
+uses **3215 base RPM**, even during the brief retained turret-target visibility period.
 The distance is from the camera to the locked alliance HIVE tag, matching the
 existing Limelight distance telemetry. Shooter telemetry identifies the RPM source.
 
@@ -136,7 +153,7 @@ the target position, not servo torque or supply power.
 
 Flower calibration values use separate preferences (`biobuzz_flower_calibration_v1`,
 keys `on` and `off`) and do not change gate calibration. Competition TeleOp uses
-the configured **ON=0.32 / OFF=0** constants; saving a new calibration pair does
+the configured **ON=0.5 / OFF=0.145** `FlowerLever` constants; saving a new calibration pair does
 not automatically change those competition endpoints.
 
 ## Pollen indicator setup

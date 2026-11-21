@@ -53,6 +53,11 @@ public final class MechanismIsolationRegression {
             if (method.getName().equals("setPosition")) { servoWrites++; gatePositions.add((double)args[0]); return null; }
             throw new AssertionError("Unexpected servo call " + method.getName());
         });
+        /** Robot init closes the gate once; check it, then forget it so later counts see only what follows. */
+        void expectInitClosed() {
+            check(gatePositions.equals(java.util.Collections.singletonList(Robot.GATE_CLOSED)),"INIT commands the gate CLOSED");
+            gatePositions.clear(); servoWrites=0;
+        }
         MapFixture() {
             super(null,null);
             for (String name:new String[]{"intake","transmission","turret","shooter","frontleft","frontright","backleft","backright"}) motors.put(name,new Motor());
@@ -89,7 +94,7 @@ public final class MechanismIsolationRegression {
         for (String name:new String[]{"frontleft","frontright","backleft","backright"}) {
             check(!only.lookups.contains(name) && only.motors.get(name).trace.isEmpty(),"Mechanism init cannot touch " + name);
         }
-        check(only.servoWrites==0,"INIT cannot move the gate");
+        only.expectInitClosed();
         check(!only.motors.get("turret").trace.toString().contains("STOP_AND_RESET"),"Mechanism-only init preserves turret zero");
         MapFixture whole=new MapFixture(); Robot robot=new TestRobot(); robot.init(whole,false);
         for (String name:new String[]{"intake","transmission","turret","shooter"}) {
@@ -109,10 +114,10 @@ public final class MechanismIsolationRegression {
                 check(only.motors.get(name).power==0,"Cleanup failure cannot skip stopping " + name);
             }
         }
-        check(only.servoWrites==0,"Unused mechanisms must not create an INIT/cleanup gate command");
+        check(only.servoWrites==0,"Unused mechanisms add no cleanup gate command after the INIT close");
         MapFixture intakeMap=new MapFixture();
         BioBuzzAutoMechanisms.RobotHardware intakePort=new BioBuzzAutoMechanisms.RobotHardware(new TestRobot());
-        intakePort.robot.initMechanismsOnly(intakeMap,false);
+        intakePort.robot.initMechanismsOnly(intakeMap,false); intakeMap.expectInitClosed();
         intakePort.control(BioBuzzAutoMechanisms.Kind.COLLECT);
         check(intakeMap.motors.get("intake").power==-Robot.INTAKE_POWER
                         && intakeMap.motors.get("transmission").power==-Robot.TRANSMISSION_INDEX_POWER,
@@ -149,7 +154,11 @@ public final class MechanismIsolationRegression {
         forcedFeed();
         lostAim();
         readyShooterBetweenCommands();
+        continuousFeedAfterVolley();
         alwaysOnIntake();
+        hivePreAim();
+        travellingTurretHoldsGate();
+        secondVolleyGeometry();
         System.out.println("Passed " + checks + " mechanism initialization/isolation/cleanup checks.");
     }
 
@@ -163,8 +172,9 @@ public final class MechanismIsolationRegression {
     static BioBuzzAutoMechanisms.RobotHardware shootingPort(MapFixture map, java.util.function.LongSupplier clock) {
         Robot robot=new TestRobot() { @Override public void updateSensors() { } };
         robot.initMechanismsOnly(map,false);
+        map.expectInitClosed();
         robot.targetFresh=true; robot.targetVisible=true; robot.targetTx=0;
-        robot.targetDistanceMeters=1.90; robot.ballPresent=true; robot.ballDistanceCm=2;
+        robot.targetDistanceMeters=1.62; robot.ballPresent=true; robot.ballDistanceCm=2;
         return new BioBuzzAutoMechanisms.RobotHardware(robot,clock);
     }
 
@@ -185,7 +195,7 @@ public final class MechanismIsolationRegression {
 
     static void continuousVolley() {
         MapFixture manualMap=new MapFixture();
-        Robot manual=new TestRobot(); manual.initMechanismsOnly(manualMap,false);
+        Robot manual=new TestRobot(); manual.initMechanismsOnly(manualMap,false); manualMap.expectInitClosed();
         manual.updateManualFeeder(false,-Robot.INTAKE_POWER); // Working TeleOp gamepad 1 RT.
         double intakeReference=manualMap.motors.get("intake").power;
         double transmissionReference=manualMap.motors.get("transmission").power;
@@ -200,15 +210,15 @@ public final class MechanismIsolationRegression {
         Runnable tick=()->{ mechanisms.update(); volley.done(); };
         volley.start();
         for(int i=0;i<3;i++) tick.run();
-        check(map.gatePositions.size()==1 && map.gatePositions.get(0)==Robot.GATE_CLOSED,
-                "One calibrated CLOSED command before shooting; no cycling while spinning up");
+        check(map.gatePositions.isEmpty(),
+                "Gate stays CLOSED from INIT before shooting; no cycling while spinning up");
         check(!port.robot.gateOpen && map.motors.get("intake").power==0 && map.motors.get("transmission").power==0,
                 "Gate closed and both feed motors stopped below target RPM");
-        map.motors.get("shooter").velocity=ticks(3250);
+        map.motors.get("shooter").velocity=ticks(3235);
         tick.run();
         check(!port.robot.gateOpen,"A single in-band sample must not open the gate");
         long opened=openGate(port,now,tick);
-        check(map.gatePositions.size()==2 && map.gatePositions.get(1)==Robot.GATE_OPEN,
+        check(map.gatePositions.size()==1 && map.gatePositions.get(0)==Robot.GATE_OPEN,
                 "One calibrated OPEN command starts the entire volley");
         check(map.motors.get("intake").power==0 && map.motors.get("transmission").power==0 && !port.shootingBurstActive(),
                 "The gate opens FIRST; intake and transmission stay stopped while it travels");
@@ -221,7 +231,7 @@ public final class MechanismIsolationRegression {
                 "After the gate has opened, both motors start together in RT direction");
         map.motors.get("shooter").velocity=ticks(2400);
         now[0]+=500_000_000L; tick.run();
-        check(port.robot.gateOpen && port.robot.shotsFired==0 && map.gatePositions.size()==2,
+        check(port.robot.gateOpen && port.robot.shotsFired==0 && map.gatePositions.size()==1,
                 "RPM dips and the old pulse duration cannot close the gate or fabricate a shot");
         check(map.motors.get("intake").power==intakeReference && map.motors.get("transmission").power==transmissionReference,
                 "Both feed motors stay running through RPM dips");
@@ -232,7 +242,7 @@ public final class MechanismIsolationRegression {
             if(ball<4) {
                 tick.run();
                 check(port.robot.shotsFired==ball,"Repeated empty readings cannot count another ball");
-                check(port.robot.gateOpen && map.gatePositions.size()==2,
+                check(port.robot.gateOpen && map.gatePositions.size()==1,
                         "Keep the gate open between balls without extra servo commands");
                 check(map.motors.get("intake").power==intakeReference && map.motors.get("transmission").power==transmissionReference,
                         "Keep both motors continuously in RT direction between balls");
@@ -243,7 +253,7 @@ public final class MechanismIsolationRegression {
         now[0]+=210_000_000L; mechanisms.update();
         check(volley.done(),"Four exits complete the burst after result settling");
         volley.end(com.pedropathing.ivy.behaviors.EndCondition.NATURALLY); mechanisms.stop();
-        check(map.gatePositions.equals(java.util.Arrays.asList(Robot.GATE_CLOSED,Robot.GATE_OPEN,Robot.GATE_CLOSED)),
+        check(map.gatePositions.equals(java.util.Arrays.asList(Robot.GATE_OPEN,Robot.GATE_CLOSED)),
                 "A complete four-ball volley commands CLOSED, OPEN, CLOSED exactly once each");
     }
 
@@ -251,8 +261,8 @@ public final class MechanismIsolationRegression {
         MapFixture map=new MapFixture();
         long[] now={1_000_000_000L};
         BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map,()->now[0]);
-        double[] distances={1.41,1.60,1.76,1.90,1.83};
-        double[] rpm={3150,3150,3200,3250,3225};
+        double[] distances={1.39,1.52,1.62,1.455,1.57};
+        double[] rpm={3215,3220,3235,3217.5,3227.5};
         for(int i=0;i<distances.length;i++) {
             port.robot.targetDistanceMeters=distances[i];
             for(int frame=0;frame<BioBuzzAutoConfig.DISTANCE_FILTER_SAMPLES;frame++) {
@@ -262,14 +272,14 @@ public final class MechanismIsolationRegression {
             check(Math.abs(map.motors.get("shooter").commandedVelocity-ticks(rpm[i]))<1e-8,
                     "Send that same calibrated target to the shooter motor");
         }
-        port.robot.targetDistanceMeters=1.41;
+        port.robot.targetDistanceMeters=1.39;
         now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
-        check(Math.abs(port.robot.targetRpm-3225)<1e-8,"One outlier distance frame cannot change the calibrated RPM");
-        port.robot.targetDistanceMeters=1.83;
+        check(Math.abs(port.robot.targetRpm-3227.5)<1e-8,"One outlier distance frame cannot change the calibrated RPM");
+        port.robot.targetDistanceMeters=1.57;
         now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
         port.robot.targetFresh=false; port.robot.targetDistanceMeters=Double.NaN;
         now[0]+=500_000_000L; port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
-        check(Math.abs(port.robot.targetRpm-3225)<1e-8,"A brief tag dropout holds the last calibrated distance RPM");
+        check(Math.abs(port.robot.targetRpm-3227.5)<1e-8,"A brief tag dropout holds the last calibrated distance RPM");
         now[0]+=(long)(BioBuzzAutoConfig.DISTANCE_HOLD_SECONDS*1e9); port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
         check(port.robot.targetRpm==Robot.TELEOP_DEFAULT_RPM,"A stale distance falls back to TeleOp's no-tag table default");
         port.close();
@@ -281,50 +291,52 @@ public final class MechanismIsolationRegression {
         BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map,()->now[0]);
         Runnable shoot=()->port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
         shoot.run();
-        // The old +/-100 RPM single-sample check would accept 3151 for a 3250 target.
-        map.motors.get("shooter").velocity=ticks(3151);
+        // The old +/-100 RPM single-sample check would accept 3136 for a 3235 target.
+        map.motors.get("shooter").velocity=ticks(3136);
         for(int i=0;i<25;i++) { now[0]+=STEP_NS; shoot.run(); }
         check(!port.robot.gateOpen && map.motors.get("intake").power==0 && map.motors.get("transmission").power==0,
                 "A flywheel still 99 RPM below target cannot release balls");
-        map.motors.get("shooter").velocity=ticks(3250);
+        map.motors.get("shooter").velocity=ticks(3235);
         for(int i=0;i<10;i++) { now[0]+=STEP_NS; shoot.run(); }
         check(!port.robot.gateOpen,"A brief crossing through target RPM is not stable readiness");
-        map.motors.get("shooter").velocity=ticks(3199);
+        map.motors.get("shooter").velocity=ticks(3184);
         now[0]+=STEP_NS; shoot.run();
-        map.motors.get("shooter").velocity=ticks(3351);
+        map.motors.get("shooter").velocity=ticks(3336);
         now[0]+=STEP_NS; shoot.run();
         check(!port.robot.gateOpen,"RPM dips and overshoot reset the qualifying window");
-        map.motors.get("shooter").velocity=ticks(3250);
+        map.motors.get("shooter").velocity=ticks(3235);
         for(int i=0;i<14;i++) { now[0]+=STEP_NS; shoot.run(); }
         check(!port.robot.gateOpen,"Require the complete stable-speed duration after a disturbance");
         now[0]+=200_000_000L; shoot.run();
         check(!port.robot.gateOpen,"An old sample followed by a long loop gap cannot qualify speed");
         for(int i=0;i<14;i++) { now[0]+=STEP_NS; shoot.run(); }
         check(!port.robot.gateOpen,"Rebuild the stable window from fresh samples after a gap");
-        // Move to 1.41 m (3150 RPM): the filtered target changes once most recent frames agree.
-        port.robot.targetDistanceMeters=1.41;
-        map.motors.get("shooter").velocity=ticks(3150);
+        // A 100-RPM trim change must restart qualification. The new table's entire 20-RPM
+        // spread is inside Auto's +/-50 window and intentionally below its 25-RPM reset threshold.
+        port.robot.rpmTrim=-100;
+        map.motors.get("shooter").velocity=ticks(3135);
         long targetChanged=-1;
         for(int i=0;i<40 && !port.robot.gateOpen;i++) {
             now[0]+=STEP_NS; shoot.run();
-            if(targetChanged<0 && port.robot.targetRpm==3150) targetChanged=now[0];
+            if(targetChanged<0 && port.robot.targetRpm+port.robot.rpmTrim==3135) targetChanged=now[0];
         }
-        check(targetChanged>0 && port.robot.gateOpen && port.robot.targetRpm==3150,
-                "Open only after sustained measured speed at the current calibrated target");
+        check(targetChanged>0 && port.robot.gateOpen && port.robot.targetRpm==3235,
+                "Open only after sustained measured speed at the calibrated target plus trim");
         check((now[0]-targetChanged)/1e9>=BioBuzzAutoConfig.SHOOT_READY_STABLE_SECONDS-1e-9,
                 "Do not reuse stable time from the previous RPM target");
-        port.robot.targetDistanceMeters=1.90;
+        port.robot.targetDistanceMeters=1.39;
         now[0]+=STEP_NS; shoot.run();
-        check(port.robot.targetRpm==3150 && Math.abs(map.motors.get("shooter").commandedVelocity-ticks(3150))<1e-8,
+        check(port.robot.targetRpm==3235 && Math.abs(map.motors.get("shooter").commandedVelocity-ticks(3135))<1e-8,
                 "Distance-frame jitter cannot change the qualified RPM target during a stationary burst");
         map.motors.get("shooter").velocity=ticks(2400);
         now[0]+=STEP_NS; shoot.run();
-        check(port.robot.gateOpen && port.diagnostics().contains("feed-start RPM 3150/3150")
+        check(port.robot.gateOpen && port.diagnostics().contains("feed-start RPM 3135/3135")
                         && port.diagnostics().contains("min burst RPM 2400"),
                 "Keep the gate open during feeding and report starting speed versus load-induced speed loss");
         port.stopOutputs();
-        port.robot.targetDistanceMeters=1.41;
-        map.motors.get("shooter").velocity=ticks(3150);
+        port.robot.rpmTrim=0;
+        port.robot.targetDistanceMeters=1.39;
+        map.motors.get("shooter").velocity=ticks(3215);
         long restarted=now[0]+STEP_NS;
         now[0]=restarted; shoot.run();
         check(!port.robot.gateOpen,"A new run/volley cannot reuse the previous readiness latch");
@@ -350,7 +362,7 @@ public final class MechanismIsolationRegression {
         now[0]+=9_500_000_000L; mechanisms.update(); volley.done();
         check(!port.robot.gateOpen && map.motors.get("intake").power==0,
                 "A stalled flywheel (0 RPM) is never force-fed and gets its spin-up allowance without consuming feed time");
-        map.motors.get("shooter").velocity=ticks(3250);
+        map.motors.get("shooter").velocity=ticks(3235);
         mechanisms.update(); volley.done();
         qualifySpeed(port,now,()->{ mechanisms.update(); volley.done(); });
         check(port.robot.gateOpen && map.motors.get("intake").power==-Robot.INTAKE_POWER
@@ -366,7 +378,7 @@ public final class MechanismIsolationRegression {
         now[0]+=210_000_000L; mechanisms.update();
         check(volley.done(),"A completed timed burst does not throw the old overall mechanism timeout");
         volley.end(com.pedropathing.ivy.behaviors.EndCondition.NATURALLY); mechanisms.stop();
-        check(map.gatePositions.equals(java.util.Arrays.asList(Robot.GATE_CLOSED,Robot.GATE_OPEN,Robot.GATE_CLOSED)),
+        check(map.gatePositions.equals(java.util.Arrays.asList(Robot.GATE_OPEN,Robot.GATE_CLOSED)),
                 "Uncounted timed volley still commands the gate closed/open/closed once each");
     }
 
@@ -380,8 +392,8 @@ public final class MechanismIsolationRegression {
         now[0]+=1_000_000_000L; port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
         check(!port.robot.gateOpen && map.motors.get("intake").power==0 && map.motors.get("transmission").power==0,
                 "Within the aim grace period, an unaimed shooter waits for the tag");
-        port.robot.targetFresh=true; port.robot.targetDistanceMeters=1.90;
-        map.motors.get("shooter").velocity=ticks(3250);
+        port.robot.targetFresh=true; port.robot.targetDistanceMeters=1.62;
+        map.motors.get("shooter").velocity=ticks(3235);
         port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
         qualifySpeed(port,now,()->port.control(BioBuzzAutoMechanisms.Kind.SHOOT));
         check(port.robot.gateOpen && port.diagnostics().contains("(aimed)"),
@@ -409,8 +421,8 @@ public final class MechanismIsolationRegression {
         MapFixture map=new MapFixture();
         long[] now={1_000_000_000L};
         BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map,()->now[0]);
-        // Low battery: the flywheel holds 120 RPM under its 3250 target, outside the +/-50 band.
-        map.motors.get("shooter").velocity=ticks(3130);
+        // Low battery: the flywheel holds 120 RPM under its 3235 target, outside the +/-50 band.
+        map.motors.get("shooter").velocity=ticks(3115);
         long began=now[0];
         port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
         long opened=openGate(port,now,()->port.control(BioBuzzAutoMechanisms.Kind.SHOOT));
@@ -425,7 +437,7 @@ public final class MechanismIsolationRegression {
         MapFixture map=new MapFixture();
         long[] now={1_000_000_000L};
         BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map,()->now[0]);
-        map.motors.get("shooter").velocity=ticks(3250);
+        map.motors.get("shooter").velocity=ticks(3235);
         port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
         qualifySpeed(port,now,()->port.control(BioBuzzAutoMechanisms.Kind.SHOOT));
         check(port.robot.gateOpen,"Qualified shooter starts the continuous burst");
@@ -434,10 +446,152 @@ public final class MechanismIsolationRegression {
         check(port.robot.gateOpen && map.motors.get("intake").power==-Robot.INTAKE_POWER
                         && map.motors.get("transmission").power==-Robot.TRANSMISSION_INDEX_POWER,
                 "Losing the tag mid-burst keeps feeding the short volley instead of aborting the autonomous");
-        check(port.robot.targetRpm==3250 && map.gatePositions.size()==2,
+        check(port.robot.targetRpm==3235 && map.gatePositions.size()==1,
                 "Hold the latched calibrated RPM without cycling the gate");
         check(port.diagnostics().contains("aim lost 50 feed loops"),"Report aim loss during the burst");
         port.close();
+    }
+
+    /** AutoPath shot-2 fix: remember the HIVE from a stopped, centered sighting, then predict it. */
+    static void hivePreAim() {
+        MapFixture map=new MapFixture();
+        long[] now={1_000_000_000L};
+        BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map,()->now[0]);
+        double[] pose={0,0,0}; // x in, y in, heading clockwise degrees
+        double[] turn={0};
+        port.headingCw=()->pose[2]; port.turnRateCw=()->turn[0];
+        port.xIn=()->pose[0]; port.yIn=()->pose[1];
+        map.motors.get("shooter").velocity=ticks(3235);
+        double range=1.62/0.0254;
+        port.control(BioBuzzAutoMechanisms.Kind.NONE);
+        check(port.hiveFixes==0,"One pose sample cannot show the chassis is still");
+        for (int i=0;i<5;i++) { now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE); }
+        check(port.hiveFixes==0,"Not still long enough yet: no HIVE fix");
+        for (int i=0;i<15;i++) { now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE); }
+        // Encoder 0 points TURRET_ZERO_DIRECTION_DEG (180 = backward) from the robot front.
+        double zero=Math.toRadians(BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG);
+        check(port.hiveFixes>0 && Math.abs(port.hiveX-range*Math.cos(-zero))<1e-6 && Math.abs(port.hiveY-range*Math.sin(-zero))<1e-6,
+                "Still chassis + sighting at encoder 0, even between volleys: the HIVE is where the zeroed turret points");
+        check(Math.abs(port.hiveX+range)<1e-6,"Zeroed backward: a centered sighting at encoder 0 is behind the robot");
+        java.util.function.DoubleSupplier heading=port.headingCw;
+        port.headingCw=null; // observe() then uses the fixture's no-op sensor update
+        port.observe();
+        port.headingCw=heading;
+        check(port.diagnostics().contains("HIVE at"),"Telemetry reports the located HIVE");
+        BioBuzzAutoMechanisms logged=new BioBuzzAutoMechanisms(port);
+        check(logged.logRow().split(",",-1).length==BioBuzzAutoMechanisms.LOG_HEADER.split(",",-1).length,
+                "Run-log rows have one value per header column: " + logged.logRow());
+
+        int fixes=port.hiveFixes;
+        for (int i=0;i<25;i++) { now[0]+=STEP_NS; pose[1]+=0.5; port.control(BioBuzzAutoMechanisms.Kind.NONE); }
+        check(port.hiveFixes==fixes,"Sightings while driving are not used (camera latency would misplace the HIVE)");
+        pose[1]=0;
+        for (int i=0;i<25;i++) { now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE); }
+        fixes=port.hiveFixes; turn[0]=30;
+        for (int i=0;i<25;i++) { now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE); }
+        check(port.hiveFixes==fixes,"Sightings while the chassis turns are not used");
+        turn[0]=0;
+        map.motors.get("turret").velocity=300*Robot.TURRET_TICKS_PER_DEG;
+        for (int i=0;i<25;i++) { now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE); }
+        check(port.hiveFixes==fixes,"Sightings while the turret slews fast are not used");
+        map.motors.get("turret").velocity=0;
+
+        port.robot.targetFresh=false; port.robot.targetVisible=false; port.robot.targetTx=Double.NaN;
+        port.stopFeed();
+        pose[1]=range; // drove left by the same distance, no vision; HIVE now behind-right
+        now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE);
+        check(sameAngle(port.preAimDeg+BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG,135),
+                "Odometry predicts the HIVE 135 deg right of the robot front after driving left");
+        check(sameAngle(port.preAimDeg,-45),"...which is encoder -45 with the turret zeroed backward");
+        pose[2]=-90; // and turned 90 deg left
+        now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE);
+        check(sameAngle(port.preAimDeg+BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG,225),
+                "A left turn adds 90 deg to the predicted right turn");
+        port.close();
+
+        // A tag that is not centered still locates the HIVE: turret angle plus the tag offset.
+        BioBuzzAutoMechanisms.RobotHardware off=shootingPort(new MapFixture(),()->now[0]);
+        off.headingCw=()->0; off.turnRateCw=()->0; off.xIn=()->0; off.yIn=()->0;
+        off.robot.targetTx=10/Robot.TURRET_VISION_POWER_SIGN; // 10 deg clockwise of the camera center
+        for (int i=0;i<20;i++) { now[0]+=STEP_NS; off.control(BioBuzzAutoMechanisms.Kind.NONE); }
+        double offBearing=-Math.toRadians(BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG+10);
+        check(off.hiveFixes>0 && Math.abs(off.robot.visionErrorDegrees()-10)<1e-9
+                        && Math.abs(off.hiveX-range*Math.cos(offBearing))<1e-6
+                        && Math.abs(off.hiveY-range*Math.sin(offBearing))<1e-6,
+                "An off-center sighting (e.g. while unwinding at START) still gives the HIVE position");
+        off.close();
+
+        BioBuzzAutoMechanisms.RobotHardware noPose=shootingPort(new MapFixture(),()->now[0]);
+        noPose.headingCw=()->0; noPose.turnRateCw=()->0;
+        noPose.control(BioBuzzAutoMechanisms.Kind.SHOOT);
+        check(noPose.hiveFixes==0 && Double.isNaN(noPose.preAimDeg),
+                "Without a pose supplier the turret keeps the original sweep");
+        noPose.close();
+    }
+
+    static boolean sameAngle(double a,double b) {
+        double d=a-b; d-=360*Math.floor((d+180)/360); return Math.abs(d)<1e-6;
+    }
+
+    /** AutoPath's real geometry: START (54.67,8.16) facing 270, spot 2 (59.8,126.9) facing 90, blue HIVE ~(95,71). */
+    static void secondVolleyGeometry() {
+        long[] now={1_000_000_000L};
+        double[] turretEncoder={0};
+        Robot robot=new TestRobot() {
+            @Override public void updateSensors() { }
+            @Override public double turretDegrees() { return turretEncoder[0]; }
+        };
+        robot.initMechanismsOnly(new MapFixture(),false);
+        robot.targetFresh=true; robot.targetVisible=true; robot.targetTx=0; robot.ballPresent=true; robot.ballDistanceCm=2;
+        BioBuzzAutoMechanisms.RobotHardware port=new BioBuzzAutoMechanisms.RobotHardware(robot,()->now[0]);
+        double[] pose={54.6728,8.1648,-270}; // Pedro heading 270 -> clockwise -270
+        port.headingCw=()->pose[2]; port.turnRateCw=()->0; port.xIn=()->pose[0]; port.yIn=()->pose[1];
+        double hx=95.2, hy=70.7;
+        double physical=Robot.turretDegreesToward(54.6728,8.1648,-270,hx,hy); // HIVE ~148 deg left, behind the robot
+        double encoder=physical-BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG;
+        encoder-=360*Math.floor((encoder+180)/360);
+        check(Math.abs(encoder-32)<1,"Zeroed backward, the turret locks at START near encoder +32 (got " + encoder + ")");
+        turretEncoder[0]=encoder;
+        robot.targetDistanceMeters=Math.hypot(hx-54.6728,hy-8.1648)*0.0254;
+        for (int i=0;i<30;i++) { now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE); }
+        check(port.hiveFixes>0 && Math.abs(port.hiveX-hx)<1e-6 && Math.abs(port.hiveY-hy)<1e-6,
+                "The START lock puts the HIVE at its real field position (was mirrored behind START)");
+        robot.targetFresh=false; robot.targetVisible=false; robot.targetTx=Double.NaN;
+        pose[0]=59.7632; pose[1]=126.893; pose[2]=-90; // spot 2, Pedro heading 90
+        now[0]+=STEP_NS; port.control(BioBuzzAutoMechanisms.Kind.NONE);
+        double want=Robot.turretDegreesToward(59.7632,126.893,-90,hx,hy); // ~148 deg right
+        check(sameAngle(port.preAimDeg+BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG,want) && Math.abs(want-147.8)<1,
+                "At spot 2 the turret pre-aims ~148 deg right of the robot front, at the HIVE");
+        check(sameAngle(port.preAimDeg,-32.2) || Math.abs(port.preAimDeg+32.2)<0.1,
+                "...which is encoder ~-32, well inside the soft limits");
+        port.close();
+    }
+
+    /** The 2nd volley fired at the 2 s aim grace while the turret was still turning toward the HIVE. */
+    static void travellingTurretHoldsGate() {
+        for (String state:new String[]{"PRE-AIM","UNWIND RIGHT","TRACK","REACQUIRE LAST TAG","SEARCH RIGHT","NO CAMERA"}) {
+            MapFixture map=new MapFixture();
+            long[] now={1_000_000_000L};
+            Robot robot=new TestRobot() {
+                @Override public void updateSensors() { }
+                @Override public String turretAimState() { return state; }
+            };
+            robot.initMechanismsOnly(map,false); map.expectInitClosed();
+            robot.targetFresh=false; robot.targetVisible=false; robot.targetDistanceMeters=Double.NaN;
+            robot.ballPresent=true; robot.ballDistanceCm=2;
+            BioBuzzAutoMechanisms.RobotHardware port=new BioBuzzAutoMechanisms.RobotHardware(robot,()->now[0]);
+            map.motors.get("shooter").velocity=ticks(Robot.TELEOP_DEFAULT_RPM);
+            long began=now[0];
+            port.control(BioBuzzAutoMechanisms.Kind.SHOOT);
+            long opened=openGate(port,now,()->port.control(BioBuzzAutoMechanisms.Kind.SHOOT));
+            double waited=(opened-began)/1e9;
+            boolean blind=state.startsWith("SEARCH") || state.equals("NO CAMERA");
+            check(waited>=BioBuzzAutoConfig.SHOOT_AIM_GRACE_SECONDS,state + ": never feeds unaimed before the aim grace");
+            check(blind ? waited<BioBuzzAutoConfig.SHOOT_FORCE_FEED_SECONDS : waited>=BioBuzzAutoConfig.SHOOT_FORCE_FEED_SECONDS,
+                    state + (blind ? ": nothing to turn to, so the 2 s grace applies"
+                            : ": turret still turning to the HIVE keeps the gate closed until the force-feed time"));
+            port.close();
+        }
     }
 
     static void alwaysOnIntake() {
@@ -450,19 +604,23 @@ public final class MechanismIsolationRegression {
         mechanisms.keepShooterReady(true); mechanisms.keepIntakeRunning(true);
         mechanisms.update();
         double in=-Robot.INTAKE_POWER, tx=-Robot.TRANSMISSION_INDEX_POWER;
-        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==tx && !port.robot.gateOpen,
-                "With no command, the always-on intake collects inward against the closed gate");
-        map.motors.get("shooter").velocity=ticks(3250);
+        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==0 && !port.robot.gateOpen,
+                "With no command, the always-on intake runs only the roller; the transmission stays off");
+        map.motors.get("shooter").velocity=ticks(3235);
         com.pedropathing.ivy.Command volley=mechanisms.command(
                 BioBuzzAutoMechanisms.Action.shootFor(4,BioBuzzAutoConfig.SHOOT_BURST_SECONDS,BioBuzzAutoConfig.SHOOT_SPINUP_TIMEOUT_S),
                 ()->now[0],reason->{throw new AssertionError(reason);});
         Runnable tick=()->{ mechanisms.update(); volley.done(); };
         volley.start(); now[0]+=STEP_NS; tick.run();
-        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==tx && !port.robot.gateOpen,
-                "During spin-up the intake keeps running with the gate closed");
+        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==0 && !port.robot.gateOpen,
+                "During spin-up the intake roller runs, but the transmission stops packing balls into the closed gate");
         long opened=openGate(port,now,tick);
-        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==0,
-                "While the gate opens, the intake runs but the transmission waits");
+        double relief=-Math.signum(tx)*BioBuzzAutoConfig.GATE_RELIEF_TRANSMISSION_POWER;
+        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==relief,
+                "As the gate starts opening, the transmission briefly backs balls OFF the gate");
+        now[0]=opened+Math.round(BioBuzzAutoConfig.GATE_RELIEF_SECONDS*1e9); tick.run();
+        check(port.robot.gateOpen && map.motors.get("intake").power==in && map.motors.get("transmission").power==0,
+                "After the back-off, the transmission waits for the gate to finish opening");
         now[0]=opened+GATE_WAIT_NS; tick.run();
         check(port.shootingBurstActive() && map.motors.get("intake").power==in && map.motors.get("transmission").power==tx,
                 "Once the gate is open, both feed the shot inward");
@@ -471,16 +629,69 @@ public final class MechanismIsolationRegression {
         check(!port.robot.gateOpen && map.motors.get("intake").power==in && map.motors.get("transmission").power==0,
                 "The burst closes the gate; the intake stays on and the transmission waits for the gate to close");
         now[0]=burstEnd+GATE_WAIT_NS; tick.run();
-        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==tx,
-                "After the gate has closed, collecting resumes immediately");
+        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==0,
+                "After the volley the roller keeps running, but the transmission stays off until the next pickup");
         now[0]+=210_000_000L; mechanisms.update();
         check(volley.done(),"The volley still completes normally");
         volley.end(com.pedropathing.ivy.behaviors.EndCondition.NATURALLY);
         check(map.motors.get("intake").power==in,"Ending the volley command does not stop the always-on intake");
+        mechanisms.manualIntake(true); mechanisms.update();
+        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==tx,
+                "A pickup (COLLECT) runs the transmission too");
+        mechanisms.manualIntake(false); mechanisms.update();
+        check(map.motors.get("intake").power==in && map.motors.get("transmission").power==0,
+                "Ending the pickup turns the transmission off again; the roller stays on");
         mechanisms.stop();
         check(map.motors.get("intake").power==0 && map.motors.get("transmission").power==0,"STOP still stops the intake");
     }
 
+    /** AutoPath from volley 2 on: the gate never closes after the volley; feeding continues, then at 3180 RPM. */
+    static void continuousFeedAfterVolley() {
+        MapFixture map=new MapFixture();
+        long[] now={1_000_000_000L};
+        BioBuzzAutoMechanisms.RobotHardware port=shootingPort(map,()->now[0]);
+        BioBuzzAutoMechanisms mechanisms=new BioBuzzAutoMechanisms(port);
+        mechanisms.keepShooterReady(true); mechanisms.keepIntakeRunning(true);
+        mechanisms.observe();
+        mechanisms.continueFeedingAfterShot();
+        com.pedropathing.ivy.Command volley=mechanisms.command(
+                BioBuzzAutoMechanisms.Action.shootFor(4,2.0,6.0),()->now[0],reason->{throw new AssertionError(reason);});
+        Runnable tick=()->{ mechanisms.update(); volley.done(); };
+        volley.start();
+        tick.run();
+        check(!port.robot.gateOpen,"Armed continuous feeding does not skip volley 2's normal spin-up gate");
+        map.motors.get("shooter").velocity=ticks(3235);
+        openGate(port,now,tick);
+        double volleyVelocity=map.motors.get("shooter").commandedVelocity;
+        qualifySpeed(port,now,tick);
+        double intakeFeed=map.motors.get("intake").power, transmissionFeed=map.motors.get("transmission").power;
+        check(intakeFeed!=0 && transmissionFeed!=0,"Volley 2 feeds with both motors");
+        int gateWrites=map.gatePositions.size();
+        for(int i=0;i<150 && !volley.done();i++) { now[0]+=STEP_NS; mechanisms.update(); }
+        check(volley.done(),"Volley 2's feed window still ends its command");
+        volley.end(com.pedropathing.ivy.behaviors.EndCondition.NATURALLY);
+        now[0]+=STEP_NS; mechanisms.update();
+        check(port.robot.gateOpen && map.gatePositions.size()==gateWrites,
+                "After volley 2 the gate stays OPEN (no close command)");
+        check(map.motors.get("intake").power==intakeFeed && map.motors.get("transmission").power==transmissionFeed,
+                "Intake and transmission keep feeding after volley 2");
+        check(Math.abs(map.motors.get("shooter").commandedVelocity-volleyVelocity)<1e-6,
+                "Path 6: the flywheel holds volley 2's RPM");
+        port.robot.targetDistanceMeters=3.0; now[0]+=STEP_NS; mechanisms.update();
+        check(Math.abs(map.motors.get("shooter").commandedVelocity-volleyVelocity)<1e-6,
+                "A new distance reading does not change the held RPM");
+        mechanisms.continuousFeedRpm(3180);
+        now[0]+=STEP_NS; mechanisms.update();
+        check(Math.abs(map.motors.get("shooter").commandedVelocity-ticks(3180+port.robot.rpmTrim))<1e-6,
+                "Path 7 onward: the flywheel runs at a fixed 3180 RPM");
+        check(port.robot.gateOpen && map.motors.get("intake").power==intakeFeed
+                        && map.motors.get("transmission").power==transmissionFeed,
+                "The whole shooting sequence stays on at the FLOWER");
+        check(port.logRow().startsWith("CONTINUOUS"),"The run log marks continuous feeding");
+        mechanisms.stop();
+        check(!port.robot.gateOpen && map.motors.get("transmission").power==0 && map.motors.get("intake").power==0,
+                "Cleanup still closes the gate and stops both feed motors");
+    }
     static void readyShooterBetweenCommands() {
         MapFixture map=new MapFixture();
         long[] now={1_000_000_000L};
@@ -489,10 +700,10 @@ public final class MechanismIsolationRegression {
         mechanisms.setFaultTolerant(true);
         mechanisms.observe();
         mechanisms.manualIntake(false);
-        check(map.gatePositions.isEmpty(),"INIT idle still sends no gate command");
+        check(map.gatePositions.isEmpty(),"Idle after INIT sends no extra gate command");
         mechanisms.keepShooterReady(true);
         mechanisms.update();
-        check(port.robot.shooterOn && Math.abs(map.motors.get("shooter").commandedVelocity-ticks(3250))<1e-8,
+        check(port.robot.shooterOn && Math.abs(map.motors.get("shooter").commandedVelocity-ticks(3235))<1e-8,
                 "Ready mode spins the flywheel at the calibrated table RPM between commands");
         check(!port.robot.gateOpen && map.motors.get("intake").power==0 && map.motors.get("transmission").power==0,
                 "Ready mode never opens the gate or feeds");
@@ -504,7 +715,7 @@ public final class MechanismIsolationRegression {
         mechanisms.manualIntake(false);
         check(map.motors.get("intake").power==0 && !shooterTrace.subList(before,shooterTrace.size()).contains("setPower:0.0"),
                 "Stopping intake does not shut the flywheel down");
-        map.motors.get("shooter").velocity=ticks(3250);
+        map.motors.get("shooter").velocity=ticks(3235);
         com.pedropathing.ivy.Command volley=mechanisms.command(
                 BioBuzzAutoMechanisms.Action.shootFor(4,BioBuzzAutoConfig.SHOOT_BURST_SECONDS,BioBuzzAutoConfig.SHOOT_SPINUP_TIMEOUT_S),
                 ()->now[0],reason->{throw new AssertionError(reason);});

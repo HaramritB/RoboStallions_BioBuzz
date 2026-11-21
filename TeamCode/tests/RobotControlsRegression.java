@@ -97,7 +97,7 @@ public final class RobotControlsRegression {
         check(builtIn.calibrated() && builtIn.usingCodeDefaults, "Fresh installs use the measured code defaults");
         check(gate.writes == 0 && gate.enables == 0, "Loading defaults must not move the gate");
         builtIn.commandSaved(true);
-        near(gate.position, 0.41, "Code default OPEN must be the measured 0.41");
+        near(gate.position, 0.39, "Code default OPEN must be the measured 0.39");
         builtIn.commandSaved(false);
         near(gate.position, 0.59, "Code default CLOSED must be the measured 0.59");
         builtIn.forgetCalibration();
@@ -247,13 +247,13 @@ public final class RobotControlsRegression {
                 "Red must stay above the manufacturer's OFF boundary");
         indicatorRobot.led = null;
         indicatorRobot.updateLed();
-        for (double[] point : new double[][]{{1.41, 3150}, {1.60, 3150}, {1.76, 3200}, {1.90, 3250},
-                {1.50, 3150}, {1.68, 3175}, {1.83, 3225}, {0.5, 3150}, {3.0, 3250}}) {
+        for (double[] point : new double[][]{{1.39, 3215}, {1.52, 3220}, {1.62, 3235},
+                {1.455, 3217.5}, {1.57, 3227.5}, {0.5, 3215}, {3.0, 3235}}) {
             near(Robot.rpmForDistance(point[0]), point[1], "Distance calibration/interpolation/clamp");
         }
         for (double invalid : new double[]{Double.NaN, Double.POSITIVE_INFINITY,
                 Double.NEGATIVE_INFINITY, 0, -1}) {
-            near(Robot.rpmForDistance(invalid), 3150, "Invalid distance defaults to 3150");
+            near(Robot.rpmForDistance(invalid), 3215, "Invalid distance defaults to 3215");
         }
         Robot distanceRobot = new Robot();
         Motor distanceShooter = new Motor();
@@ -262,33 +262,36 @@ public final class RobotControlsRegression {
         distanceRobot.gateOpen = true;
         distanceRobot.ballColor = Robot.BallColor.BLUE;
         distanceRobot.targetFresh = true;
-        distanceRobot.targetDistanceMeters = 1.9;
+        distanceRobot.targetDistanceMeters = 1.62;
         distanceRobot.updateShooter(distanceRobot.distanceBasedShooterRpm());
-        near(distanceRobot.targetRpm, 3250, "TeleOp uses distance even with an open gate and colored ball");
-        near(distanceShooter.velocity, 3250 * Robot.SHOOTER_TICKS_PER_REV / 60,
+        near(distanceRobot.targetRpm, 3235, "TeleOp uses distance even with an open gate and colored ball");
+        near(distanceShooter.velocity, 3235 * Robot.SHOOTER_TICKS_PER_REV / 60,
                 "Distance target reaches the motor velocity command");
         check(distanceRobot.shooterAtSpeed(), "Readiness uses the same distance target as the motor");
         distanceRobot.targetFresh = false;
         distanceRobot.targetVisible = true;
         distanceRobot.updateShooter(distanceRobot.distanceBasedShooterRpm());
-        near(distanceRobot.targetRpm, 3150, "Tag loss defaults immediately despite held visibility/stale distance");
-        near(distanceShooter.velocity, 3150 * Robot.SHOOTER_TICKS_PER_REV / 60,
+        near(distanceRobot.targetRpm, 3215, "Tag loss defaults immediately despite held visibility/stale distance");
+        near(distanceShooter.velocity, 3215 * Robot.SHOOTER_TICKS_PER_REV / 60,
                 "Fallback RPM reaches the motor");
         distanceRobot.targetFresh = true;
         distanceRobot.targetDistanceMeters = Double.NaN;
-        near(distanceRobot.distanceBasedShooterRpm(), 3150, "Visible tag without a pose uses fallback");
-        distanceRobot.targetDistanceMeters = 1.76;
+        near(distanceRobot.distanceBasedShooterRpm(), 3215, "Visible tag without a pose uses fallback");
+        distanceRobot.targetDistanceMeters = 1.52;
         distanceRobot.rpmTrim = 50;
         distanceRobot.updateShooter(distanceRobot.distanceBasedShooterRpm());
-        near(distanceShooter.velocity, 3250 * Robot.SHOOTER_TICKS_PER_REV / 60,
+        near(distanceShooter.velocity, 3270 * Robot.SHOOTER_TICKS_PER_REV / 60,
                 "Manual trim remains an offset to distance RPM");
         distanceRobot.shooterOn = false;
         distanceShooter.power = 1;
         distanceRobot.updateShooter(distanceRobot.distanceBasedShooterRpm());
         near(distanceShooter.power, 0, "Automatic distance targets do not turn the shooter on");
         distanceRobot.updateShooter();
-        near(distanceRobot.targetRpm, Robot.rpmFor(distanceRobot.shotColor),
-                "Existing Auto/color-based shooter path remains available");
+        near(distanceRobot.targetRpm, 3220,
+                "No-argument shooting also uses the distance table rather than old color presets");
+        double[] presets = Robot.shooterCalibrationRpms();
+        presets[0] = 9999;
+        near(Robot.rpmForDistance(1.39), 3215, "Changing a test preset copy cannot corrupt the shared table");
         System.out.println("Passed " + checks + " gate/robot control regression checks.");
     }
 }

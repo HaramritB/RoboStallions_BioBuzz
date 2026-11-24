@@ -16,6 +16,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
 import org.firstinspires.ftc.robotcore.external.navigation.Position;
 import org.firstinspires.ftc.robotcore.external.navigation.UnnormalizedAngleUnit;
+import org.firstinspires.ftc.teamcode.FieldGeometry;
 import org.firstinspires.ftc.teamcode.Robot;
 import org.firstinspires.ftc.teamcode.autonomous.BioBuzzAutoConfig;
 
@@ -62,27 +63,11 @@ public final class RobotV2 {
      * the turret pointing straight BACKWARD (AutoPath INIT, carried into TeleOp), so 180.
      */
     public static double TURRET_ZERO_DIRECTION_DEG = BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG;
-    /*
-     * Field geometry in the robot's own frame (origin at the corner behind START, inches).
-     * Both alliances run the same AutoPath from the same START in their own frame and the field is
-     * 180-degree symmetric, so our HIVE is in the same place for red and blue.
-     * Official BIOBUZZ manual: the HIVE structure sits in the field center; the red and blue HIVES are
-     * 25.5 in apart center-to-center; each HIVE's two CELLS are 18.84 in apart, one facing the
-     * audience side and one the opposite side. AutoPath's aim at spot 2 puts our HIVE at x > center.
-     * FIELD_SIZE_IN: inside size; the AutoPath HIVE estimate (y = 70.7) points to ~141 in, not Pedro's
-     * nominal 144. Change it if your field measures differently.
-     */
-    public static double FIELD_SIZE_IN = 141.0;
-    public static double HIVE_HALF_SPACING_IN = 25.5 / 2;  // Our HIVE center is this far +x of center.
-    public static double CELL_HALF_SPACING_IN = 18.84 / 2; // Each CELL is this far from the HIVE center in y.
-    /** The turret switches CELLS only after the robot is this far past the center line. */
-    public static double CELL_SWITCH_HYSTERESIS_IN = 3.0;
-    public static double fieldCenterIn() { return FIELD_SIZE_IN / 2; }
-    public static double hiveXIn() { return fieldCenterIn() + HIVE_HALF_SPACING_IN; }
-    /** CELL on the START half (y < center) or the far half. */
-    public static double cellYIn(boolean farHalf) {
-        return fieldCenterIn() + (farHalf ? CELL_HALF_SPACING_IN : -CELL_HALF_SPACING_IN);
-    }
+    // Field geometry (HIVE / CELL positions, field size, park corner) lives in FieldGeometry,
+    // shared with AutoPath. These delegate for existing callers.
+    public static double fieldCenterIn() { return FieldGeometry.centerIn(); }
+    public static double hiveXIn() { return FieldGeometry.hiveXIn(); }
+    public static double cellYIn(boolean farHalf) { return FieldGeometry.cellYIn(farHalf); }
     /**
      * Re-localize (right stick click) only if odometry already puts the robot within this distance
      * of the park-corner pose and it is nearly stopped, so a stray click mid-field does nothing.
@@ -96,8 +81,6 @@ public final class RobotV2 {
     /** Which of our HIVE's CELLS the turret aims at: the one on the robot's half of the field. */
     public boolean aimFarCell;
     private boolean aimCellChosen;
-    /** Camera-measured CELL position (for checking the fixed coordinates; never used to aim). */
-    public double cameraCellX = Double.NaN, cameraCellY = Double.NaN;
 
     public final Robot robot = new Robot();
     public final HiveTargetV2 hive = new HiveTargetV2();
@@ -192,13 +175,7 @@ public final class RobotV2 {
     /** Aim at our HIVE's CELL on the robot's half (START half y < center, else far half). */
     public void chooseAimCell() {
         if (!odometryAim) return;
-        boolean far = aimFarCell;
-        if (poseValid) {
-            double center = fieldCenterIn();
-            if (!aimCellChosen) far = yIn >= center;
-            else if (far && yIn < center - CELL_SWITCH_HYSTERESIS_IN) far = false;
-            else if (!far && yIn > center + CELL_SWITCH_HYSTERESIS_IN) far = true;
-        }
+        boolean far = poseValid ? FieldGeometry.aimFarCell(yIn, aimFarCell, aimCellChosen) : aimFarCell;
         if (!aimCellChosen || far != aimFarCell) {
             aimFarCell = far;
             aim.setFieldTarget(hiveXIn(), cellYIn(far));
@@ -216,12 +193,7 @@ public final class RobotV2 {
      * robot pressed square into it. Heading snaps to the nearest 90 degrees.
      */
     public static double[] parkCornerPose(Robot.Alliance alliance, double headingRad) {
-        double snapped = (Math.PI / 2) * Math.rint(headingRad / (Math.PI / 2));
-        boolean lengthAlongY = Math.abs(Math.sin(snapped)) > 0.5;
-        double halfX = (lengthAlongY ? BioBuzzAutoConfig.ROBOT_WIDTH_IN : BioBuzzAutoConfig.ROBOT_LENGTH_IN) / 2;
-        double halfY = (lengthAlongY ? BioBuzzAutoConfig.ROBOT_LENGTH_IN : BioBuzzAutoConfig.ROBOT_WIDTH_IN) / 2;
-        // Same corner for both alliances in the robot's own frame (same AutoPath): x = 0, far wall.
-        return new double[]{halfX, FIELD_SIZE_IN - halfY, snapped};
+        return FieldGeometry.parkCornerPose(headingRad); // Same corner for both alliances (same AutoPath).
     }
 
     /** Right stick click: reset the Pinpoint pose to the park corner, if plausibly there and stopped. */
@@ -434,7 +406,6 @@ public final class RobotV2 {
         in.frameTimestamp = frameTimestamp;
         in.frameAgeMs = frameAgeMs;
         double autoPower = aim.update(in);
-        updateCameraCellCheck();
 
         if (center) {
             turretMode = "CENTER";
@@ -446,16 +417,6 @@ public final class RobotV2 {
             turretMode = "AUTO";
             robot.setTurretPower(autoPower);
         }
-    }
-
-    /** Where the camera says the CELL is (pose + turret + tag offset + range). Telemetry only. */
-    private void updateCameraCellCheck() {
-        double err = visionErrorDeg(), range = aimRangeIn();
-        if (!odometryAim || !poseValid || !frameFresh || hive.cell == HiveTargetV2.Cell.NONE
-                || !Double.isFinite(err) || !Double.isFinite(range)) return;
-        double bearing = headingRad - Math.toRadians(turretPhysicalDeg() + err);
-        cameraCellX = xIn + range * Math.cos(bearing);
-        cameraCellY = yIn + range * Math.sin(bearing);
     }
 
     public boolean aimed() {
@@ -501,14 +462,15 @@ public final class RobotV2 {
         return Robot.compensatedShooterF(Robot.SHOOTER_F, volts);
     }
 
-    /** Updates the filtered shot distance from this loop's frame and the remembered target. */
+    /**
+     * Updates the filtered shot distance. With odometry aim (no Limelight on the robot since
+     * 2026-11-23) it is the odometry range to the aimed CELL only; camera frames are ignored.
+     */
     public double updateShotDistance() {
-        double fresh = frameFresh && Double.isFinite(hive.distanceM) ? hive.distanceM : Double.NaN;
+        double fresh = !odometryAim && frameFresh && Double.isFinite(hive.distanceM) ? hive.distanceM : Double.NaN;
         double odometry = Double.NaN;
         if (aim.targetConfirmed() && poseValid) {
-            double r = aim.rangeToTargetIn(xIn, yIn, headingRad);
-            double h = TAG_HEIGHT_ABOVE_CAMERA_IN;
-            if (Double.isFinite(r)) odometry = Math.sqrt(r * r + h * h) * 0.0254;
+            odometry = FieldGeometry.shotDistanceM(aim.rangeToTargetIn(xIn, yIn, headingRad));
         }
         shotDistanceM = distanceFilter.update(nowMs(), fresh, odometry);
         return shotDistanceM;
@@ -549,9 +511,8 @@ public final class RobotV2 {
                 turretMode, aim.state, turretPhysicalDeg(), aim.goalDeg, aim.aimTrimDeg,
                 odometryAim ? " (from robot front; zero " + turretZeroSource + ")" : "");
         if (odometryAim) {
-            t.addData("Aim CELL", "%s half -> (%.1f, %.1f); camera saw (%s)", aimFarCell ? "FAR" : "START",
-                    hiveXIn(), cellYIn(aimFarCell), Double.isFinite(cameraCellX)
-                            ? String.format(Locale.US, "%.1f, %.1f", cameraCellX, cameraCellY) : "--");
+            t.addData("Aim CELL", "%s half -> (%.1f, %.1f), %.1f in away", aimFarCell ? "FAR" : "START",
+                    hiveXIn(), cellYIn(aimFarCell), aim.rangeToTargetIn(xIn, yIn, headingRad));
             t.addData("Relocalize", "right stick click at the park corner: %s", relocalizeStatus);
         }
         t.addData("Turret power", "applied %+.2f (P %+.2f D %+.2f FF %+.2f S %+.2f) limit=%s",

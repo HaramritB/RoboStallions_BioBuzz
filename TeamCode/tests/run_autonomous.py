@@ -67,6 +67,7 @@ with tempfile.TemporaryDirectory(prefix='biobuzz-auto-') as temporary:
                 Path(__file__).with_name('AutoPathMechanismRegression.java'),
                 Path(__file__).with_name('MechanismIsolationRegression.java'),
                 Path(__file__).with_name('AutoLifecycleRegression.java')]
+    sources += sorted((ROOT / 'TeamCode/src/main/java/org/firstinspires/ftc/teamcode/v2').glob('*.java'))
     sources += [p for p in (ROOT / 'TeamCode/src/main/java/org/firstinspires/ftc/teamcode').glob('*.java')
                 if p not in sources and p.name != 'Tuning.java']
     sources += [Path(__file__).with_name('MechanismTestRegression.java')]

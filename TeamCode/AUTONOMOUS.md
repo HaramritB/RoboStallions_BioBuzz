@@ -17,7 +17,20 @@ speed except the two that drive into balls: **path 2** (into the four wall balls
 **path 7** (FLOWER intake), which use 35% / 18 in/s. AutoPath (Drive Only) uses the same
 speeds so it rehearses the real run.
 
-1. INIT at (54.6728, 8.1648), heading 270° (route of 2026-11-13; was (56, 8)). A selects BLUE and B selects RED for tag filtering.
+**No Limelight (2026-11-23).** The camera is no longer on the robot. With the Pedro pose, AutoPath
+aims the turret purely from odometry at our HIVE's CELL on the robot's half of the field (official
+BIOBUZZ geometry in `FieldGeometry`: HIVE structure centered, HIVES 25.5 in apart, CELLS 18.84 in
+apart; our HIVE 12.75 in on the -x side of center (field test 2026-11-23: +x was the red HIVE); near CELL in the START half, far CELL in the far half). Shot
+RPM uses the odometry range to that CELL through the same distance table. A volley opens the gate
+once the flywheel is steady and the turret is on the odometry goal, or at the 3.5 s force-feed time.
+The camera HIVE memory, tag search and 2 s blind-aim fallback below no longer apply in AutoPath
+(they did, which is why the turret swept the wrong way at START with no camera). The RPM table was
+measured with Limelight distances, so re-check it with test shots.
+The aim uses the turret's real axis, 2.70 in behind the robot center (145.086 mm from the back,
+`FieldGeometry.TURRET_FROM_BACK_IN`). For any bias left after that, `FieldAimV2.FIXED_AIM_TRIM_DEG`
+shifts every odometry shot (+ = right/clockwise, - = left); it applies to AutoPath and TeleOp V2.
+
+1. INIT at (54.6728, 8.3303), heading 270°, front touching the wall (y = half the 423.17683 mm robot length; was 8.1648). A selects BLUE and B selects RED (same path and aim for both).
    With the turret pointing straight backward (180 deg, BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG), BACK zeros it.
 2. Shoot the four preloads at START before driving. The flywheel and turret stay active, and
    the **intake roller runs inward the entire time** from START to the end of the route (same
@@ -93,7 +106,7 @@ Each active loop first updates Pedro, then supplies its CW-converted heading/tur
 Robot.updateMechanismSensors. Robot.aimTurret(true, 0), distanceBasedShooterRpm and
 updateShooter(baseRpm) reuse TeleOp's aiming and measured RPM interpolation/PIDF.
 Collection uses Robot.updateManualFeeder with the calibrated gate closed, in the **same
-gamepad 1 RIGHT-trigger direction as the shooting feed** (intake -1, transmission -0.6), so
+gamepad 1 RIGHT-trigger direction as the shooting feed** (intake -1, transmission -1; was -0.6 until 2026-11-23), so
 balls stack against the closed gate. Shooting is a
 single continuous burst using the same manual feeder motor control:
 
@@ -144,8 +157,8 @@ stays ON through path 7 and the FLOWER pickup, and stays ON for the final volley
 retracts it. The end of the OpMode, STOP or a failure also retracts it. FlowerLever shares TeleOp's ON=0.5/OFF=0.145 positions and
 PWM-enable/restore behavior. AutoPath (Drive Only) never maps or commands it.
 
-Scoring needs intake, transmission, turret, shooter, torqueservo1, **flower**, a working Limelight and
-the configured color/range feeder sensor. Missing devices or invalid gate calibration fail at
+Scoring needs intake, transmission, turret, shooter, torqueservo1, **flower** and
+the configured color/range feeder sensor (no Limelight since 2026-11-23). Missing devices or invalid gate calibration fail at
 INIT. During the run, AutoPath reports invalid sensor samples, lost aim and skipped volleys
 under **Mechanism warning** and keeps driving; STOP cleans up every output.
 The drive-only entry does not require any of these mechanism devices.
@@ -176,7 +189,7 @@ INIT initializes localization without driving. START begins the inward move befo
 There is no gamepad mode or alliance selection. The OpMode does not initialize shooting,
 intake, the gate, turret, Limelight, or the feeder color/range sensor.
 
-The team measured 427.284 mm from the back to the front of the intake guard, 448.7 mm
+The team measured 423.17683 mm long (2026-11-23; earlier 427.284 mm to the front of the intake guard), 448.7 mm
 side to side, and 213.642 mm from the tracked center to the intake tip. The runtime offset
 is 8.411102 inches forward with the centered-intake assumption of zero lateral offset.
 This places the FLOWER chassis center at (46.872269, 131.819817) inches, heading 90.572°.

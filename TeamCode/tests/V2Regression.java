@@ -29,6 +29,9 @@ public final class V2Regression {
     }
 
     public static void main(String[] args) {
+        // Camera-geometry tests below assume the turret axis at the chassis center; the odometry
+        // tests restore the measured offset (2.70 in behind center).
+        FieldAimV2.TURRET_OFFSET_FORWARD_IN = 0;
         hiveTargeting();
         fieldAim();
         quietAim();
@@ -48,6 +51,12 @@ public final class V2Regression {
     }
 
     static void onePersonControls() {
+        double in = ShotSequencerV2.INWARD_TRANSMISSION, rt = -Robot.INTAKE_POWER;
+        near(BioBuzzTeleOpV2.rtIntakeTransmission(in, rt, false, false), in, 0, "RT intake runs the transmission until a ball is seen");
+        near(BioBuzzTeleOpV2.rtIntakeTransmission(in, rt, false, true), 0, 0, "RT intake + ball sensor sees a ball: transmission stops");
+        near(BioBuzzTeleOpV2.rtIntakeTransmission(in, rt, true, true), in, 0, "Gate open (X shooting): keeps feeding with a ball present");
+        near(BioBuzzTeleOpV2.rtIntakeTransmission(-in, Robot.INTAKE_POWER, false, true), -in, 0, "LT (outward) is unchanged");
+        near(BioBuzzTeleOpV2.rtIntakeTransmission(in, 0, false, true), in, 0, "Without RT nothing changes (e.g. X feeding)");
         Gamepad pad = new Gamepad();
         pad.right_stick_x = 1;
         near(BioBuzzTeleOpV2.manualTurretPower(pad), 0, 0,
@@ -603,17 +612,19 @@ public final class V2Regression {
 
     /** TeleOp 2026-11-14: the turret aims only from odometry at a fixed CELL position. */
     static void odometryOnlyAim() {
+        FieldAimV2.TURRET_OFFSET_FORWARD_IN = org.firstinspires.ftc.teamcode.FieldGeometry.turretForwardOffsetIn();
         double hx = RobotV2.hiveXIn(), farY = RobotV2.cellYIn(true);
         near(RobotV2.fieldCenterIn(), 70.5, 1e-9, "Field center for a 141 in field");
-        near(hx - RobotV2.fieldCenterIn(), 12.75, 1e-9, "Our HIVE is half of the official 25.5 in from center, on +x");
+        near(hx - RobotV2.fieldCenterIn(), -12.75, 1e-9, "Our HIVE is half of the official 25.5 in from center, on the -x side");
         near(farY - RobotV2.cellYIn(false), 18.84, 1e-9, "The two CELLS are the official 18.84 in apart");
         FieldAimV2 a = aim();
         a.setFieldTarget(hx, farY);
         check(a.odometryOnly && a.targetConfirmed() && !a.targetIsGuess(), "A fixed field target is set");
         double x = 59.3283, y = 124.8302; // Spot 2, facing the far wall.
-        double bearing = Math.toDegrees(Math.atan2(farY - y, hx - x));
+        double ty = y + FieldAimV2.TURRET_OFFSET_FORWARD_IN; // Turret axis 2.70 in behind center (facing +y).
+        double bearing = Math.toDegrees(Math.atan2(farY - ty, hx - x));
         double expected = 90 - bearing; // Clockwise from the robot front.
-        check(expected > 100 && expected < 180, "From spot 2 the HIVE is behind-right, as in AutoPath: " + expected);
+        check(Math.abs(Math.abs(expected) - 180) < 8, "From spot 2 our far CELL is almost straight behind: " + expected);
         FieldAimV2.Inputs in = pose(expected, x, y, 90);
         in.minDeg = Robot.TURRET_MIN_DEG + RobotV2.TURRET_ZERO_DIRECTION_DEG;
         in.maxDeg = Robot.TURRET_MAX_DEG + RobotV2.TURRET_ZERO_DIRECTION_DEG;
@@ -622,6 +633,11 @@ public final class V2Regression {
         near(a.goalDeg, expected, 1e-6, "Goal = bearing to the fixed CELL from the odometry pose");
         check(a.state.startsWith("ODOMETRY"), "State reports odometry aiming: " + a.state);
         check(a.aimed(expected), "Aimed needs no camera confirmation in odometry-only mode");
+        FieldAimV2.FIXED_AIM_TRIM_DEG = -3;
+        a.update(in);
+        near(a.goalDeg, expected - 3, 1e-6, "FIXED_AIM_TRIM_DEG = -3 aims 3 deg further left (counterclockwise)");
+        FieldAimV2.FIXED_AIM_TRIM_DEG = 0;
+        a.update(in);
         check(!a.aimed(expected + 10), "Off by 10 deg is not aimed");
         FieldAimV2.Inputs cam = withFrame(pose(expected, x, y, 90), 25, 60, 0);
         cam.minDeg = in.minDeg; cam.maxDeg = in.maxDeg;
@@ -669,7 +685,7 @@ public final class V2Regression {
     static void parkCornerRelocalize() {
         double len = org.firstinspires.ftc.teamcode.autonomous.BioBuzzAutoConfig.ROBOT_LENGTH_IN;
         double wid = org.firstinspires.ftc.teamcode.autonomous.BioBuzzAutoConfig.ROBOT_WIDTH_IN;
-        double f = RobotV2.FIELD_SIZE_IN;
+        double f = org.firstinspires.ftc.teamcode.FieldGeometry.FIELD_SIZE_IN;
         double[] blue = RobotV2.parkCornerPose(Robot.Alliance.BLUE, Math.toRadians(93));
         near(blue[0], wid / 2, 1e-9, "Corner x: half the robot width from the x=0 wall");
         near(blue[1], f - len / 2, 1e-9, "Corner y: half the robot length from the far wall");

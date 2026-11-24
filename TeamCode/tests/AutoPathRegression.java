@@ -27,7 +27,7 @@ public final class AutoPathRegression {
         assertRegistered(BioBuzzAuto.class, "BioBuzz Auto"); // Replaced by the teammate's Pedro route.
         Path[] paths = {AutoPath.path1(), AutoPath.path2(), AutoPath.path3(), AutoPath.path4(),
                 AutoPath.path5(), AutoPath.path6(), AutoPath.path7(), AutoPath.path8()};
-        double[][] xy = {{54.6728, 8.1648}, {7.4387, 15.6441}, {7.3833, 0.0881}, {7.2845, 15.5174},
+        double[][] xy = {{54.6728, 423.17683 / 25.4 / 2}, {7.4387, 15.6441}, {7.3833, 0.0881}, {7.2845, 15.5174},
                 {26.4473, 15.5231}, {59.3283, 124.8302}, {43.2211, 110.6879},
                 {42.0231, 139.2817}, {15.7092, 122.0158}};
         for (int i = 0; i < paths.length; i++) {
@@ -41,7 +41,7 @@ public final class AutoPathRegression {
         assertHeading(paths[4].heading(0), -Math.PI / 2);
         assertHeading(paths[4].heading(1), Math.PI / 2);
         for (int i = 5; i < paths.length; i++) assertHeading(paths[i].heading(.5), Math.PI / 2);
-        assertPoint(paths[0].get(.5), (54.6728 + 2 * 37.8335 + 7.4387) / 4, (8.1648 + 2 * 44.6525 + 15.6441) / 4);
+        assertPoint(paths[0].get(.5), (54.6728 + 2 * 37.8335 + 7.4387) / 4, (423.17683 / 25.4 / 2 + 2 * 44.6525 + 15.6441) / 4);
         assertPoint(paths[4].get(.5), (26.4473 + 2 * 16.3139 + 59.3283) / 4,
                 (15.5231 + 2 * 96.4996 + 124.8302) / 4);
         checkFlowerExit(false);

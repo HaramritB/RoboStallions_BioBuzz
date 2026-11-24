@@ -1,5 +1,7 @@
 package org.firstinspires.ftc.teamcode.autonomous;
 
+import org.firstinspires.ftc.teamcode.FieldGeometry;
+import org.firstinspires.ftc.teamcode.v2.FieldAimV2;
 import com.pedropathing.ivy.Command;
 import com.pedropathing.ivy.behaviors.EndCondition;
 import com.qualcomm.robotcore.hardware.HardwareMap;
@@ -117,7 +119,7 @@ public final class BioBuzzAutoMechanisms {
             hardware.robot.alliance=alliance;
             if (hardware.robot.ballDistanceSensor == null) throw new IllegalStateException("Ball distance sensor required by the existing shooting/feeder interface");
             if (hardware.robot.colorSensor == null) throw new IllegalStateException("Color sensor required by Robot.updateSensors ball detection");
-            if (hardware.robot.Limelight == null) throw new IllegalStateException("Limelight required for the existing shot sequence");
+            // No Limelight on the robot since 2026-11-23: AutoPath aims and sets RPM from odometry.
             if (!hardware.robot.gateCalibrated()) throw new IllegalStateException("Run Gate Calibration: saved gate endpoints are invalid");
             return new BioBuzzAutoMechanisms(hardware);
         } catch (RuntimeException error) {
@@ -458,7 +460,7 @@ public final class BioBuzzAutoMechanisms {
         private enum Phase { IDLE, SPINUP, GATE_OPENING, FEEDING }
         /**
          * The one inward direction (TeleOp gamepad 1 RIGHT trigger) for BOTH collecting and
-         * feeding shots: intake -1, transmission -0.6. Only the gate differs (closed = collect and
+         * feeding shots: intake -1, transmission -1. Only the gate differs (closed = collect and
          * stack balls against it, open = shoot). Collecting must never run the opposite way.
          */
         static final double INWARD_INTAKE_POWER = -Robot.INTAKE_POWER;
@@ -482,6 +484,14 @@ public final class BioBuzzAutoMechanisms {
         private double continuousFeedRpm=Double.NaN; // NaN: hold the last volley's RPM.
         private double lastVolleyRpm=Double.NaN;
         private boolean continuousActive;
+        /**
+         * Odometry-only turret aim (no Limelight since 2026-11-23), on whenever the Pedro pose is
+         * supplied (AutoPath): the turret aims at our HIVE's CELL on the robot's half of the field
+         * (FieldGeometry), RPM comes from the odometry range to it, and "aimed" is the odometry goal.
+         */
+        private FieldAimV2 fieldAim;
+        private final FieldAimV2.Inputs aimInputs=new FieldAimV2.Inputs();
+        private boolean aimFarCell, aimCellChosen;
         private boolean intakeAlways;
         private boolean gateCommandOpen;
         private long gateMovedAt=-1;
@@ -529,10 +539,10 @@ public final class BioBuzzAutoMechanisms {
                     "%s,%d,%.2f,%.1f,%s,%.3f,%.3f,%s,%d,%d,%d,%.2f,%.2f,%.3f,%.0f,%d,%.2f,%d,%.1f,%.1f,%.1f,%d,"
                             + "%.2f,%.0f,%.2f,%.0f,%d,%s,\"%s\"",
                     continuousActive ? "CONTINUOUS" : phase.toString(),robot.gateOpen ? 1 : 0,robot.turretDegrees(),robot.turretVelocityDegPerSec(),
-                    robot.turretAimState(),robot.turretRequestedPower(),robot.turretAppliedPower(),robot.turretPowerLimit(),
+                    turretStateForLog(),robot.turretRequestedPower(),robot.turretAppliedPower(),robot.turretPowerLimit(),
                     robot.targetFresh ? 1 : 0,robot.targetVisible ? 1 : 0,robot.targetId,robot.targetTx,
                     robot.visionErrorDegrees(),robot.targetDistanceMeters,robot.targetFrameAgeMs(),
-                    robot.aimedAtTarget() ? 1 : 0,still,hiveFixes,hiveX,hiveY,preAimDeg,robot.shotsFired,
+                    aimedForLog() ? 1 : 0,still,hiveFixes,hiveX,hiveY,preAimDeg,robot.shotsFired,
                     loggedIntakePower,motorVelocity(robot.intake),
                     loggedTransmissionPower,motorVelocity(robot.transmission),
                     robot.ballPresent ? 1 : 0,feedTrigger.isEmpty() ? "-" : feedTrigger.replace(',',';'),
@@ -555,10 +565,14 @@ public final class BioBuzzAutoMechanisms {
                 previousBurstBall=robot.ballPresent;
             }
             detail=String.format(java.util.Locale.US,"RPM %.0f/%.0f; target fresh=%s aimed=%s tx=%.2f distance=%.3f m (filtered %.3f m); gate calibrated=%s; ball=%s distance=%.2f cm; exits=%d",
-                    robot.shooterRpm(),robot.targetRpm+robot.rpmTrim,robot.targetFresh,robot.aimedAtTarget(),
+                    robot.shooterRpm(),robot.targetRpm+robot.rpmTrim,robot.targetFresh,aimedForLog(),
                     robot.targetTx,robot.targetDistanceMeters,filteredDistance(clock.getAsLong()),robot.gateCalibrated(),
                     robot.ballPresent,robot.ballDistanceCm,robot.shotsFired);
-            if (xIn!=null) {
+            if (odometryAim()) {
+                detail+=String.format(java.util.Locale.US,"; odometry aim at %s CELL (%.1f, %.1f); turret %s",
+                        aimFarCell ? "far" : "START-side",FieldGeometry.hiveXIn(),FieldGeometry.cellYIn(aimFarCell),
+                        turretStateForLog());
+            } else if (xIn!=null) {
                 detail+=hiveFixes==0 ? "; HIVE not located yet (turret sweeps)"
                         : String.format(java.util.Locale.US,"; HIVE at (%.0f, %.0f) from %d sightings; pre-aim %.0f deg; turret %s",
                         hiveX,hiveY,hiveFixes,preAimDeg,robot.turretAimState());
@@ -567,6 +581,51 @@ public final class BioBuzzAutoMechanisms {
                     Double.isFinite(robot.ballDistanceCm) && robot.ballDistanceCm > 0);
         }
 
+        boolean odometryAim() { return xIn!=null && yIn!=null && headingCw!=null; }
+
+        /** Runs the odometry aim every loop; drives the turret only when {@code drive}. */
+        private void odometryAimTurret(boolean drive) {
+            if (fieldAim==null) fieldAim=new FieldAimV2(robot.turretGains, () -> clock.getAsLong()/1e6);
+            double x=xIn.getAsDouble(), y=yIn.getAsDouble(), headingCwDeg=headingCw.getAsDouble();
+            boolean poseOk=Double.isFinite(x) && Double.isFinite(y) && Double.isFinite(headingCwDeg);
+            boolean far=poseOk ? FieldGeometry.aimFarCell(y,aimFarCell,aimCellChosen) : aimFarCell;
+            if (!aimCellChosen || far!=aimFarCell) {
+                aimFarCell=far;
+                fieldAim.setFieldTarget(FieldGeometry.hiveXIn(),FieldGeometry.cellYIn(far));
+            }
+            aimCellChosen=aimCellChosen || poseOk;
+            hiveX=FieldGeometry.hiveXIn(); hiveY=FieldGeometry.cellYIn(aimFarCell); // Logged as the aim point.
+            double zero=BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG;
+            FieldAimV2.Inputs in=aimInputs;
+            in.turretDeg=robot.turretDegrees()+zero;
+            in.turretVelDegS=robot.turretVelocityDegPerSec();
+            in.minDeg=robot.turretMinDegrees()+zero;
+            in.maxDeg=robot.turretMaxDegrees()+zero;
+            in.poseValid=poseOk;
+            in.xIn=x; in.yIn=y;
+            in.headingRad=-Math.toRadians(headingCwDeg); // Pedro: CCW radians.
+            double rate=turnRateCw!=null ? turnRateCw.getAsDouble() : 0;
+            in.omegaRadS=Double.isFinite(rate) ? -Math.toRadians(rate) : 0;
+            in.cameraUsable=false; in.observationFresh=false;
+            double power=fieldAim.update(in);
+            preAimDeg=fieldAim.goalDeg-zero; // Encoder angle of the goal (logged).
+            if (drive) robot.setTurretPower(power);
+        }
+
+        private boolean odometryAimed() {
+            return fieldAim!=null && fieldAim.aimed(robot.turretDegrees()+BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG);
+        }
+
+        /** Shot distance (m) from the odometry range to the aimed CELL, or NaN. */
+        private double odometryShotDistanceM() {
+            if (fieldAim==null) return Double.NaN;
+            double x=xIn.getAsDouble(), y=yIn.getAsDouble(), h=-Math.toRadians(headingCw.getAsDouble());
+            return FieldGeometry.shotDistanceM(fieldAim.rangeToTargetIn(x,y,h));
+        }
+
+        private String turretStateForLog() { return odometryAim() && fieldAim!=null ? fieldAim.state : robot.turretAimState(); }
+        private boolean aimedForLog() { return odometryAim() ? odometryAimed() : robot.aimedAtTarget(); }
+
         @Override public void control(Kind request) {
             used=true;
             long now=clock.getAsLong();
@@ -574,8 +633,13 @@ public final class BioBuzzAutoMechanisms {
             boolean continuous=continuousFeed && !shooting && request!=Kind.CENTER_TURRET;
             continuousActive=continuous;
             boolean spin=shooting || idleSpin || continuous;
-            updateHivePreAim(shooting);
+            boolean odometry=odometryAim();
+            if (!odometry) updateHivePreAim(shooting); // Camera HIVE memory (no Limelight: never fixes).
             if (request==Kind.CENTER_TURRET) robot.turretToAngle(0);
+            else if (odometry) {
+                odometryAimTurret(spin);
+                if (!spin) robot.turret.setPower(0);
+            }
             else if (spin) {
                 robot.aimTurret(true,0); // TeleOp keeps auto-aim on all match.
                 // Never sweep for a tag while the gate is open: hold the turret where it is.
@@ -585,9 +649,16 @@ public final class BioBuzzAutoMechanisms {
             else robot.turret.setPower(0);
 
             // Same measured distance table and tuned PIDF as TeleOp, from a median-filtered distance.
-            boolean validDistance=robot.targetFresh && Double.isFinite(robot.targetDistanceMeters)
-                    && robot.targetDistanceMeters>0;
-            if (validDistance) recordDistance(robot.targetDistanceMeters,now);
+            boolean validDistance;
+            if (odometry) {
+                double d=odometryShotDistanceM();
+                validDistance=Double.isFinite(d) && d>0;
+                if (validDistance) recordDistance(d,now);
+            } else {
+                validDistance=robot.targetFresh && Double.isFinite(robot.targetDistanceMeters)
+                        && robot.targetDistanceMeters>0;
+                if (validDistance) recordDistance(robot.targetDistanceMeters,now);
+            }
             boolean latched=(phase==Phase.GATE_OPENING || phase==Phase.FEEDING) && Double.isFinite(burstBaseRpm);
             double distanceRpm=Robot.rpmForDistance(filteredDistance(now));
             double baseRpm=continuous
@@ -607,14 +678,15 @@ public final class BioBuzzAutoMechanisms {
                     feedStartRpm=feedTargetRpm=minBurstRpm=Double.NaN;
                     feedTrigger=""; aimLossFeedLoops=0;
                 }
-                boolean aimed=validDistance && robot.aimedAtTarget();
+                boolean aimed=validDistance && (odometry ? odometryAimed() : robot.aimedAtTarget());
                 if (phase==Phase.SPINUP) {
                     double waited=(now-shootingBegan)/1e9;
                     // Unaimed fallback only when there is nothing to turn to (sweeping, no camera); a
                     // turret still turning toward a known or visible HIVE keeps the gate closed
                     // until the force-feed time.
+                    // With odometry the turret always has a goal: never an early unaimed fallback.
                     String turretState=robot.turretAimState();
-                    boolean turretTravelling=turretState!=null && (turretState.startsWith("PRE-AIM")
+                    boolean turretTravelling=odometry || turretState!=null && (turretState.startsWith("PRE-AIM")
                             || turretState.startsWith("UNWIND") || turretState.startsWith("TRACK")
                             || turretState.startsWith("REACQUIRE") || turretState.startsWith("LIMIT RECOVERY"));
                     boolean aimGraceOver=waited>=BioBuzzAutoConfig.SHOOT_AIM_GRACE_SECONDS
@@ -633,7 +705,7 @@ public final class BioBuzzAutoMechanisms {
                         burstBaseRpm=baseRpm;
                         lastVolleyRpm=baseRpm; // Continuous feeding holds this until told otherwise.
                         feedTrigger=forced ? String.format(java.util.Locale.US,"forced at %.1f s",waited)
-                                : aimed ? "aimed" : "no aimed tag: calibrated fallback";
+                                : aimed ? (odometry ? "aimed (odometry)" : "aimed") : "no aimed tag: calibrated fallback";
                         feedStartRpm=measuredRpm; feedTargetRpm=targetRpm; minBurstRpm=measuredRpm;
                     }
                 }

@@ -8,7 +8,7 @@ public final class BioBuzzAutoConfig {
     // The team confirmed drivetrain, localization and mechanisms have already been tested.
     // These are not additional approval gates; runtime hardware/sensor checks remain active.
     // Point 4 was clarified to be the intake tip, not the chassis center.
-    public static final double ROBOT_LENGTH_IN = 427.284 / 25.4;
+    public static final double ROBOT_LENGTH_IN = 423.17683 / 25.4; // Measured 2026-11-23 (was 427.284 mm).
     public static final double ROBOT_WIDTH_IN = 448.7 / 25.4;
     public static double INTAKE_TIP_FORWARD_IN = 213.642 / 25.4; // Team measurement in millimeters, converted to inches.
     public static double INTAKE_TIP_LEFT_IN = 0.0; // Centered intake assumption; adjust if offset left/right.

@@ -77,7 +77,7 @@ public final class BioBuzzAuto extends LinearOpMode {
             runTime.reset();
 
             // Turn away from the wall, then return to the original straight path-1 entry.
-            double turnY = Math.hypot(427.284, 448.7) / (2 * 25.4) + 2.25;
+            double turnY = Math.hypot(423.17683, 448.7) / (2 * 25.4) + 2.25;
             Pose inward = P.of(START.x(), turnY, 90);
             Pose aligned = P.of(START.x(), turnY, 179.7546);
 

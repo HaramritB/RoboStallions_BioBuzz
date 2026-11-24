@@ -77,7 +77,8 @@ public class AutoPath extends LinearOpMode {
     static final long FLOWER_SHUFFLE_STALL_NS = 350_000_000L;
     static final long FLOWER_SHUFFLE_MAX_NS = 1_750_000_000L;
     private static final PoseFactory POSES = PoseFactory.degrees();
-    private static final Pose START = POSES.of(54.6728, 8.1648, 270);
+    // Front touching the y = 0 wall, facing 270: center is half the robot length (423.17683 mm) out.
+    private static final Pose START = POSES.of(54.6728, BioBuzzAutoConfig.ROBOT_LENGTH_IN / 2, 270);
     private static final Pose POINT_1 = POSES.of(7.4387, 15.6441, 270);
     private static final Pose POINT_2 = POSES.of(7.3833, 0.0881, -90.2042);
     private static final Pose POINT_3 = POSES.of(7.2845, 15.5174, -89.6334);
@@ -103,8 +104,8 @@ public class AutoPath extends LinearOpMode {
             if (useMechanisms()) {
                 flowerLever = new FlowerLever(hardwareMap.get(Servo.class, "flower"));
                 flowerLever.setDeployed(false); // Flower OFF as soon as INIT is pressed.
-                // Pose lets the turret remember where the HIVE is after shot 1 and pre-aim there
-                // while driving, instead of sweeping from scratch at each shooting spot.
+                // No Limelight (2026-11-23): with the Pedro pose the turret aims purely from odometry at
+                // our HIVE's CELL on the robot's half of the field, and RPM comes from that range.
                 mechanisms = BioBuzzAutoMechanisms.initialize(hardwareMap, alliance,
                         () -> -Math.toDegrees(follower.pose().heading()),
                         () -> -Math.toDegrees(follower.velocity().omega),
@@ -112,9 +113,6 @@ public class AutoPath extends LinearOpMode {
                         () -> follower.pose().y());
                 // A sensor glitch or slow volley is reported and skipped; it never ends the run.
                 mechanisms.setFaultTolerant(true);
-                // Sweep for the HIVE whenever the tag is lost: at START it is behind the robot, and at
-                // the 2nd/3rd spots it is ~160 degrees from where it was first seen.
-                mechanisms.searchForTagWhenLost(true);
                 mechanisms.manualIntake(false); // Motors idle; robot init already closed the gate.
             }
             while (opModeInInit()) {
@@ -190,7 +188,7 @@ public class AutoPath extends LinearOpMode {
     private void publish(Follower follower, BioBuzzAutoMechanisms mechanisms, Robot.Alliance alliance) {
         telemetry.addData("Mode", useMechanisms() ? "BioBuzz FTC 2026: shoot + intake" : "Drive only");
         if (useMechanisms()) {
-            telemetry.addData("Alliance", "%s (INIT: A blue / B red)", alliance);
+            telemetry.addData("Alliance", "%s (INIT: A blue / B red; same path and aim for both)", alliance);
             telemetry.addData("Turret zero", "INIT: point turret straight BACKWARD (%.0f deg), then BACK to zero",
                     BioBuzzAutoConfig.TURRET_ZERO_DIRECTION_DEG);
             telemetry.addData("Mechanisms", mechanisms.state());

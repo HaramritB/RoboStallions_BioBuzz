@@ -180,7 +180,7 @@ public class Robot {
     public static final long FEED_TIME_MS = 300;
 
     public static final double INTAKE_POWER = 1.0;
-    public static final double TRANSMISSION_INDEX_POWER = 0.6;
+    public static final double TRANSMISSION_INDEX_POWER = 1.0; // Was 0.6; full power like the intake (2026-11-23).
     public static final double TRANSMISSION_FEED_POWER = 1.0;
 
     // =========================================
@@ -411,13 +411,14 @@ public class Robot {
     private void configureMechanisms(HardwareMap hw, boolean resetEncoders) {
         // Intake
 
-        intake.setDirection(DcMotorSimple.Direction.FORWARD);
+        // Intake and transmission directions reversed for every OpMode on 2026-11-23.
+        intake.setDirection(DcMotorSimple.Direction.REVERSE);
         intake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
         intake.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
 
         // Transmission
 
-        transmission.setDirection(DcMotorSimple.Direction.REVERSE);
+        transmission.setDirection(DcMotorSimple.Direction.FORWARD);
         transmission.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         transmission.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
 
@@ -445,7 +446,7 @@ public class Robot {
 
         shooter.setPower(0);
         shooter.setDirection(
-                DcMotorSimple.Direction.FORWARD
+                DcMotorSimple.Direction.REVERSE // Reversed for every OpMode on 2026-11-23.
         );
 
         shooter.setZeroPowerBehavior(
@@ -1862,7 +1863,9 @@ public class Robot {
 
         } else if (intakePower < 0) {
 
-            transmissionPower = -TRANSMISSION_INDEX_POWER;
+            // RT intake with the gate closed: stop the transmission once the ball sensor sees a
+            // ball (2026-11-23). With the gate open (shooting) it keeps feeding.
+            transmissionPower = ballPresent && !gateOpen ? 0 : -TRANSMISSION_INDEX_POWER;
 
         } else if (
                 (intakePower > 0 || wantShoot)

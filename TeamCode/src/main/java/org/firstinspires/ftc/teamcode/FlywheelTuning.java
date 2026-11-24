@@ -167,7 +167,7 @@ public class FlywheelTuning extends OpMode {
         );
 
         intake = hardwareMap.get(DcMotorEx.class, "intake");
-        intake.setDirection(DcMotorSimple.Direction.FORWARD);
+        intake.setDirection(DcMotorSimple.Direction.REVERSE); // Matches Robot (reversed 2026-11-23).
         intake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
         intake.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         intake.setPower(0);
@@ -181,7 +181,7 @@ public class FlywheelTuning extends OpMode {
         if (!gateController.calibrated()) gateController.release();
 
         shooter.setDirection(
-                DcMotorSimple.Direction.FORWARD
+                DcMotorSimple.Direction.REVERSE // Matches Robot (reversed 2026-11-23).
         );
 
         shooter.setZeroPowerBehavior(
@@ -200,7 +200,7 @@ public class FlywheelTuning extends OpMode {
         applyPIDF();
 
         transmission.setDirection(
-                DcMotorSimple.Direction.REVERSE
+                DcMotorSimple.Direction.FORWARD // Matches Robot (reversed 2026-11-23).
         );
 
         transmission.setZeroPowerBehavior(

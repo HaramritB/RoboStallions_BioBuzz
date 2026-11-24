@@ -17,7 +17,8 @@ import org.firstinspires.ftc.teamcode.Robot;
  *    logs a point; otherwise right stick click re-localizes at the park corner (2026-11-14)
  *  - Back zeros turret (pointing BACKWARD) during INIT; after START it only clears RPM trim
  *  - turret aims purely from odometry at the fixed HIVE position (FieldAimV2 odometry-only);
- *    the Limelight is still used for shot distance. Turret zero is carried over from AutoPath.
+ *    shot distance is the odometry range too (no Limelight since 2026-11-23). Turret zero is
+ *    carried over from AutoPath.
  *  - RPM from a filtered distance; voltage-compensated F
  *  - rumble on gamepad 1 when ready to shoot; loop time on telemetry
  */
@@ -135,8 +136,8 @@ public abstract class BioBuzzTeleOpV2 extends LinearOpMode {
                     if (!calibration.enabled()) {
                         // Not calibrating: right stick click re-localizes at the park corner.
                         if (v2.relocalizeAtParkCorner()) operator.rumble(300);
-                    } else if (!v2.cameraUsable || !Double.isFinite(v2.hive.distanceM)) {
-                        logger.lastMessage = "Point not logged: need a visible HIVE tag with distance";
+                    } else if (!Double.isFinite(v2.shotDistanceM)) {
+                        logger.lastMessage = "Point not logged: need a valid odometry pose (shot distance)";
                     } else {
                         logger.log(v2);
                     }
@@ -159,7 +160,8 @@ public abstract class BioBuzzTeleOpV2 extends LinearOpMode {
                     robot.gateOpen = false;
                 }
                 robot.intake.setPower(sequencer.intakePower);
-                robot.transmission.setPower(sequencer.transmissionPower);
+                robot.transmission.setPower(rtIntakeTransmission(sequencer.transmissionPower, heldIntake,
+                        sequencer.gateOpen, robot.ballPresent));
 
                 boolean readyNow = robot.shooterOn && sequencer.ready && robot.gateCalibrated();
                 if (readyNow && !wasReady) operator.rumble(200);
@@ -195,6 +197,14 @@ public abstract class BioBuzzTeleOpV2 extends LinearOpMode {
         } finally {
             robot.stop();
         }
+    }
+
+    /**
+     * RT intake with the gate closed: once the ball sensor sees a ball, stop the transmission (the
+     * intake roller keeps running). Everything else (LT, X shooting, an open gate) is unchanged.
+     */
+    static double rtIntakeTransmission(double transmission, double heldIntake, boolean gateOpen, boolean ballPresent) {
+        return heldIntake < 0 && !gateOpen && ballPresent ? 0 : transmission;
     }
 
     /** Hold-to-run intake: hold RT to run inward, hold LT to run outward (RT wins if both). */

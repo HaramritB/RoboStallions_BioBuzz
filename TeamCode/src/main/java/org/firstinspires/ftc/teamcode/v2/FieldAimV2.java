@@ -31,9 +31,14 @@ public final class FieldAimV2 {
     public static double SEARCH_POWER = Robot.TURRET_SEARCH_POWER;
     public static double RETURN_MARGIN_DEG = Robot.TURRET_RETURN_MARGIN_DEG;
     public static double ROTATION_DEADBAND_DEG_S = Robot.TURRET_ROTATION_DEADBAND_DEG_S;
-    /** Turret rotation axis relative to the chassis center, robot frame (inches). Measure and set. */
-    public static double TURRET_OFFSET_FORWARD_IN = 0.0;
-    public static double TURRET_OFFSET_LEFT_IN = 0.0;
+    /** Turret rotation axis relative to the chassis center, robot frame (inches; measured 2026-11-23). */
+    public static double TURRET_OFFSET_FORWARD_IN = org.firstinspires.ftc.teamcode.FieldGeometry.turretForwardOffsetIn();
+    public static double TURRET_OFFSET_LEFT_IN = 0.0; // Centered left-right.
+    /**
+     * Fixed aim correction for every odometry shot, degrees clockwise (+ = aim further right as seen
+     * from behind the turret, - = further left). For a bias that remains after the geometry is right.
+     */
+    public static double FIXED_AIM_TRIM_DEG = 0.0;
     /** Range used when a frame has no usable distance and no earlier target exists. */
     public static double DEFAULT_RANGE_IN = 70.0;
     public static double MIN_RANGE_IN = 12.0;
@@ -311,6 +316,7 @@ public final class FieldAimV2 {
         }
 
         if (Double.isFinite(aimTrimDeg)) desired += aimTrimDeg;
+        if (odometryOnly && Double.isFinite(FIXED_AIM_TRIM_DEG)) desired += FIXED_AIM_TRIM_DEG;
         double goal = nearestReachableAngle(desired, turret, in.minDeg, in.maxDeg);
         if (!Double.isFinite(goal)) {
             double nearest = desired + 360.0 * Math.rint((turret - desired) / 360.0);

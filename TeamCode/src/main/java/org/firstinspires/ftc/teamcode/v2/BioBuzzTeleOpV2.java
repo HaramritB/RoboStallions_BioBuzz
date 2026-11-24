@@ -200,11 +200,15 @@ public abstract class BioBuzzTeleOpV2 extends LinearOpMode {
     }
 
     /**
-     * RT intake with the gate closed: once the ball sensor sees a ball, stop the transmission (the
-     * intake roller keeps running). Everything else (LT, X shooting, an open gate) is unchanged.
+     * RT intake with the gate closed: once the ball sensor sees a ball, the transmission slows to
+     * Robot.TRANSMISSION_BALL_SEEN_POWER (0.5), same direction (the intake roller keeps running).
+     * Everything else (LT, X shooting, an open gate) is unchanged.
      */
     static double rtIntakeTransmission(double transmission, double heldIntake, boolean gateOpen, boolean ballPresent) {
-        return heldIntake < 0 && !gateOpen && ballPresent ? 0 : transmission;
+        if (heldIntake < 0 && !gateOpen && ballPresent && transmission != 0) {
+            return Math.signum(transmission) * Robot.TRANSMISSION_BALL_SEEN_POWER;
+        }
+        return transmission;
     }
 
     /** Hold-to-run intake: hold RT to run inward, hold LT to run outward (RT wins if both). */

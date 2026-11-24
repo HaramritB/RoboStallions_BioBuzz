@@ -53,7 +53,8 @@ public final class V2Regression {
     static void onePersonControls() {
         double in = ShotSequencerV2.INWARD_TRANSMISSION, rt = -Robot.INTAKE_POWER;
         near(BioBuzzTeleOpV2.rtIntakeTransmission(in, rt, false, false), in, 0, "RT intake runs the transmission until a ball is seen");
-        near(BioBuzzTeleOpV2.rtIntakeTransmission(in, rt, false, true), 0, 0, "RT intake + ball sensor sees a ball: transmission stops");
+        near(BioBuzzTeleOpV2.rtIntakeTransmission(in, rt, false, true), Math.signum(in) * 0.5, 0,
+                "RT intake + ball sensor sees a ball: transmission slows to 0.5, same direction");
         near(BioBuzzTeleOpV2.rtIntakeTransmission(in, rt, true, true), in, 0, "Gate open (X shooting): keeps feeding with a ball present");
         near(BioBuzzTeleOpV2.rtIntakeTransmission(-in, Robot.INTAKE_POWER, false, true), -in, 0, "LT (outward) is unchanged");
         near(BioBuzzTeleOpV2.rtIntakeTransmission(in, 0, false, true), in, 0, "Without RT nothing changes (e.g. X feeding)");

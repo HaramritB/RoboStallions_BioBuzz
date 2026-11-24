@@ -2,7 +2,7 @@
 
 **One-person layout:** select the original **BioBuzz Blue/Red TeleOp (Single Controller)**
 or **BioBuzz Blue/Red TeleOp V2**. Both use gamepad 1: left stick drive/strafe, right stick X
-rotate, LB slow drive, hold RT / LT for intake in / out (RT with the gate closed stops the transmission once the ball sensor sees a ball), A shooter toggle, X gate toggle
+rotate, LB slow drive, hold RT / LT for intake in / out (RT with the gate closed slows the transmission to 0.5 once the ball sensor sees a ball), A shooter toggle, X gate toggle
 (V2: X toggles the whole shooting sequence: gate open, intake in, LED purple; starts only within +/-50 RPM),
 Y auto-aim toggle, B hold to center the turret, D-pad left/right hold to jog the turret,
 D-pad up/down RPM trim, and RB flower toggle. Back zeros the turret during INIT only.

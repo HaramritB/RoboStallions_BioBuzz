@@ -182,6 +182,8 @@ public class Robot {
     public static final double INTAKE_POWER = 1.0;
     public static final double TRANSMISSION_INDEX_POWER = 1.0; // Was 0.6; full power like the intake (2026-11-23).
     public static final double TRANSMISSION_FEED_POWER = 1.0;
+    /** RT intake with the gate closed: transmission power once the ball sensor sees a ball. */
+    public static final double TRANSMISSION_BALL_SEEN_POWER = 0.5;
 
     // =========================================
     // COLOR SENSOR
@@ -1863,9 +1865,9 @@ public class Robot {
 
         } else if (intakePower < 0) {
 
-            // RT intake with the gate closed: stop the transmission once the ball sensor sees a
-            // ball (2026-11-23). With the gate open (shooting) it keeps feeding.
-            transmissionPower = ballPresent && !gateOpen ? 0 : -TRANSMISSION_INDEX_POWER;
+            // RT intake with the gate closed: slow the transmission to half once the ball sensor
+            // sees a ball (2026-11-23). With the gate open (shooting) it keeps feeding at full power.
+            transmissionPower = ballPresent && !gateOpen ? -TRANSMISSION_BALL_SEEN_POWER : -TRANSMISSION_INDEX_POWER;
 
         } else if (
                 (intakePower > 0 || wantShoot)

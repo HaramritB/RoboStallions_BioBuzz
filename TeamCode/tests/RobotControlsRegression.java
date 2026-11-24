@@ -208,7 +208,8 @@ public final class RobotControlsRegression {
         near(transmission.power, -Robot.TRANSMISSION_INDEX_POWER, "RT intake runs the transmission inward until a ball is seen");
         robot.ballPresent = true;
         robot.updateManualFeeder(false, -Robot.INTAKE_POWER);
-        near(transmission.power, 0, "RT intake: the ball sensor sees a ball, so the transmission stops");
+        near(transmission.power, -Robot.TRANSMISSION_BALL_SEEN_POWER, "RT intake: the ball sensor sees a ball, so the transmission slows to 0.5");
+        near(Robot.TRANSMISSION_BALL_SEEN_POWER, 0.5, "Ball-seen transmission power is 0.5");
         near(intake.power, -Robot.INTAKE_POWER, "...while the intake roller keeps running");
         robot.updateManualFeeder(false, Robot.INTAKE_POWER);
         near(transmission.power, 0, "LT with a ball present is unchanged (it already stopped there)");
